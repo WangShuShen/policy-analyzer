@@ -10,12 +10,13 @@ async function getExpectedToken(): Promise<string> {
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 放行 Next.js 內部路徑
+  // 放行靜態資源、Next.js 內部路徑、登入相關
   if (
     pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico" ||
+    pathname.startsWith("/api/auth") ||
     pathname === "/login" ||
-    pathname.startsWith("/api/auth")
+    pathname === "/favicon.ico" ||
+    /\.(png|jpg|jpeg|svg|ico|webp|gif|woff2?|ttf|otf)$/.test(pathname)
   ) {
     return NextResponse.next();
   }

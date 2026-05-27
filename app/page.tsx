@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Upload, FileText, ImageIcon, Loader2, CheckCircle,
   Zap, PenLine, X, LogOut, LayoutDashboard, ClockIcon,
-  ChevronRight,
+  ChevronRight, Search, Database, SlidersHorizontal,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -64,8 +64,10 @@ function Sidebar({
   onNavigate: (v: string) => void;
   onLogout: () => void;
 }) {
+  const [iconError, setIconError] = useState(false);
   const navItems = [
     { id: "analyze", icon: <LayoutDashboard className="h-4 w-4" />, label: "保單分析" },
+    { id: "catalog", icon: <Database className="h-4 w-4" />, label: "商品查詢" },
     { id: "history", icon: <ClockIcon className="h-4 w-4" />, label: "歷史紀錄" },
   ];
 
@@ -75,17 +77,17 @@ function Sidebar({
       <div className="px-5 py-5 border-b border-[#EDE0CE]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl overflow-hidden bg-amber-50 flex items-center justify-center shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/brand-icon.png"
-              alt="傳家知保"
-              className="w-10 h-10 object-cover"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-                (e.currentTarget.nextElementSibling as HTMLElement).style.display = "flex";
-              }}
-            />
-            <span className="text-xl hidden items-center justify-center">🏠</span>
+            {iconError ? (
+              <span className="text-xl">🏠</span>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src="/brand-icon.png"
+                alt="傳家知保"
+                className="w-10 h-10 object-cover"
+                onError={() => setIconError(true)}
+              />
+            )}
           </div>
           <div>
             <div
@@ -139,9 +141,240 @@ function Sidebar({
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 
+// ── Catalog View ───────────────────────────────────────────────────────
+
+interface ProductItem {
+  id: number;
+  company: string;
+  product_name: string;
+  plan_code: string;
+  plan_type: string | null;
+  year: string | null;
+  category: string | null;
+  verified: number;
+  coverage_template: string;
+  latest_analysis: string | null;
+}
+
+function CatalogView({ onViewAnalysis }: { onViewAnalysis: (data: Record<string, unknown>, productId: number) => void }) {
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [filterCompany, setFilterCompany] = useState("");
+  const [filterKeyword, setFilterKeyword] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/products?action=meta")
+      .then(r => r.json())
+      .then(d => {
+        setCompanies(d.companies ?? []);
+        setCategories(d.categories ?? []);
+      });
+  }, []);
+
+  const handleSearch = async () => {
+    setLoading(true);
+    setSearched(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterCompany) params.set("company", filterCompany);
+      if (filterKeyword) params.set("keyword", filterKeyword);
+      if (filterCategory) params.set("category", filterCategory);
+      const res = await fetch(`/api/products?${params}`);
+      const data = await res.json();
+      setProducts(data.products ?? []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClear = () => {
+    setFilterCompany("");
+    setFilterKeyword("");
+    setFilterCategory("");
+    setProducts([]);
+    setSearched(false);
+  };
+
+  const categoryLabel: Record<string, string> = {
+    "定額醫療": "🏥 定額醫療", "醫療實支": "💊 醫療實支",
+    "壽險": "🛡️ 壽險", "意外險": "⚡ 意外險",
+    "防癌險": "🎗️ 防癌險", "重大傷病": "🔴 重大傷病",
+    "長照": "🤝 長照", "失能": "♿ 失能",
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* 搜尋條件 */}
+      <Card className="bg-white border-[#EDE0CE] shadow-sm rounded-2xl">
+        <CardHeader className="pb-3 pt-5 px-6">
+          <CardTitle className="text-sm font-semibold text-stone-700 flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 text-[#C8956C]" />
+            商品篩選條件
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-6 pb-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-stone-400">保險公司</label>
+              <select
+                value={filterCompany}
+                onChange={e => setFilterCompany(e.target.value)}
+                className="bg-[#FEF9F2] border border-[#E8D5B7] rounded-xl px-3 py-2.5 text-sm text-stone-700 focus:outline-none focus:border-[#C8956C] focus:ring-2 focus:ring-[#C8956C]/20 transition-all"
+              >
+                <option value="">－ 全部 －</option>
+                {companies.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-stone-400">商品名稱 / 計劃代號</label>
+              <input
+                type="text"
+                value={filterKeyword}
+                onChange={e => setFilterKeyword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSearch()}
+                placeholder="請輸入關鍵字"
+                className="bg-[#FEF9F2] border border-[#E8D5B7] rounded-xl px-3 py-2.5 text-sm text-stone-700 placeholder-stone-300 focus:outline-none focus:border-[#C8956C] focus:ring-2 focus:ring-[#C8956C]/20 transition-all"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-stone-400">險種類別</label>
+              <select
+                value={filterCategory}
+                onChange={e => setFilterCategory(e.target.value)}
+                className="bg-[#FEF9F2] border border-[#E8D5B7] rounded-xl px-3 py-2.5 text-sm text-stone-700 focus:outline-none focus:border-[#C8956C] focus:ring-2 focus:ring-[#C8956C]/20 transition-all"
+              >
+                <option value="">－ 全部 －</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={handleSearch}
+              disabled={loading}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 shadow-sm"
+              style={{ background: "linear-gradient(135deg, #C8956C, #A0714F)" }}
+            >
+              <Search className="h-4 w-4" />
+              {loading ? "查詢中…" : "查詢"}
+            </button>
+            <button
+              onClick={handleClear}
+              className="px-5 py-2.5 rounded-xl text-sm text-stone-500 border border-[#EDE0CE] bg-white hover:bg-stone-50 transition-all"
+            >
+              清除
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 查詢結果 */}
+      {searched && (
+        <Card className="bg-white border-[#EDE0CE] shadow-sm rounded-2xl">
+          <CardHeader className="pb-0 pt-5 px-6">
+            <CardTitle className="text-sm font-semibold text-stone-700">
+              查詢結果
+              {!loading && (
+                <span className="ml-2 text-xs font-normal text-stone-400">
+                  共 {products.length} 筆
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-0 pb-4">
+            {loading ? (
+              <div className="flex items-center justify-center py-10 gap-2 text-stone-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">查詢中…</span>
+              </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-10">
+                <Database className="h-10 w-10 text-stone-200 mx-auto mb-3" />
+                <p className="text-sm text-stone-400">查無資料</p>
+                <p className="text-xs text-stone-300 mt-1">請先上傳並分析保單以建立資料庫</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[#EDE0CE] bg-[#FEF9F2]">
+                      <th className="text-left px-6 py-3 text-xs font-semibold text-stone-500">保險公司</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">商品名稱 / 計劃代號</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">年份</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">險種</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">型別</th>
+                      <th className="text-center px-4 py-3 text-xs font-semibold text-stone-500">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map((p, i) => (
+                      <tr
+                        key={p.id}
+                        className={`border-b border-[#F5EDE0] transition-colors hover:bg-[#FEF9F2] ${i % 2 === 0 ? "bg-white" : "bg-[#FEFCF9]"}`}
+                      >
+                        <td className="px-6 py-3.5 text-stone-600 whitespace-nowrap">{p.company}</td>
+                        <td className="px-4 py-3.5">
+                          <div className="font-medium text-stone-800">{p.product_name}</div>
+                          {p.plan_code && p.plan_code !== "未知" && (
+                            <div className="text-xs text-stone-400 mt-0.5">{p.plan_code}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-stone-500 whitespace-nowrap">
+                          {p.year ? `民國 ${p.year} 年` : "—"}
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {p.category ? (
+                            <span className="text-xs px-2.5 py-1 rounded-full bg-[#FBF0E3] text-[#8B5E3C] font-medium">
+                              {categoryLabel[p.category] ?? p.category}
+                            </span>
+                          ) : "—"}
+                        </td>
+                        <td className="px-4 py-3.5 text-stone-500 text-xs whitespace-nowrap">
+                          {p.plan_type ?? "—"}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          <button
+                            onClick={() => {
+                              try {
+                                const data = JSON.parse(p.latest_analysis ?? p.coverage_template);
+                                onViewAnalysis(data, p.id);
+                              } catch { /* ignore */ }
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-[#FBF0E3] text-[#8B5E3C] hover:bg-[#F0D9BC] transition-colors font-medium"
+                          >
+                            查看全險圖
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {!searched && (
+        <div className="flex flex-col items-center justify-center py-16 text-stone-300">
+          <Database className="h-14 w-14 mb-4" />
+          <p className="text-sm font-medium text-stone-400">輸入條件後按「查詢」</p>
+          <p className="text-xs text-stone-300 mt-1">可搜尋已分析過的所有保險商品</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────────
+
 export default function Home() {
   const router = useRouter();
-  const [activeView, setActiveView] = useState<"analyze" | "history">("analyze");
+  const [activeView, setActiveView] = useState<"analyze" | "catalog" | "history">("analyze");
 
   // Analysis state
   const [files, setFiles] = useState<File[]>([]);
@@ -294,27 +527,26 @@ export default function Home() {
         {/* Page Header */}
         <div className="bg-white border-b border-[#EDE0CE] px-8 py-4 shadow-sm">
           <div className="max-w-4xl">
-            {activeView === "analyze" ? (
-              <>
-                <h2
-                  className="text-lg font-bold text-stone-800"
-                  style={{ fontFamily: "var(--font-serif-tc), serif" }}
-                >
-                  保單分析
-                </h2>
-                <p className="text-xs text-stone-400 mt-0.5">上傳保單條款，AI 自動解析填入全險圖</p>
-              </>
-            ) : (
-              <>
-                <h2
-                  className="text-lg font-bold text-stone-800"
-                  style={{ fontFamily: "var(--font-serif-tc), serif" }}
-                >
-                  歷史紀錄
-                </h2>
-                <p className="text-xs text-stone-400 mt-0.5">過去的分析結果，點擊可重新查看</p>
-              </>
-            )}
+            {{
+              analyze: (
+                <>
+                  <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>保單分析</h2>
+                  <p className="text-xs text-stone-400 mt-0.5">上傳保單條款，AI 自動解析填入全險圖</p>
+                </>
+              ),
+              catalog: (
+                <>
+                  <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>商品查詢</h2>
+                  <p className="text-xs text-stone-400 mt-0.5">搜尋資料庫中已分析的保險商品</p>
+                </>
+              ),
+              history: (
+                <>
+                  <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>歷史紀錄</h2>
+                  <p className="text-xs text-stone-400 mt-0.5">過去的分析結果，點擊可重新查看</p>
+                </>
+              ),
+            }[activeView]}
           </div>
         </div>
 
@@ -565,6 +797,17 @@ export default function Home() {
                 </>
               )}
             </>
+          )}
+
+          {/* ── 商品查詢 View ── */}
+          {activeView === "catalog" && (
+            <CatalogView
+              onViewAnalysis={(data, productId) => {
+                setResult(data);
+                setProductId(productId);
+                setActiveView("analyze");
+              }}
+            />
           )}
 
           {/* ── 歷史紀錄 View ── */}

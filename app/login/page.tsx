@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [iconError, setIconError] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,17 +48,17 @@ export default function LoginPage() {
           {/* Brand */}
           <div className="text-center space-y-3">
             <div className="w-20 h-20 rounded-3xl overflow-hidden bg-[#FBF0E3] mx-auto flex items-center justify-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/brand-icon.png"
-                alt="傳家知保"
-                className="w-20 h-20 object-cover"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
-                  (e.currentTarget.nextElementSibling as HTMLElement).style.display = "flex";
-                }}
-              />
-              <span className="text-4xl hidden items-center justify-center">🏠</span>
+              {iconError ? (
+                <span className="text-4xl">🏠</span>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src="/brand-icon.png"
+                  alt="傳家知保"
+                  className="w-20 h-20 object-cover"
+                  onError={() => setIconError(true)}
+                />
+              )}
             </div>
             <div>
               <h1

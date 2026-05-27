@@ -187,6 +187,68 @@ export async function saveCorrection(params: {
   });
 }
 
+// ── Product search ────────────────────────────────────────────────────
+
+export interface ProductSearchResult extends ProductRow {
+  company: string;
+  latest_analysis?: string;
+}
+
+export async function searchProducts(params: {
+  company?: string;
+  keyword?: string;
+  category?: string;
+  limit?: number;
+}): Promise<ProductSearchResult[]> {
+  await ensureInit();
+  const { company, keyword, category, limit = 100 } = params;
+
+  const conditions: string[] = [];
+  const args: (string | number)[] = [];
+
+  if (company) {
+    conditions.push("c.name = ?");
+    args.push(company);
+  }
+  if (keyword) {
+    conditions.push("(p.product_name LIKE ? OR p.plan_code LIKE ?)");
+    args.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  if (category) {
+    conditions.push("p.category = ?");
+    args.push(category);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const result = await db.execute({
+    sql: `SELECT p.*, c.name AS company,
+            (SELECT a.analysis_json FROM analyses a WHERE a.product_id = p.id ORDER BY a.created_at DESC LIMIT 1) AS latest_analysis
+          FROM products p
+          JOIN companies c ON p.company_id = c.id
+          ${where}
+          ORDER BY c.name ASC, p.product_name ASC, p.year DESC
+          LIMIT ?`,
+    args: [...args, limit],
+  });
+  return result.rows as unknown as ProductSearchResult[];
+}
+
+export async function getCompanies(): Promise<string[]> {
+  await ensureInit();
+  const result = await db.execute({ sql: "SELECT name FROM companies ORDER BY name ASC", args: [] });
+  return result.rows.map(r => r["name"] as string);
+}
+
+export async function getCategories(): Promise<string[]> {
+  await ensureInit();
+  const result = await db.execute({
+    sql: "SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category ASC",
+    args: [],
+  });
+  return result.rows.map(r => r["category"] as string);
+}
+
 // ── Recent analyses (for history UI) ─────────────────────────────────
 
 export async function recentAnalyses(limit = 20): Promise<(AnalysisRow & { company: string; product_name: string; plan_code: string })[]> {
