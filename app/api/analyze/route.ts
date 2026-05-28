@@ -6,6 +6,16 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const SYSTEM_PROMPT = `你是台灣保險條款分析專家。根據保單條款與投保保額，輸出嚴格的 JSON。
 
+【輸出格式規則（所有欄位強制遵守）】
+
+▌每個欄位值使用「金額｜限制條件」格式：
+- 金額：只寫核心數字＋單位，例如「1,000元/日」「1,000~100,000元/次」「15,000元/次」
+- ｜後面：天數上限、次數上限、保單年度條件等，例如「最高365日」「限10次」「年限1次」
+- 若附表有多個金額，只寫「最低~最高」範圍，不舉例說明項目名稱
+- 若有年齡/年度分層，在金額欄用分號分隔：「15,000元/次（1-2年度）；25,000元/次（第3年起）」
+- 沒有限制條件則不加｜
+- 禁止：解釋計算過程、引用條款編號、舉例說明、重複贅述已知資訊
+
 【通用解析規則】（適用所有保單，無論哪家公司）
 
 ▌倍數換算（最重要）
@@ -55,116 +65,119 @@ const SYSTEM_PROMPT = `你是台灣保險條款分析專家。根據保單條款
   "version": "版次（如：v1、第二版）或空字串",
   "category": "定額醫療 or 醫療實支 or 壽險 or 意外險 or 防癌險 or 重大傷病 or 長照 or 失能",
   "hospitalization": {
-    "diseaseDaily": "疾病住院日額 N元/日（終身 or 定期至N歲，限N日）",
-    "accidentDaily": "意外住院日額 N元/日（終身 or 定期至N歲，限N日）",
-    "cancerDaily": "癌症住院日額 N元/日（終身 or 定期至N歲，限N日）",
-    "deductible": "自負額說明（如：前3日不理賠）或空字串"
+    "diseaseDaily": "N元/日｜最高N日/次（終身 or 定期至N歲）",
+    "accidentDaily": "N元/日｜最高N日/次",
+    "cancerDaily": "N元/日｜最高N日/次",
+    "deductible": "前N日不理賠 或空字串"
   },
   "death": {
-    "general": "一般身故保險金 N萬",
-    "accident": "意外身故保險金 N萬",
-    "cancer": "癌症身故保險金 N萬"
+    "general": "N萬",
+    "accident": "N萬",
+    "cancer": "N萬"
   },
   "life": {
     "type": "終身 or 定期至N歲",
-    "amount": "壽險保額 N萬",
-    "survival": "生存還本金說明（如：每N年領回保額N%）或空字串"
+    "amount": "N萬",
+    "survival": "每N年領N%保額 或空字串"
   },
   "medicalReimbursement": {
     "type": "終身 or 定期至N歲",
-    "receiptType": "正本理賠 or 副本理賠 or 正副本均可",
-    "hospitalRoom": "住院病房費 N元/日（最高N日）",
-    "icu": "加護病房 N元/日（最高N日）",
-    "burn": "燒燙傷病房 N元/日（最高N日）",
-    "miscMedical": "醫療雜費 最高N萬/次",
-    "surgery": "住院手術費 最高N萬/次",
-    "outpatientSurgery": "門診手術費 最高N萬/次",
-    "specialTreatment": "特殊醫療處置 最高N萬",
-    "dischargeCare": "出院療養 N元/日（最高N日）",
-    "transferRoom": "轉換病房費用 N元/日",
-    "annualLimit": "年度累積給付上限 N萬"
+    "receiptType": "正本 or 副本 or 正副本均可",
+    "hospitalRoom": "N元/日｜最高N日",
+    "icu": "N元/日｜最高N日",
+    "burn": "N元/日｜最高N日",
+    "miscMedical": "最高N萬/次",
+    "surgery": "最高N萬/次",
+    "outpatientSurgery": "最高N萬/次",
+    "specialTreatment": "最高N萬",
+    "dischargeCare": "N元/日｜最高N日",
+    "transferRoom": "N元/日",
+    "annualLimit": "N萬/年"
   },
   "fixedMedical": {
     "type": "終身 or 定期至N歲",
-    "unreducedBenefit": "有（理賠不減額）or 無",
-    "deathBenefit": "有（身故退還保額）or 無",
-    "hospitalDaily": "住院日額 N元/日（最高N日）",
-    "dischargeCare": "出院療養 N元/日（最高N日）",
-    "icu": "加護病房 N元/日（最高N日）←住院日額＋額外加給 或 日額×倍數，填合計後金額",
-    "burn": "燒燙傷病房 N元/日（最高N日）←同icu邏輯，不同時才填此欄",
-    "emergency": "住院前急診 N元/次",
-    "ambulance": "救護車轉送 N元/次",
-    "outpatientAroundHospital": "住院前後門診 N元/次（前N日/後N日）",
-    "surgery": "住院手術 N元/次 ←已換算實際金額（如為日額倍數）",
-    "outpatientSurgery": "門診手術 N元/次 ←已換算實際金額",
-    "specialSurgery": "特定/重大手術 N元/次 ←已換算實際金額",
-    "nursing": "住院看護 N元/日（最高N日）",
-    "annualLimit": "年度累積給付上限 N萬",
-    "waitDays": "疾病等待期 N天"
+    "unreducedBenefit": "有 or 無",
+    "deathBenefit": "有 or 無",
+    "hospitalDaily": "N元/日（若年齡分層：N元75歲以下；N元75歲以上）｜最高N日/次",
+    "dischargeCare": "N元/日｜最高N日",
+    "icu": "N元/日（住院日額N＋加給N，合計N）｜最高N日",
+    "burn": "N元/日｜最高N日（與icu不同時才填）",
+    "emergency": "N元/次",
+    "ambulance": "N元/次",
+    "outpatientAroundHospital": "N元/次｜前N日/後N日",
+    "surgery": "N~N萬/次（依附表共N項）｜住院/門診均適用",
+    "outpatientSurgery": "N元/次",
+    "specialSurgery": "N元/次",
+    "specificTreatment": "N~N萬/次（依附表共N項）｜限制條件 或空字串",
+    "woundClosure": "N~N元/次（依傷口大小）｜限制條件 或空字串",
+    "specialMedicalDevice": "N萬/次（1-2年度）；N萬/次（第3年起）｜累積限N次，含心臟支架/人工關節/水晶體等 或空字串",
+    "nursing": "N元/日｜最高N日",
+    "annualLimit": "N萬｜含各項給付合計",
+    "waitDays": "N天"
   },
   "accident": {
     "type": "終身 or 定期至N歲",
-    "grade": "職業等級（如：1~2職等）",
-    "publicAccident": "大眾運輸工具加倍說明（如：加倍給付意外身故/失能）",
-    "deathDisability": "意外身故/完全失能 最高N萬（1級，依等級比例）←已換算",
-    "disabilityAssist": "失能扶助金 N元/月（最高N年）",
-    "burnAmount": "重大燒燙傷 N萬（體表面積N%以上）",
-    "outpatientReimbursement": "意外門診實支實付 最高N元/次（年限N次）",
-    "hospitalDaily": "傷害住院日額 N元/日（最高N日）",
-    "icu": "加護/燒燙傷病房 N元/日（最高N日）←住院日額＋額外加給 或 日額×倍數，填合計後金額",
-    "burn": "燒燙傷病房 N元/日（最高N日）←同icu邏輯，不同時才填此欄",
-    "outpatientSurgery": "門診手術 N元/次 ←已換算（如為日額倍數）",
-    "fracture": "骨折未住院 最高N元（大腿完全骨折：日額×N日×係數，依部位比例）←查附表換算最高",
-    "dislocation": "脫臼未住院 最高N元（查附表最高部位換算後）←依部位比例",
-    "annualLimit": "年度累積給付上限 N萬"
+    "grade": "N~N職等",
+    "publicAccident": "大眾交通工具加倍給付 or 空字串",
+    "deathDisability": "N萬｜依等級比例（1級=100%）",
+    "disabilityAssist": "N元/月｜最高N年",
+    "burnAmount": "N萬｜體表面積N%以上",
+    "outpatientReimbursement": "最高N萬/次｜年限N次",
+    "hospitalDaily": "N元/日｜最高N日",
+    "icu": "N元/日（住院日額N＋加給N）｜最高N日",
+    "burn": "N元/日｜最高N日（與icu不同時才填）",
+    "outpatientSurgery": "N元/次",
+    "fracture": "最高N萬｜依部位比例，大腿完全骨折為最高",
+    "dislocation": "最高N萬｜依部位比例",
+    "annualLimit": "N萬/年"
   },
   "cancer": {
     "type": "終身 or 定期至N歲",
-    "initialCancer": "初次罹癌診斷金 N萬（限1次）",
-    "deathBenefit": "癌症身故保險金 N萬",
-    "primaryCancer": "原位癌/零期癌 N萬",
-    "invasiveCancer": "侵襲性癌症 N萬",
-    "earlyCancer": "早期惡性腫瘤 N萬",
-    "mildCancer": "輕度癌症 N萬",
-    "severeCancer": "重度癌症 N萬",
-    "annualCancerBenefit": "癌症年給付 N萬/年（最高N年）",
-    "hospitalDaily": "癌症住院日額 N元/日（最高N日）",
-    "dischargeCare": "出院療養 N元/日（最高N日）",
-    "radiation": "放射線治療 N元/次（年限N次）",
-    "surgery": "癌症手術 N萬/次",
-    "chemotherapy": "化療/標靶/免疫治療 N元/次（年限N次）",
-    "boneMarrow": "骨髓移植 N萬（限1次）",
-    "prosthetics": "義肢 N萬（限N次）",
-    "dentures": "義齒 N萬（每年限1次）",
-    "annualLimit": "年度累積給付上限 N萬",
-    "waitDays": "等待期 N天"
+    "initialCancer": "N萬｜限1次",
+    "deathBenefit": "N萬",
+    "primaryCancer": "N萬（原位癌）",
+    "invasiveCancer": "N萬",
+    "earlyCancer": "N萬",
+    "mildCancer": "N萬",
+    "severeCancer": "N萬",
+    "annualCancerBenefit": "N萬/年｜最高N年",
+    "hospitalDaily": "N元/日｜最高N日",
+    "dischargeCare": "N元/日｜最高N日",
+    "radiation": "N元/次｜年限N次",
+    "surgery": "N萬/次",
+    "chemotherapy": "N元/次｜年限N次",
+    "boneMarrow": "N萬｜限1次",
+    "prosthetics": "N萬｜限N次",
+    "dentures": "N萬｜每年限1次",
+    "annualLimit": "N萬/年",
+    "waitDays": "N天"
   },
   "criticalIllnessCard": {
     "type": "終身 or 定期至N歲",
-    "amount": "重大傷病理賠金 N萬（核發重大傷病卡當次給付）",
-    "waitDays": "等待期 N天"
+    "amount": "N萬｜限1次",
+    "waitDays": "N天"
   },
   "majorDisease": {
     "type": "終身 or 定期至N歲",
-    "deathBenefit": "身故/完全失能退還 N萬",
-    "sevenItems": "重大疾病（7項）N萬（限1次）",
-    "twentyTwoItems": "特定傷病（22項）N萬（限1次）",
-    "waitDays": "等待期 N天"
+    "deathBenefit": "N萬",
+    "sevenItems": "N萬｜限1次",
+    "twentyTwoItems": "N萬｜限1次",
+    "waitDays": "N天"
   },
   "longTermCare": {
     "type": "終身 or 定期至N歲",
-    "annualBenefit": "長照年給付 N萬/年（最高N年）",
-    "lumpSum": "長照一次金 N萬",
-    "waitDays": "等待期 N天"
+    "annualBenefit": "N萬/年｜最高N年",
+    "lumpSum": "N萬",
+    "waitDays": "N天"
   },
   "disability": {
     "type": "終身 or 定期至N歲",
-    "grade1to6": "1~6級失能 最高N萬（1級=保額×100%，依等級比例）←已換算",
-    "grade2to6LumpSum": "2~6級一次金 最高N萬（依等級比例）←已換算",
-    "accidentDouble": "意外失能加倍 最高N萬（已含加倍後金額）←已換算"
+    "grade1to6": "最高N萬｜依等級比例（1級=100%）",
+    "grade2to6LumpSum": "最高N萬｜依等級比例",
+    "accidentDouble": "最高N萬（已含加倍）"
   },
-  "gaps": ["列出此保單未覆蓋的主要險種，如：無實支實付醫療、無意外險、無防癌險"],
-  "exclusions": ["條款明定不理賠的情況，如：自殺、戰爭、已存在疾病等"],
+  "gaps": ["未覆蓋的主要險種，如：無實支實付、無意外險"],
+  "exclusions": ["條款明定除外事項，簡短描述"],
   "waitingPeriods": {
     "疾病": "N天",
     "癌症": "N天",

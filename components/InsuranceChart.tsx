@@ -20,7 +20,8 @@ interface PolicyData {
     type?: string; unreducedBenefit?: string; deathBenefit?: string; hospitalDaily?: string;
     dischargeCare?: string; icu?: string; burn?: string; emergency?: string; ambulance?: string;
     outpatientAroundHospital?: string; surgery?: string; outpatientSurgery?: string;
-    specialSurgery?: string; nursing?: string; annualLimit?: string; waitDays?: string;
+    specialSurgery?: string; specificTreatment?: string; woundClosure?: string;
+    specialMedicalDevice?: string; nursing?: string; annualLimit?: string; waitDays?: string;
   };
   accident?: {
     type?: string; grade?: string; publicAccident?: string; deathDisability?: string;
@@ -55,11 +56,17 @@ function hasData(obj: Record<string, unknown> | undefined): boolean {
 
 function Row({ label, value, highlight }: { label: string; value?: string; highlight?: boolean }) {
   if (!value) return null;
+  const pipeIdx = value.indexOf("｜");
+  const mainVal = pipeIdx >= 0 ? value.slice(0, pipeIdx).trim() : value;
+  const limit = pipeIdx >= 0 ? value.slice(pipeIdx + 1).trim() : "";
   return (
-    <div className="flex justify-between items-baseline py-1.5 border-b border-stone-100 last:border-0">
-      <span className="text-xs text-stone-500">{label}</span>
-      <span className={`text-sm font-medium ml-4 text-right ${highlight ? "text-amber-700" : "text-stone-800"}`}>
-        {value}
+    <div className="flex items-baseline py-2 border-b border-stone-100 last:border-0 gap-2">
+      <span className="text-sm text-stone-500 shrink-0">{label}</span>
+      <span className={`text-sm font-semibold flex-1 text-right ${highlight ? "text-amber-700" : "text-stone-800"}`}>
+        {mainVal}
+      </span>
+      <span className="text-xs text-stone-400 w-28 shrink-0 text-right leading-snug">
+        {limit}
       </span>
     </div>
   );
@@ -73,7 +80,7 @@ function Section({
   return (
     <Card className="bg-white border-stone-200 shadow-sm">
       <CardHeader className="pb-2 pt-4 px-4">
-        <CardTitle className={`text-sm font-semibold flex items-center gap-2 ${color}`}>
+        <CardTitle className={`text-base font-semibold flex items-center gap-2 ${color}`}>
           {emoji} {title}
         </CardTitle>
       </CardHeader>
@@ -104,9 +111,9 @@ export default function InsuranceChart({ data }: Props) {
               ["繳費狀態", d.status],
               ["險種分類", d.category],
             ] as [string, string | undefined][]).filter(([, v]) => v).map(([label, value]) => (
-              <div key={label} className="flex justify-between py-0.5 col-span-1">
-                <span className="text-xs text-stone-500">{label}</span>
-                <span className="text-xs text-stone-800 ml-2 font-medium">{value}</span>
+              <div key={label} className="flex justify-between py-1 col-span-1">
+                <span className="text-sm text-stone-500">{label}</span>
+                <span className="text-sm text-stone-800 ml-2 font-semibold">{value}</span>
               </div>
             ))}
           </div>
@@ -167,9 +174,12 @@ export default function InsuranceChart({ data }: Props) {
             <Row label="住院前急診" value={d.fixedMedical?.emergency} />
             <Row label="救護車轉送" value={d.fixedMedical?.ambulance} />
             <Row label="住院前後門診" value={d.fixedMedical?.outpatientAroundHospital} />
-            <Row label="住院手術" value={d.fixedMedical?.surgery} />
+            <Row label="手術給付" value={d.fixedMedical?.surgery} />
             <Row label="門診手術" value={d.fixedMedical?.outpatientSurgery} />
             <Row label="特定/重大手術" value={d.fixedMedical?.specialSurgery} />
+            <Row label="特定處置給付" value={d.fixedMedical?.specificTreatment} />
+            <Row label="創傷縫合處置" value={d.fixedMedical?.woundClosure} />
+            <Row label="特殊醫材補助" value={d.fixedMedical?.specialMedicalDevice} highlight />
             <Row label="住院看護" value={d.fixedMedical?.nursing} />
             <Row label="累積給付上限" value={d.fixedMedical?.annualLimit} highlight />
             <Row label="等待期" value={d.fixedMedical?.waitDays} />

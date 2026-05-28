@@ -14,8 +14,9 @@ export async function GET(req: NextRequest) {
     const company = searchParams.get("company") || undefined;
     const keyword = searchParams.get("keyword") || undefined;
     const category = searchParams.get("category") || undefined;
+    const activeOnly = searchParams.get("activeOnly") === "1";
 
-    const products = await searchProducts({ company, keyword, category });
+    const products = await searchProducts({ company, keyword, category, activeOnly });
     return NextResponse.json({ products });
   } catch (err) {
     console.error(err);

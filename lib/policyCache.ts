@@ -1,5 +1,6 @@
 import db, { ensureInit } from "./db";
 import type { ProductRow, AnalysisRow } from "./db";
+import fs from "fs";
 
 // ── Company ─────────────────────────────────────────────────────────
 
@@ -198,10 +199,11 @@ export async function searchProducts(params: {
   company?: string;
   keyword?: string;
   category?: string;
+  activeOnly?: boolean;
   limit?: number;
 }): Promise<ProductSearchResult[]> {
   await ensureInit();
-  const { company, keyword, category, limit = 100 } = params;
+  const { company, keyword, category, activeOnly, limit = 500 } = params;
 
   const conditions: string[] = [];
   const args: (string | number)[] = [];
@@ -217,6 +219,11 @@ export async function searchProducts(params: {
   if (category) {
     conditions.push("p.category = ?");
     args.push(category);
+  }
+  if (activeOnly) {
+    conditions.push(
+      `(p.coverage_template NOT LIKE '%"_source":"tii_catalog"%' OR p.coverage_template LIKE '%"_active":true%')`
+    );
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -263,4 +270,68 @@ export async function recentAnalyses(limit = 20): Promise<(AnalysisRow & { compa
     args: [limit],
   });
   return result.rows as unknown as (AnalysisRow & { company: string; product_name: string; plan_code: string })[];
+}
+
+// ── Catalog seed from TII JSON ────────────────────────────────────────
+
+export interface CatalogEntry {
+  company: string;
+  productName: string;
+  planCode: string;
+  category: string;
+  year: string;
+  saleDate: string;
+  stopDate: string;
+  active: boolean;
+}
+
+export async function seedFromCatalog(catalogPath: string): Promise<{ inserted: number; skipped: number }> {
+  await ensureInit();
+  const raw = fs.readFileSync(catalogPath, "utf8");
+  const entries: CatalogEntry[] = JSON.parse(raw);
+
+  let inserted = 0;
+  let skipped = 0;
+
+  // Upsert all unique companies first
+  const companies = [...new Set(entries.map(e => e.company))];
+  const companyIds: Record<string, number> = {};
+  for (const name of companies) {
+    companyIds[name] = await upsertCompany(name);
+  }
+
+  // Batch insert products in chunks of 100
+  const CHUNK = 100;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    const chunk = entries.slice(i, i + CHUNK);
+    for (const e of chunk) {
+      const template = JSON.stringify({
+        _source: "tii_catalog",
+        _saleDate: e.saleDate,
+        _stopDate: e.stopDate,
+        _active: e.active,
+      });
+      try {
+        const res = await db.execute({
+          sql: `INSERT OR IGNORE INTO products
+                  (company_id, product_name, plan_code, category, year, coverage_template)
+                VALUES (?, ?, ?, ?, ?, ?)`,
+          args: [
+            companyIds[e.company],
+            e.productName,
+            e.planCode,
+            e.category || null,
+            e.year || null,
+            template,
+          ],
+        });
+        if (Number(res.rowsAffected) > 0) inserted++;
+        else skipped++;
+      } catch {
+        skipped++;
+      }
+    }
+  }
+
+  return { inserted, skipped };
 }
