@@ -11,6 +11,107 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InsuranceChart from "@/components/InsuranceChart";
 
+interface SuspiciousField {
+  field: string;
+  severity: "high" | "medium" | "low";
+  issueType: string;
+  detail: string;
+  currentValue: string;
+  suggestedValue: string;
+}
+
+interface VerificationResult {
+  overallConfidence: number;
+  suspiciousFields: SuspiciousField[];
+  missingItems: string[];
+}
+
+function VerificationPanel({ v }: { v: VerificationResult }) {
+  const { overallConfidence, suspiciousFields, missingItems } = v;
+
+  const confidenceBg =
+    overallConfidence >= 90 ? "bg-emerald-50 border-emerald-200" :
+    overallConfidence >= 70 ? "bg-amber-50 border-amber-200" :
+    "bg-red-50 border-red-200";
+  const confidenceText =
+    overallConfidence >= 90 ? "text-emerald-700" :
+    overallConfidence >= 70 ? "text-amber-700" :
+    "text-red-700";
+  const severityConfig = {
+    high:   { bg: "bg-red-100 text-red-700",    label: "高風險" },
+    medium: { bg: "bg-amber-100 text-amber-700", label: "中風險" },
+    low:    { bg: "bg-stone-100 text-stone-500", label: "低風險" },
+  };
+
+  if (suspiciousFields.length === 0 && missingItems.length === 0) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-100 rounded-2xl text-sm text-emerald-700">
+        <CheckCircle className="h-4 w-4 shrink-0" />
+        稽核通過，未發現明顯問題（信心分數：{overallConfidence}/100）
+      </div>
+    );
+  }
+
+  return (
+    <Card className={`border rounded-2xl shadow-sm ${confidenceBg}`}>
+      <CardHeader className="pb-3 pt-5 px-5">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base font-semibold text-stone-700 flex items-center gap-2">
+            🔍 AI 稽核報告
+          </CardTitle>
+          <span className={`text-sm font-bold px-3 py-1 rounded-full ${confidenceText} ${confidenceBg} border`}>
+            信心分數 {overallConfidence}/100
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="px-5 pb-5 space-y-3">
+        {suspiciousFields.length > 0 && (
+          <div className="space-y-2">
+            {suspiciousFields.map((f, i) => {
+              const cfg = severityConfig[f.severity];
+              return (
+                <div key={i} className="bg-white border border-stone-100 rounded-xl p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <code className="text-xs text-stone-500 bg-stone-50 px-1.5 py-0.5 rounded font-mono">
+                      {f.field}
+                    </code>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.bg}`}>
+                        {cfg.label}
+                      </span>
+                      <span className="text-xs text-stone-400">{f.issueType}</span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-stone-700 leading-snug">{f.detail}</p>
+                  {f.currentValue && (
+                    <p className="text-xs text-stone-400">目前值：<span className="font-mono">{f.currentValue}</span></p>
+                  )}
+                  {f.suggestedValue && (
+                    <p className="text-xs text-emerald-600">建議值：<span className="font-mono font-semibold">{f.suggestedValue}</span></p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {missingItems.length > 0 && (
+          <div className="bg-white border border-amber-100 rounded-xl p-3">
+            <p className="text-xs font-semibold text-amber-700 mb-2">⚠️ 條款有但未記錄的給付項目</p>
+            <ul className="space-y-1">
+              {missingItems.map((item, i) => (
+                <li key={i} className="text-sm text-stone-600 flex items-start gap-1.5">
+                  <span className="text-stone-300 shrink-0 mt-0.5">·</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 interface HistoryItem {
   id: number;
   product_id: number;
@@ -645,6 +746,18 @@ export default function Home() {
   const [activeView, setActiveView] = useState<"analyze" | "catalog" | "history">("analyze");
 
   // Analysis state
+  const formatAmountOnBlur = (val: string) => {
+    const stripped = val.replace(/[,，\s元]/g, "");
+    if (/^\d+$/.test(stripped)) {
+      const num = parseInt(stripped, 10);
+      if (num >= 10000) {
+        const wan = num / 10000;
+        setAmount(Number.isInteger(wan) ? `${wan}萬` : `${wan}萬`);
+        return;
+      }
+    }
+  };
+
   const [files, setFiles] = useState<File[]>([]);
   const [amount, setAmount] = useState("");
   const [planType, setPlanType] = useState("");
@@ -659,6 +772,8 @@ export default function Home() {
   const [savedAs, setSavedAs] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [verification, setVerification] = useState<VerificationResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const [correcting, setCorrecting] = useState(false);
   const [correctionField, setCorrectionField] = useState("");
   const [correctionValue, setCorrectionValue] = useState("");
@@ -719,6 +834,7 @@ export default function Home() {
     setProductId(null);
     setCorrectionSaved(false);
     setPlanOptions([]);
+    setVerification(null);
   };
 
   const removeFile = (index: number) => setFiles(prev => prev.filter((_, i) => i !== index));
@@ -732,6 +848,8 @@ export default function Home() {
   const handleAnalyze = async (force = false) => {
     if (files.length === 0 || !amount) return;
     setLoading(true);
+    setVerifying(false);
+    setVerification(null);
     setError("");
     setCorrectionSaved(false);
     try {
@@ -753,6 +871,24 @@ export default function Home() {
       setError(String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    if (!result || files.length === 0) return;
+    setVerifying(true);
+    setVerification(null);
+    try {
+      const fd = new FormData();
+      files.forEach(f => fd.append("files", f));
+      fd.append("analysisJson", JSON.stringify(result));
+      const res = await fetch("/api/verify", { method: "POST", body: fd });
+      const json = await res.json();
+      if (json.verification) setVerification(json.verification);
+    } catch (e) {
+      console.error("Verify failed:", e);
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -818,7 +954,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="max-w-4xl mx-auto px-6 py-6 space-y-5">
+        <div className="w-full px-8 py-6 space-y-5">
 
           {/* ── 保單分析 View ── */}
           {activeView === "analyze" && (
@@ -904,13 +1040,17 @@ export default function Home() {
                           ))}
                         </select>
                       ) : (
-                        <input
-                          type="text"
-                          placeholder="例：1000、30萬"
-                          value={amount}
-                          onChange={e => setAmount(e.target.value)}
-                          className="bg-[#FEF9F2] border border-[#E8D5B7] rounded-xl px-3 py-2 text-sm text-stone-800 placeholder-stone-300 focus:outline-none focus:border-[#C8956C] focus:ring-2 focus:ring-[#C8956C]/20 transition-all"
-                        />
+                        <div className="flex flex-col gap-0.5">
+                          <input
+                            type="text"
+                            placeholder="例：1000000 或 100萬"
+                            value={amount}
+                            onChange={e => setAmount(e.target.value)}
+                            onBlur={e => formatAmountOnBlur(e.target.value)}
+                            className="bg-[#FEF9F2] border border-[#E8D5B7] rounded-xl px-3 py-2 text-sm text-stone-800 placeholder-stone-300 focus:outline-none focus:border-[#C8956C] focus:ring-2 focus:ring-[#C8956C]/20 transition-all"
+                          />
+                          <span className="text-[10px] text-stone-300 pl-1">輸入數字（如 1000000）自動換算為 100萬</span>
+                        </div>
                       )}
                     </div>
                     <FieldInput label="型別（甲/乙/丙）" value={planType} onChange={setPlanType} placeholder="選填" />
@@ -967,6 +1107,8 @@ export default function Home() {
                     </div>
                   )}
 
+                  {verification && <VerificationPanel v={verification} />}
+
                   <Tabs defaultValue="chart" className="w-full">
                     <div className="flex items-center justify-between mb-3">
                       <TabsList className="bg-white border border-[#EDE0CE] shadow-sm rounded-xl">
@@ -985,6 +1127,19 @@ export default function Home() {
                       </TabsList>
 
                       <div className="flex items-center gap-2">
+                        {files.length > 0 && (
+                          <button
+                            onClick={handleVerify}
+                            disabled={verifying || loading}
+                            className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-violet-600 transition-colors border border-[#EDE0CE] rounded-xl px-3 py-1.5 bg-white disabled:opacity-50"
+                          >
+                            {verifying
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : "🔍"
+                            }
+                            {verifying ? "稽核中…" : "稽核分析"}
+                          </button>
+                        )}
                         {files.length > 0 && (
                           <button
                             onClick={() => handleAnalyze(true)}
