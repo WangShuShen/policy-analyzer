@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import {
   Upload, FileText, ImageIcon, Loader2, CheckCircle,
   Zap, PenLine, X, LogOut, LayoutDashboard, ClockIcon,
-  ChevronRight, Search, Database, SlidersHorizontal, ExternalLink,
+  ChevronRight, Search, Database, SlidersHorizontal, ExternalLink, ClipboardCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InsuranceChart from "@/components/InsuranceChart";
+import ReviewView, { useReviewCount } from "@/components/ReviewView";
 
 interface SuspiciousField {
   field: string;
@@ -160,16 +161,19 @@ function Sidebar({
   activeView,
   onNavigate,
   onLogout,
+  reviewCount,
 }: {
   activeView: string;
   onNavigate: (v: string) => void;
   onLogout: () => void;
+  reviewCount?: number;
 }) {
   const [iconError, setIconError] = useState(false);
   const navItems = [
     { id: "analyze", icon: <LayoutDashboard className="h-4 w-4" />, label: "保單分析" },
     { id: "catalog", icon: <Database className="h-4 w-4" />, label: "商品查詢" },
     { id: "history", icon: <ClockIcon className="h-4 w-4" />, label: "歷史紀錄" },
+    { id: "review", icon: <ClipboardCheck className="h-4 w-4" />, label: "保單審核", badge: reviewCount },
   ];
 
   return (
@@ -219,7 +223,12 @@ function Sidebar({
               {item.icon}
             </span>
             {item.label}
-            {activeView === item.id && (
+            {item.badge !== undefined && item.badge > 0 && (
+              <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400 text-white leading-none">
+                {item.badge}
+              </span>
+            )}
+            {activeView === item.id && !item.badge && (
               <ChevronRight className="h-3 w-3 ml-auto text-[#C8956C]" />
             )}
           </button>
@@ -743,7 +752,8 @@ function CatalogView({ onViewAnalysis }: { onViewAnalysis: (data: Record<string,
 
 export default function Home() {
   const router = useRouter();
-  const [activeView, setActiveView] = useState<"analyze" | "catalog" | "history">("analyze");
+  const [activeView, setActiveView] = useState<"analyze" | "catalog" | "history" | "review">("analyze");
+  const reviewCount = useReviewCount();
 
   // Analysis state
   const formatAmountOnBlur = (val: string) => {
@@ -921,12 +931,13 @@ export default function Home() {
       {/* ── Sidebar ── */}
       <Sidebar
         activeView={activeView}
-        onNavigate={(v) => setActiveView(v as "analyze" | "history")}
+        onNavigate={(v) => setActiveView(v as "analyze" | "catalog" | "history" | "review")}
         onLogout={handleLogout}
+        reviewCount={reviewCount}
       />
 
       {/* ── Main Content ── */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto flex flex-col">
 
         {/* Page Header */}
         <div className="bg-white border-b border-[#EDE0CE] px-8 py-4 shadow-sm">
@@ -950,11 +961,24 @@ export default function Home() {
                   <p className="text-xs text-stone-400 mt-0.5">過去的分析結果，點擊可重新查看</p>
                 </>
               ),
+              review: (
+                <>
+                  <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>保單審核</h2>
+                  <p className="text-xs text-stone-400 mt-0.5">逐一審核 AI 分析結果，確認後歸檔</p>
+                </>
+              ),
             }[activeView]}
           </div>
         </div>
 
-        <div className="w-full px-8 py-6 space-y-5">
+        {/* ── 保單審核 View（全高，不套 padding）── */}
+        {activeView === "review" && (
+          <div className="flex-1 overflow-hidden">
+            <ReviewView />
+          </div>
+        )}
+
+        <div className={`w-full px-8 py-6 space-y-5 ${activeView === "review" ? "hidden" : ""}`}>
 
           {/* ── 保單分析 View ── */}
           {activeView === "analyze" && (
