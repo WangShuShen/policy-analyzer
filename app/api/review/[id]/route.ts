@@ -32,14 +32,15 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const { sheetUrl } = await req.json();
+    const { sheetUrl, pdfDriveId } = await req.json();
 
     if (!sheetUrl) {
       return NextResponse.json({ error: "缺少 sheetUrl" }, { status: 400 });
     }
 
     const scriptPath = path.join(DB_DIR, "push_to_sheets.py");
-    const cmd = `python3 "${scriptPath}" --archive "${sheetUrl}" --force`;
+    let cmd = `python3 "${scriptPath}" --archive "${sheetUrl}" --force`;
+    if (pdfDriveId) cmd += ` --pdf-id "${pdfDriveId}"`;
 
     const { stdout, stderr } = await execAsync(cmd, {
       cwd: DB_DIR,

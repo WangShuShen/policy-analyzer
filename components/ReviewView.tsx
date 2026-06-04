@@ -259,7 +259,7 @@ function ReviewDetail({
   const [archiveResult, setArchiveResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
-    fetch(`/api/review/${product.planCode}`)
+    fetch(`/api/review/${product.id}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) setAnalysisError(d.error);
@@ -267,20 +267,21 @@ function ReviewDetail({
       })
       .catch(e => setAnalysisError(String(e)))
       .finally(() => setAnalysisLoading(false));
-  }, [product.planCode]);
+  }, [product.id]);
 
   const handleArchive = async () => {
     if (!confirm(`確認歸檔「${product.product_name}」？\n歸檔後將從待審核區移至正式資料庫。`)) return;
     setArchiving(true);
     setArchiveResult(null);
     try {
-      const res = await fetch(`/api/review/${product.planCode}`, {
+      const res = await fetch(`/api/review/${product.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sheetUrl: product.sheetUrl }),
+        body: JSON.stringify({ sheetUrl: product.sheetUrl, pdfDriveId: product.pdfDriveId }),
       });
       const data = await res.json();
       if (data.success) {
+        window.dispatchEvent(new Event("review-archived"));
         setArchiveResult({ ok: true, msg: "歸檔成功 ✓" });
         setTimeout(onArchived, 1200);
       } else {
@@ -462,10 +463,15 @@ export default function ReviewView() {
 export function useReviewCount() {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    fetch("/api/review")
-      .then(r => r.json())
-      .then(d => setCount(d.count ?? 0))
-      .catch(() => {});
+    const fetchCount = () => {
+      fetch("/api/review")
+        .then(r => r.json())
+        .then(d => setCount(d.count ?? 0))
+        .catch(() => {});
+    };
+    fetchCount();
+    window.addEventListener("review-archived", fetchCount);
+    return () => window.removeEventListener("review-archived", fetchCount);
   }, []);
   return count;
 }

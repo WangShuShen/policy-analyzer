@@ -15,9 +15,9 @@ export async function GET() {
 
     const products = Object.entries(registry)
       .filter(([, v]) => v.status === "uploaded")
-      .map(([planCode, v]) => ({
-        id: planCode,          // planCode acts as unique key
-        planCode,
+      .map(([uuid, v]) => ({
+        id: uuid,
+        planCode: v.planCode ?? uuid,
         company: v.company ?? "",
         product_name: v.productName ?? "",
         sheetUrl: v.sheetUrl ?? "",
