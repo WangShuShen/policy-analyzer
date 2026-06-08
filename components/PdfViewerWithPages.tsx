@@ -11,6 +11,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
+const PDF_OPTIONS = {
+  cMapUrl: "/cmaps/",
+  cMapPacked: true,
+};
+
 interface Props {
   pdfUrl: string;
   currentPage?: number;
@@ -73,6 +78,7 @@ export default function PdfViewerWithPages({ pdfUrl, currentPage = 1, onTotalPag
       <div className="flex-1 overflow-auto flex justify-center py-4">
         <Document
           file={pdfUrl}
+          options={PDF_OPTIONS}
           onLoadSuccess={({ numPages: n }) => {
             setNumPages(n);
             onTotalPages?.(n);
