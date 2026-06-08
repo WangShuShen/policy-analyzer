@@ -237,11 +237,50 @@ function ItemsEditor({
         </div>
       )}
 
+      {/* Calculated amounts summary table */}
+      {unitAmount > 0 && data.items && data.items.some(item => computedAmount(item.formula, unitAmount)) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-amber-100 border-b border-amber-200 flex items-baseline gap-2">
+            <span className="text-sm font-semibold text-amber-800">💰 試算結果</span>
+            <span className="text-xs text-amber-600">每單位保額 NT${unitAmount.toLocaleString()}</span>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-amber-100 bg-amber-50/50">
+                <th className="text-left px-3 py-2 text-amber-700 font-medium">給付項目</th>
+                <th className="text-left px-3 py-2 text-amber-700 font-medium">公式</th>
+                <th className="text-right px-3 py-2 text-amber-700 font-medium">計算金額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((item, idx) => {
+                const amount = computedAmount(item.formula, unitAmount);
+                if (!amount) return null;
+                return (
+                  <tr key={idx} className="border-b border-amber-50 last:border-0 hover:bg-amber-100/40">
+                    <td className="px-3 py-2 text-stone-700 font-medium">{item.name}</td>
+                    <td className="px-3 py-2 text-stone-500 font-mono">
+                      {item.formula}{item.unit ? <span className="text-stone-400">/{item.unit}</span> : null}
+                    </td>
+                    <td className="px-3 py-2 text-right font-bold text-amber-800">{amount}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Annual limit */}
       {data.annualLimit?.formula && (
         <div className="bg-white border border-stone-200 rounded-xl px-4 py-3">
           <p className="text-xs font-semibold text-stone-500 mb-1">📊 年度給付上限</p>
           <p className="text-xs text-stone-700">{data.annualLimit.formula}</p>
+          {unitAmount > 0 && computedAmount(data.annualLimit.formula, unitAmount) && (
+            <p className="text-xs font-bold text-amber-700 mt-0.5">
+              = {computedAmount(data.annualLimit.formula, unitAmount)}
+            </p>
+          )}
           {data.annualLimit.notes && (
             <p className="text-xs text-stone-400 mt-1">{data.annualLimit.notes}</p>
           )}
