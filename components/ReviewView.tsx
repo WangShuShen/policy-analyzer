@@ -1,14 +1,25 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import {
   ArrowLeft, CheckCircle, Loader2, ClipboardCheck,
-  FileText, ExternalLink, Archive,
+  ExternalLink, Archive,
 } from "lucide-react";
+
+const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full gap-2 text-stone-400">
+      <Loader2 className="h-5 w-5 animate-spin" />
+      <span className="text-sm">載入 PDF 閱讀器…</span>
+    </div>
+  ),
+});
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-interface ReviewProduct {
+export interface ReviewProduct {
   id: string;          // planCode
   planCode: string;
   company: string;
@@ -26,6 +37,7 @@ interface AnalysisItem {
   unit?: string;
   restriction?: string;
   notes?: string;
+  pageRef?: number | null;
 }
 
 interface AnalysisData {
@@ -78,15 +90,33 @@ function EditableCell({
   );
 }
 
+// ── Computed amount from formula ───────────────────────────────────────
+
+function computedAmount(formula: string, unitAmount: number): string | null {
+  if (!unitAmount || unitAmount <= 0) return null;
+  // Match patterns like 單位×1, 單位×0.5, 日額×3, etc.
+  const m = formula.match(/[單日](?:位|額)[×x*](\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const multiplier = parseFloat(m[1]);
+  const result = Math.round(unitAmount * multiplier);
+  return `NT$${result.toLocaleString()}`;
+}
+
 // ── Items Editor ───────────────────────────────────────────────────────
 
 function ItemsEditor({
   data,
   onDataChange,
+  onItemClick,
+  activePage,
 }: {
   data: AnalysisData;
   onDataChange: (updated: AnalysisData) => void;
+  onItemClick?: (pageRef: number) => void;
+  activePage?: number;
 }) {
+  const [unitAmount, setUnitAmount] = useState(0);
+
   const updateItem = (idx: number, field: keyof AnalysisItem, val: string) => {
     const items = [...(data.items ?? [])];
     items[idx] = { ...items[idx], [field]: val };
@@ -112,6 +142,25 @@ function ItemsEditor({
             <span className="text-stone-700 font-medium">{val as string}</span>
           </div>
         ))}
+        {/* Unit amount calculator */}
+        <div className="flex gap-3 items-center pt-1 border-t border-amber-100 mt-1">
+          <span className="text-stone-400 w-20 shrink-0 text-sm">每單位保額</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-stone-400">NT$</span>
+            <input
+              type="number"
+              min={0}
+              step={1000}
+              placeholder="輸入查看試算"
+              value={unitAmount || ""}
+              onChange={e => setUnitAmount(Number(e.target.value))}
+              className="w-36 text-sm border border-amber-200 rounded-lg px-2.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 text-stone-700"
+            />
+            {unitAmount > 0 && (
+              <span className="text-xs text-amber-600 font-medium">→ 試算中</span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Items table */}
@@ -130,28 +179,58 @@ function ItemsEditor({
                   <th className="text-left px-3 py-2 text-stone-400 font-medium w-16">單位</th>
                   <th className="text-left px-3 py-2 text-stone-400 font-medium">限制條件</th>
                   <th className="text-left px-3 py-2 text-stone-400 font-medium">備註</th>
+                  <th className="text-left px-3 py-2 text-stone-400 font-medium w-12">頁碼</th>
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item, idx) => (
-                  <tr key={idx} className="border-b border-stone-50 last:border-0 hover:bg-stone-50/50 transition-colors">
-                    <td className="px-3 py-2 align-top">
-                      <EditableCell value={item.name} onChange={v => updateItem(idx, "name", v)} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <EditableCell value={item.formula} onChange={v => updateItem(idx, "formula", v)} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <EditableCell value={item.unit ?? ""} onChange={v => updateItem(idx, "unit", v)} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <EditableCell value={item.restriction ?? ""} onChange={v => updateItem(idx, "restriction", v)} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <EditableCell value={item.notes ?? ""} onChange={v => updateItem(idx, "notes", v)} />
-                    </td>
-                  </tr>
-                ))}
+                {data.items.map((item, idx) => {
+                  const isActive = item.pageRef != null && item.pageRef === activePage;
+                  return (
+                    <tr
+                      key={idx}
+                      onClick={() => item.pageRef != null && onItemClick?.(item.pageRef)}
+                      className={`border-b border-stone-50 last:border-0 transition-colors ${
+                        item.pageRef != null
+                          ? "cursor-pointer hover:bg-amber-50/60"
+                          : ""
+                      } ${isActive ? "bg-amber-50 border-l-2 border-l-amber-400" : ""}`}
+                    >
+                      <td className="px-3 py-2 align-top">
+                        <EditableCell value={item.name} onChange={v => updateItem(idx, "name", v)} />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <EditableCell value={item.formula} onChange={v => updateItem(idx, "formula", v)} />
+                        {unitAmount > 0 && computedAmount(item.formula, unitAmount) && (
+                          <span className="block text-[10px] text-amber-600 font-medium mt-0.5 font-mono">
+                            = {computedAmount(item.formula, unitAmount)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <EditableCell value={item.unit ?? ""} onChange={v => updateItem(idx, "unit", v)} />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <EditableCell value={item.restriction ?? ""} onChange={v => updateItem(idx, "restriction", v)} />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <EditableCell value={item.notes ?? ""} onChange={v => updateItem(idx, "notes", v)} />
+                      </td>
+                      <td className="px-3 py-2 align-top text-center">
+                        {item.pageRef != null ? (
+                          <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded font-medium ${
+                            isActive
+                              ? "bg-amber-400 text-white"
+                              : "bg-stone-100 text-stone-500"
+                          }`}>
+                            P.{item.pageRef}
+                          </span>
+                        ) : (
+                          <span className="text-stone-200 text-[10px]">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -208,42 +287,10 @@ function ItemsEditor({
   );
 }
 
-// ── PDF panel ─────────────────────────────────────────────────────────
-
-function PdfPanel({ pdfDriveId, planCode }: { pdfDriveId: string; planCode: string }) {
-  if (!pdfDriveId) return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 text-stone-400 px-8">
-      <FileText className="h-12 w-12 text-stone-300" />
-      <div className="text-center">
-        <p className="text-sm font-medium text-stone-500">無 PDF 檔案 ID</p>
-        <p className="text-xs text-stone-400 mt-1">可至保發中心直接查閱</p>
-      </div>
-      {planCode && planCode !== "未知" && (
-        <a
-          href={`https://insprod.tii.org.tw/DetailList.aspx?productId=${planCode}`}
-          target="_blank" rel="noreferrer"
-          className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg bg-stone-100 text-stone-500 hover:bg-stone-200 transition-colors"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-          前往保發中心
-        </a>
-      )}
-    </div>
-  );
-
-  return (
-    <iframe
-      src={`https://drive.google.com/file/d/${pdfDriveId}/preview`}
-      className="w-full h-full border-0"
-      title="保單條款 PDF"
-      allow="autoplay"
-    />
-  );
-}
 
 // ── ReviewDetail ───────────────────────────────────────────────────────
 
-function ReviewDetail({
+export function ReviewDetail({
   product,
   onBack,
   onArchived,
@@ -257,6 +304,9 @@ function ReviewDetail({
   const [analysisError, setAnalysisError] = useState("");
   const [archiving, setArchiving] = useState(false);
   const [archiveResult, setArchiveResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [activePage, setActivePage] = useState(1);
+
+  const pdfUrl = `/api/pdf-proxy/local?planCode=${encodeURIComponent(product.planCode)}&driveId=${encodeURIComponent(product.pdfDriveId)}`;
 
   useEffect(() => {
     fetch(`/api/review/${product.id}`)
@@ -295,7 +345,7 @@ function ReviewDetail({
   };
 
   return (
-    <div className="flex flex-col" style={{ height: "calc(100vh - 121px)" }}>
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Top bar */}
       <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-[#EDE0CE] shrink-0">
         <button
@@ -346,8 +396,11 @@ function ReviewDetail({
       {/* Split body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left: PDF */}
-        <div className="w-1/2 border-r border-stone-200 bg-stone-100 overflow-hidden">
-          <PdfPanel pdfDriveId={product.pdfDriveId} planCode={product.planCode} />
+        <div className="w-1/2 border-r border-stone-200 overflow-hidden">
+          <PdfViewerWithPages
+            pdfUrl={pdfUrl}
+            currentPage={activePage}
+          />
         </div>
 
         {/* Right: Analysis */}
@@ -364,6 +417,8 @@ function ReviewDetail({
               <ItemsEditor
                 data={analysisData}
                 onDataChange={setAnalysisData}
+                onItemClick={setActivePage}
+                activePage={activePage}
               />
             ) : null}
           </div>
@@ -375,7 +430,7 @@ function ReviewDetail({
 
 // ── ReviewQueue ────────────────────────────────────────────────────────
 
-function ReviewQueue({
+export function ReviewQueue({
   products,
   onSelect,
 }: {
