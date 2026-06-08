@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft, CheckCircle, Loader2, ClipboardCheck,
-  ExternalLink, Archive,
+  ExternalLink, Archive, Save,
 } from "lucide-react";
 
 const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
@@ -341,6 +341,9 @@ export function ReviewDetail({
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(true);
   const [analysisError, setAnalysisError] = useState("");
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveResult, setArchiveResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [activePage, setActivePage] = useState(1);
@@ -357,6 +360,31 @@ export function ReviewDetail({
       .catch(e => setAnalysisError(String(e)))
       .finally(() => setAnalysisLoading(false));
   }, [product.id]);
+
+  const handleSave = async () => {
+    if (!analysisData) return;
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const res = await fetch(`/api/review/${product.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: analysisData, sheetUrl: product.sheetUrl }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setIsDirty(false);
+        setSaveResult({ ok: true, msg: "已儲存 ✓" });
+        setTimeout(() => setSaveResult(null), 2000);
+      } else {
+        setSaveResult({ ok: false, msg: result.error ?? "儲存失敗" });
+      }
+    } catch (e) {
+      setSaveResult({ ok: false, msg: String(e) });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleArchive = async () => {
     if (!confirm(`確認歸檔「${product.product_name}」？\n歸檔後將從待審核區移至正式資料庫。`)) return;
@@ -411,6 +439,22 @@ export function ReviewDetail({
               Google Sheet
             </a>
           )}
+          {saveResult ? (
+            <span className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg ${saveResult.ok ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+              {saveResult.ok ? <CheckCircle className="h-4 w-4" /> : null}
+              {saveResult.msg}
+            </span>
+          ) : isDirty && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg, #60a5fa, #2563eb)" }}
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              {saving ? "儲存中…" : "儲存變更"}
+            </button>
+          )}
           {archiveResult ? (
             <span className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg ${archiveResult.ok ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
               {archiveResult.ok ? <CheckCircle className="h-4 w-4" /> : null}
@@ -455,7 +499,7 @@ export function ReviewDetail({
             ) : analysisData ? (
               <ItemsEditor
                 data={analysisData}
-                onDataChange={setAnalysisData}
+                onDataChange={d => { setAnalysisData(d); setIsDirty(true); }}
                 onItemClick={setActivePage}
                 activePage={activePage}
               />

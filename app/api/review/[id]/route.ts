@@ -25,6 +25,51 @@ export async function GET(
   }
 }
 
+// PUT /api/review/[id] → save edits: update analyzed JSON + sync back to Google Sheet
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const { data, sheetUrl } = await req.json();
+
+    const analysisPath = path.join(DB_DIR, "analyzed", `${id}.json`);
+    if (!fs.existsSync(analysisPath)) {
+      return NextResponse.json({ error: "分析檔案不存在" }, { status: 404 });
+    }
+
+    // 合併更新（保留 _rawResponse 等欄位）
+    const existing = JSON.parse(fs.readFileSync(analysisPath, "utf-8"));
+    const updated = { ...existing, ...data };
+    fs.writeFileSync(analysisPath, JSON.stringify(updated, null, 2), "utf-8");
+
+    // 同步回 Google Sheet
+    if (sheetUrl) {
+      const scriptPath = path.join(DB_DIR, "push_to_sheets.py");
+      const tmpPath = path.join(DB_DIR, `tmp_update_${id}.json`);
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+      try {
+        const { stdout } = await execAsync(
+          `python3 "${scriptPath}" --update-data "${sheetUrl}" "${tmpPath}"`,
+          { cwd: DB_DIR, timeout: 30000 }
+        );
+        return NextResponse.json({ success: true, output: stdout });
+      } finally {
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    const error = err as { stdout?: string; stderr?: string; message?: string };
+    return NextResponse.json({
+      error: error.message ?? String(err),
+      stderr: error.stderr,
+    }, { status: 500 });
+  }
+}
+
 // PATCH /api/review/[id] → archive: run push_to_sheets.py --archive {sheetUrl} --force
 export async function PATCH(
   req: NextRequest,
