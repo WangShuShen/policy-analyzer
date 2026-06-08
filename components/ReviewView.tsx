@@ -20,7 +20,7 @@ const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface ReviewProduct {
-  id: string;          // planCode
+  id: string;          // pdfUUID（uuid_registry.json 的 key）
   planCode: string;
   company: string;
   product_name: string;
