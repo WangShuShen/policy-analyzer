@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-
-async function getExpectedToken(): Promise<string> {
-  const secret = (process.env.SITE_PASSWORD ?? "") + ":" + (process.env.AUTH_SECRET ?? "default-secret");
-  const encoded = new TextEncoder().encode(secret);
-  const hash = await crypto.subtle.digest("SHA-256", encoded);
-  return btoa(String.fromCharCode(...new Uint8Array(hash)));
-}
+import { verifyJWT } from "@/lib/jwt";
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 放行靜態資源、Next.js 內部路徑、登入相關
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
@@ -22,11 +15,21 @@ export async function proxy(req: NextRequest) {
   }
 
   const token = req.cookies.get("auth_token")?.value;
-  const expected = await getExpectedToken();
 
-  if (token !== expected) {
-    const loginUrl = new URL("/login", req.url);
-    return NextResponse.redirect(loginUrl);
+  if (!token) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  const payload = await verifyJWT(token);
+
+  if (!payload) {
+    const res = NextResponse.redirect(new URL("/login", req.url));
+    res.cookies.set("auth_token", "", { maxAge: 0, path: "/" });
+    return res;
+  }
+
+  if (pathname.startsWith("/admin") && !payload.isAdmin) {
+    return NextResponse.redirect(new URL("/", req.url));
   }
 
   return NextResponse.next();

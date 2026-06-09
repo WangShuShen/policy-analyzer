@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
+import db, { ensureInit } from "@/lib/db";
+import { verifyJWT } from "@/lib/jwt";
 
 const execAsync = promisify(exec);
 const DB_DIR = process.env.DB_DIR ?? "";
@@ -101,6 +103,18 @@ export async function PATCH(
         registry[id].archivedAt = new Date().toISOString().slice(0, 10);
         fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), "utf-8");
       }
+    }
+
+    // Mark assignment as completed for the current advisor
+    const token = req.cookies.get("auth_token")?.value;
+    const jwtPayload = token ? await verifyJWT(token) : null;
+    if (jwtPayload) {
+      await ensureInit();
+      const today = new Date().toISOString().slice(0, 10);
+      await db.execute({
+        sql: "UPDATE policy_assignments SET status = 'completed', completed_at = datetime('now') WHERE policy_uuid = ? AND advisor_id = ? AND assigned_date = ?",
+        args: [id, jwtPayload.advisorId, today],
+      });
     }
 
     return NextResponse.json({

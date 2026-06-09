@@ -1,0 +1,41 @@
+name: Daily Policy Assignment & Reminder
+
+on:
+  schedule:
+    # 早上 8:00 台灣時間（UTC+8） = UTC 00:00
+    - cron: "0 0 * * *"
+    # 晚上 9:00 台灣時間（UTC+8） = UTC 13:00
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "要執行的工作"
+        required: true
+        default: "assign"
+        type: choice
+        options:
+          - assign
+          - remind
+
+jobs:
+  assign-daily:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'assign' || github.event.schedule == '0 0 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 每日分配保單
+        run: |
+          curl -X POST "${{ secrets.APP_URL }}/api/cron/assign-daily" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --fail-with-body
+
+  notify-reminder:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'remind' || github.event.schedule == '0 13 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 晚間提醒通知
+        run: |
+          curl -X POST "${{ secrets.APP_URL }}/api/cron/notify-reminder" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --fail-with-body
