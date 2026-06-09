@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Suspense } from "react";
@@ -19,6 +19,7 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
 
   const errorKey = searchParams.get("error") ?? "";
+  const hint = searchParams.get("hint") ?? "";
   const errorMsg = ERROR_MESSAGES[errorKey] ?? "";
 
   const handleGoogleLogin = () => {
@@ -62,9 +63,14 @@ function LoginContent() {
 
           {/* Error */}
           {errorMsg && (
-            <p className="text-red-500 text-xs bg-red-50 border border-red-100 px-4 py-2.5 rounded-xl text-center">
-              {errorMsg}
-            </p>
+            <div className="bg-red-50 border border-red-100 px-4 py-2.5 rounded-xl text-center space-y-1">
+              <p className="text-red-500 text-xs">{errorMsg}</p>
+              {hint && (
+                <p className="text-red-400 text-[11px]">
+                  Google 帳號：<span className="font-mono">{hint}</span>
+                </p>
+              )}
+            </div>
           )}
 
           {/* Google Login */}

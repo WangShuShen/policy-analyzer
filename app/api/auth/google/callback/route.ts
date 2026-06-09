@@ -8,8 +8,11 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state");
   const oauthError = searchParams.get("error");
 
-  const loginUrl = (error: string) =>
-    new URL(`/login?error=${error}`, req.url);
+  const loginUrl = (error: string, hint?: string) => {
+    const u = new URL(`/login?error=${error}`, req.url);
+    if (hint) u.searchParams.set("hint", hint);
+    return u;
+  };
 
   if (oauthError || !code) {
     return NextResponse.redirect(loginUrl("oauth_failed"));
@@ -54,13 +57,15 @@ export async function GET(req: NextRequest) {
   }
 
   const userInfo = await userInfoRes.json();
-  const email = userInfo.email as string;
+  // Normalize to lowercase to avoid case mismatch
+  const email = (userInfo.email as string).toLowerCase().trim();
 
   // Check if email is in the advisors allowlist
   const advisor = await getAdvisorByEmail(email);
 
   if (!advisor) {
-    return NextResponse.redirect(loginUrl("not_authorized"));
+    // Pass the actual email as a hint so admin knows what to add
+    return NextResponse.redirect(loginUrl("not_authorized", email));
   }
 
   // Issue JWT
@@ -81,7 +86,6 @@ export async function GET(req: NextRequest) {
     path: "/",
   });
 
-  // Clear the CSRF state cookie
   res.cookies.set("oauth_state", "", { maxAge: 0, path: "/" });
 
   return res;
