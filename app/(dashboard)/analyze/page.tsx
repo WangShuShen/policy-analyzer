@@ -352,7 +352,7 @@ export default function AnalyzePage() {
   };
 
   const handleAnalyzeAll = async () => {
-    const targets = policies.filter(p => p.analyzeStatus === "idle" && p.amountValue);
+    const targets = policies.filter(p => (p.analyzeStatus === "idle" || p.analyzeStatus === "error") && p.amountValue);
     if (targets.length === 0) return;
 
     // Analyze up to 3 in parallel, then continue
@@ -398,7 +398,7 @@ export default function AnalyzePage() {
 
   const allDone = policies.length > 0 && policies.every(p => p.analyzeStatus === "done" || p.analyzeStatus === "error");
   const anyResult = policies.some(p => p.result);
-  const canAnalyzeAll = policies.some(p => p.analyzeStatus === "idle" && p.amountValue);
+  const canAnalyzeAll = policies.some(p => (p.analyzeStatus === "idle" || p.analyzeStatus === "error") && p.amountValue);
   const isMulti = policies.length > 1;
 
   const tabId = (p: PolicyEntry) => `policy-${p.id}`;
@@ -485,10 +485,16 @@ export default function AnalyzePage() {
               >
                 {policies.some(p => p.analyzeStatus === "analyzing") ? (
                   <><Loader2 className="h-4 w-4 animate-spin" />AI 解析中，請稍候…</>
-                ) : isMulti ? (
-                  `🔍 分析全部 ${policies.filter(p => p.analyzeStatus === "idle" && p.amountValue).length} 張保單`
-                ) : (
-                  "🔍 開始分析，填入全險圖"
+                ) : isMulti ? (() => {
+                  const idleCount = policies.filter(p => p.analyzeStatus === "idle" && p.amountValue).length;
+                  const errCount  = policies.filter(p => p.analyzeStatus === "error" && p.amountValue).length;
+                  if (errCount > 0 && idleCount === 0) return `🔄 重試失敗 ${errCount} 張保單`;
+                  if (errCount > 0) return `🔍 分析 ${idleCount} 張 + 重試 ${errCount} 張`;
+                  return `🔍 分析全部 ${idleCount} 張保單`;
+                })() : (
+                  policies.some(p => p.analyzeStatus === "error")
+                    ? "🔄 重新分析"
+                    : "🔍 開始分析，填入全險圖"
                 )}
               </button>
             )}
@@ -664,6 +670,7 @@ function PolicyRow({
   const done = entry.analyzeStatus === "done";
 
   return (
+    <div>
     <div className={`flex items-center gap-2.5 px-3 py-2.5 border rounded-xl text-sm transition-all ${
       done ? "bg-emerald-50 border-emerald-100" :
       entry.analyzeStatus === "error" ? "bg-red-50 border-red-100" :
@@ -720,7 +727,7 @@ function PolicyRow({
 
       {/* Status */}
       <div className="w-20 shrink-0 text-right">
-        {entry.prefillStatus === "loading" && (
+        {entry.prefillStatus === "loading" && entry.analyzeStatus === "idle" && (
           <span className="text-[10px] text-[#C8956C] flex items-center gap-1 justify-end">
             <Loader2 className="h-3 w-3 animate-spin" />偵測中
           </span>
@@ -736,7 +743,7 @@ function PolicyRow({
           </span>
         )}
         {entry.analyzeStatus === "error" && (
-          <span className="text-[10px] text-red-500">✗ 失敗</span>
+          <span className="text-[10px] text-red-500 font-medium">✗ 失敗（可重試）</span>
         )}
       </div>
 
@@ -748,6 +755,13 @@ function PolicyRow({
       >
         <X className="h-3.5 w-3.5" />
       </button>
+    </div>
+    {/* Error message */}
+    {entry.analyzeStatus === "error" && entry.errorMsg && (
+      <div className="mt-1 px-3 py-1.5 bg-red-50 border border-red-100 rounded-lg">
+        <p className="text-[11px] text-red-500 font-mono break-all">{entry.errorMsg}</p>
+      </div>
+    )}
     </div>
   );
 }
