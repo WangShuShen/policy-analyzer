@@ -8,6 +8,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InsuranceChart from "@/components/InsuranceChart";
+import InsuranceFormChart from "@/components/InsuranceFormChart";
+import { aggregatePolicies } from "@/lib/aggregateInsurance";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -539,6 +541,12 @@ export default function AnalyzePage() {
                   >
                     📊 保障總覽
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="formchart"
+                    className="rounded-lg data-[state=active]:bg-[#FBF0E3] data-[state=active]:text-[#8B5E3C] text-stone-400 text-sm"
+                  >
+                    📋 全險圖（合計）
+                  </TabsTrigger>
                   {policies.filter(p => p.result).map(p => {
                     const d = p.result as Record<string, unknown> | null;
                     const label = (d?.company as string) || p.file.name.replace(/\.pdf$/i, "").slice(0, 10);
@@ -558,6 +566,14 @@ export default function AnalyzePage() {
                   <AggregatedSummary policies={policies} />
                 </TabsContent>
 
+                <TabsContent value="formchart">
+                  <InsuranceFormChart
+                    data={aggregatePolicies(
+                      policies.filter(p => p.result).map(p => p.result as Record<string, unknown>)
+                    )}
+                  />
+                </TabsContent>
+
                 {policies.filter(p => p.result).map(p => (
                   <TabsContent key={p.id} value={tabId(p)}>
                     <InsuranceChart data={p.result!} />
@@ -574,6 +590,9 @@ export default function AnalyzePage() {
                     <TabsList className="bg-white border border-[#EDE0CE] shadow-sm rounded-xl">
                       <TabsTrigger value="chart" className="rounded-lg data-[state=active]:bg-[#FBF0E3] data-[state=active]:text-[#8B5E3C] text-stone-400 text-sm">
                         📊 全險圖
+                      </TabsTrigger>
+                      <TabsTrigger value="formchart" className="rounded-lg data-[state=active]:bg-[#FBF0E3] data-[state=active]:text-[#8B5E3C] text-stone-400 text-sm">
+                        📋 表格式
                       </TabsTrigger>
                       <TabsTrigger value="raw" className="rounded-lg data-[state=active]:bg-[#FBF0E3] data-[state=active]:text-[#8B5E3C] text-stone-400 text-sm">
                         🔍 原始資料
@@ -639,6 +658,9 @@ export default function AnalyzePage() {
 
                   <TabsContent value="chart">
                     <InsuranceChart data={policies[0]?.result ?? {}} />
+                  </TabsContent>
+                  <TabsContent value="formchart">
+                    <InsuranceFormChart data={policies[0]?.result ?? {}} />
                   </TabsContent>
                   <TabsContent value="raw">
                     <Card className="bg-white border-[#EDE0CE] shadow-sm rounded-2xl">
