@@ -9,7 +9,6 @@ export async function POST(req: NextRequest) {
     const rawFiles = formData.getAll("files") as File[];
     if (rawFiles.length === 0) return NextResponse.json({});
 
-    // 只掃前3頁/檔就夠抓基本資料
     const filesToScan = rawFiles.slice(0, 3);
     const contentBlocks: Anthropic.MessageParam["content"] = [];
 
@@ -34,31 +33,43 @@ export async function POST(req: NextRequest) {
 
     contentBlocks.push({
       type: "text",
-      text: `快速掃描此保單條款，只輸出以下 JSON，找不到的欄位填 null：
+      text: `快速掃描此保單條款，找出「投保時需要填寫的金額方式」，只輸出下方 JSON，找不到填 null：
+
 {
-  "planCode": "計畫代號或商品代號（如 QDHL2）",
-  "year": "條款年份，轉換為民國年數字字串（西元年-1911，如西元2019→填 '108'）",
-  "version": "版次字串（如 'v1'、'第二版'）",
-  "planType": "型別（甲型/乙型/丙型，找到就填第一個）",
-  "planOptions": [
-    {"label": "計劃一（1,000元/日）", "value": "1000"},
-    {"label": "計劃二（2,000元/日）", "value": "2000"}
-  ]
+  "planCode": "計畫代號（如 QDHL2）或 null",
+  "year": "條款年份（民國年字串，西元年-1911，如西元2019→'108'）或 null",
+  "planType": "型別（甲型/乙型/丙型，有就填）或 null",
+  "amountInputType": "計劃別" 或 "單位數" 或 "保額",
+  "defaultAmountValue": "建議預設值字串（見下方規則）或 null",
+  "planOptions": [{"label": "說明", "value": "數值"}] 或 null
 }
 
-planOptions 規則：
-- 只抓「投保計劃表」或「保額/費率對照表」中的計劃選項，不要抓其他數字
-- label 格式：「計劃X（保額說明）」或「X單位（N元）」
-- value 填該計劃的基本保額或日額數字
-- 最多6個選項
-- 找不到就填 null
+【amountInputType 判斷 — 按優先順序】
 
-只輸出 JSON，不要加任何說明文字。`,
+① 「計劃別」— 條款有「投保計劃表」「費率計劃表」，列出計劃一/計劃二/方案A 等明確選項
+  → defaultAmountValue: null
+  → planOptions: 列出各計劃（最多8項），label「計劃X（日額N元）」，value 填該計劃的日額或保額數字字串
+
+② 「單位數」— 條款以「每單位保額 N 元/日」「按投保單位計算」「基本保險金額（每單位 N 元）」表達
+  → defaultAmountValue: "1"（從1單位開始）
+  → planOptions: null
+
+③ 「保額」— 壽險、意外險、重大疾病、重大傷病卡、失能、長照等，投保填總保額金額
+  → defaultAmountValue: 從費率表找「最低投保保額」或「常見投保保額」，
+    - 如果找到具體金額（如 10 萬、50 萬、100 萬）→ 填 "10萬" 或 "50萬" 等
+    - 找不到就填 "100萬"
+  → planOptions: null
+
+【planOptions 格式（只有計劃別才填）】
+- label: "計劃一（日額 1,000 元）" 或 "方案A（保額 100 萬）"
+- value: 只填數字字串，如 "1000"、"2000"、"1000000"
+
+只輸出 JSON，不加任何說明文字。`,
     });
 
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
+      max_tokens: 600,
       messages: [{ role: "user", content: contentBlocks }],
     });
 

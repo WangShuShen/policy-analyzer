@@ -277,10 +277,27 @@ export default function AnalyzePage() {
       if (data.planCode) updates.planCode = data.planCode;
       if (data.year) updates.year = data.year;
       if (data.planType) updates.planType = data.planType;
+
+      // Auto-set amount type and default value
       if (Array.isArray(data.planOptions) && data.planOptions.length > 0) {
-        updates.planOptions = data.planOptions;
+        // 計劃別：has options
         updates.amountType = "計劃別";
+        updates.planOptions = data.planOptions;
+        // Auto-select first option
+        updates.amountValue = data.planOptions[0]?.value ?? "";
+      } else if (data.amountInputType === "單位數") {
+        updates.amountType = "單位數";
+        updates.amountValue = data.defaultAmountValue ?? "1";
+      } else if (data.amountInputType === "計劃別") {
+        // Edge case: API said 計劃別 but no options returned
+        updates.amountType = "計劃別";
+        updates.amountValue = data.defaultAmountValue ?? "";
+      } else {
+        // 保額 (default)
+        updates.amountType = "保額";
+        if (data.defaultAmountValue) updates.amountValue = data.defaultAmountValue;
       }
+
       updateEntry(entry.id, updates);
     } catch {
       updateEntry(entry.id, { prefillStatus: "done" });
