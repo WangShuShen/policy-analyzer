@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Database, ClockIcon, ClipboardCheck,
-  ChevronRight, LogOut, Users,
+  ChevronRight, LogOut, Users, BarChart2,
 } from "lucide-react";
 import { useReviewCount } from "@/components/ReviewView";
 
@@ -107,22 +107,28 @@ function SidebarNav() {
             <p className="text-[10px] font-semibold text-stone-300 uppercase tracking-wider px-3 pt-4 pb-1">
               管理
             </p>
-            <Link
-              href="/admin/advisors"
-              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-2.5 group ${
-                isActive("/admin/advisors")
-                  ? "bg-[#FBF0E3] text-[#8B5E3C] font-semibold"
-                  : "text-stone-500 hover:bg-stone-50 hover:text-stone-700"
-              }`}
-            >
-              <span className={isActive("/admin/advisors") ? "text-[#C8956C]" : "text-stone-400 group-hover:text-stone-500"}>
-                <Users className="h-4 w-4" />
-              </span>
-              顧問管理
-              {isActive("/admin/advisors") && (
-                <ChevronRight className="h-3 w-3 ml-auto text-[#C8956C]" />
-              )}
-            </Link>
+            {[
+              { href: "/admin/advisors", icon: <Users className="h-4 w-4" />, label: "顧問管理" },
+              { href: "/admin/progress", icon: <BarChart2 className="h-4 w-4" />, label: "今日進度" },
+            ].map(item => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-2.5 group ${
+                  isActive(item.href)
+                    ? "bg-[#FBF0E3] text-[#8B5E3C] font-semibold"
+                    : "text-stone-500 hover:bg-stone-50 hover:text-stone-700"
+                }`}
+              >
+                <span className={isActive(item.href) ? "text-[#C8956C]" : "text-stone-400 group-hover:text-stone-500"}>
+                  {item.icon}
+                </span>
+                {item.label}
+                {isActive(item.href) && (
+                  <ChevronRight className="h-3 w-3 ml-auto text-[#C8956C]" />
+                )}
+              </Link>
+            ))}
           </>
         )}
       </nav>

@@ -29,6 +29,7 @@ export interface ReviewProduct {
   filename: string;
   uploadedAt: string;
   category: string | null;
+  assignmentStatus?: string;
 }
 
 interface AnalysisItem {
@@ -94,12 +95,22 @@ function EditableCell({
 
 function computedAmount(formula: string, unitAmount: number): string | null {
   if (!unitAmount || unitAmount <= 0) return null;
-  // Match patterns like 單位×1, 單位×0.5, 日額×3, etc.
-  const m = formula.match(/[單日](?:位|額)[×x*](\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const multiplier = parseFloat(m[1]);
-  const result = Math.round(unitAmount * multiplier);
-  return `NT$${result.toLocaleString()}`;
+  // 日額×N
+  const dailyM = formula.match(/日額\s*[×x*]\s*(\d+(?:\.\d+)?)/);
+  if (dailyM) {
+    return `NT$${Math.round(unitAmount * parseFloat(dailyM[1])).toLocaleString()}`;
+  }
+  // 保額/單位×N% (e.g. 保額 × 75%)
+  const pctM = formula.match(/(?:保額|單位)\s*[×x*]\s*(\d+(?:\.\d+)?)\s*%/);
+  if (pctM) {
+    return `NT$${Math.round(unitAmount * parseFloat(pctM[1]) / 100).toLocaleString()}`;
+  }
+  // 保額/單位×N (e.g. 保額 × 1, 單位×0.5)
+  const unitM = formula.match(/(?:保額|單位)\s*[×x*]\s*(\d+(?:\.\d+)?)/);
+  if (unitM) {
+    return `NT$${Math.round(unitAmount * parseFloat(unitM[1])).toLocaleString()}`;
+  }
+  return null;
 }
 
 // ── Items Editor ───────────────────────────────────────────────────────
@@ -542,7 +553,15 @@ export function ReviewQueue({
             <p className="text-xs text-stone-400 mt-0.5 font-mono">{p.planCode}</p>
           </div>
           <div className="flex items-center gap-3 ml-4 shrink-0">
-            {p.uploadedAt && (
+            {p.assignmentStatus === "completed" ? (
+              <span className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">
+                <CheckCircle className="h-3 w-3" /> 已完成
+              </span>
+            ) : p.assignmentStatus === "pending" ? (
+              <span className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
+                待審核
+              </span>
+            ) : p.uploadedAt && (
               <span className="text-xs text-stone-400">{p.uploadedAt}</span>
             )}
             <span className="text-[#C8956C] text-sm group-hover:translate-x-0.5 transition-transform">→</span>
