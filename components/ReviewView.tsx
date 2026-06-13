@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft, CheckCircle, Loader2, ClipboardCheck,
-  ExternalLink, Archive, Save,
+  ExternalLink, Archive, Save, Plus, Trash2, Sparkles,
 } from "lucide-react";
+import type { FormulaItem, FormulaJson } from "@/lib/db";
 
 const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
   ssr: false,
@@ -54,231 +55,281 @@ interface AnalysisData {
   specialRestrictions?: string[];
 }
 
-// ── Editable cell ──────────────────────────────────────────────────────
+// ── Unified Items + Formula Editor ────────────────────────────────────
 
-function EditableCell({
-  value, onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+const TYPE_LABELS: Record<string, string> = {
+  fixed:         "定額",
+  multiplier:    "倍率",
+  reimbursement: "限額（實支）",
+  range:         "範圍型",
+  lump_sum:      "一次性給付",
+};
 
-  const save = () => {
-    setEditing(false);
-    if (draft !== value) onChange(draft);
+interface UnifiedItem extends AnalysisItem {
+  fType: FormulaItem["type"];
+  fMultiplier?: number;
+  fRateType?: "multiplier" | "percentage";
+  fMinRate?: number;
+  fMaxRate?: number;
+  fLimitDays?: number;
+}
+
+function suggestFType(item: AnalysisItem): Partial<UnifiedItem> {
+  const f = item.formula ?? "";
+  if (f.includes("～") || f.includes("~") || f.includes("至")) {
+    const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
+    return { fType: "range", fRateType: f.includes("%") ? "percentage" : "multiplier", fMinRate: nums[0] ?? 1, fMaxRate: nums[1] ?? nums[0] ?? 1 };
+  }
+  const pct = f.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (pct) return { fType: "multiplier", fMultiplier: parseFloat(pct[1]) / 100 };
+  const mult = f.match(/[×x*]\s*(\d+(?:\.\d+)?)/);
+  const m = mult ? parseFloat(mult[1]) : 1;
+  if (/一次|診斷|確診|身故|全殘/.test(item.name + f)) return { fType: "lump_sum", fMultiplier: m };
+  return { fType: "fixed", fMultiplier: m };
+}
+
+function mergeItems(analysisItems: AnalysisItem[], formulaItems: FormulaItem[]): UnifiedItem[] {
+  return analysisItems.map((a, i) => {
+    const f = formulaItems[i];
+    if (f) {
+      return {
+        ...a,
+        fType: f.type,
+        fMultiplier: f.multiplier,
+        fRateType: f.rate_type,
+        fMinRate: f.min_rate,
+        fMaxRate: f.max_rate,
+        fLimitDays: f.limit?.days,
+      };
+    }
+    return { ...a, ...suggestFType(a) } as UnifiedItem;
+  });
+}
+
+function toFormulaItem(u: UnifiedItem): FormulaItem {
+  return {
+    label: u.name,
+    type: u.fType,
+    multiplier: u.fMultiplier,
+    rate_type: u.fRateType,
+    min_rate: u.fMinRate,
+    max_rate: u.fMaxRate,
+    limit: u.fLimitDays ? { days: u.fLimitDays } : undefined,
   };
-
-  return editing ? (
-    <textarea
-      autoFocus
-      className="w-full text-xs border border-amber-300 rounded px-1.5 py-1 bg-amber-50 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
-      rows={2}
-      value={draft}
-      onChange={e => setDraft(e.target.value)}
-      onBlur={save}
-      onKeyDown={e => { if (e.key === "Escape") setEditing(false); }}
-    />
-  ) : (
-    <span
-      className="block text-xs text-stone-700 cursor-pointer hover:bg-amber-50 rounded px-1 py-0.5 -mx-1 whitespace-pre-wrap transition-colors"
-      onClick={() => { setDraft(value); setEditing(true); }}
-      title="點擊編輯"
-    >
-      {value || <span className="text-stone-300 italic">—</span>}
-    </span>
-  );
 }
 
-// ── Computed amount from formula ───────────────────────────────────────
-
-function computedAmount(formula: string, unitAmount: number): string | null {
-  if (!unitAmount || unitAmount <= 0) return null;
-  // 日額×N
-  const dailyM = formula.match(/日額\s*[×x*]\s*(\d+(?:\.\d+)?)/);
-  if (dailyM) {
-    return `NT$${Math.round(unitAmount * parseFloat(dailyM[1])).toLocaleString()}`;
-  }
-  // 保額/單位×N% (e.g. 保額 × 75%)
-  const pctM = formula.match(/(?:保額|單位)\s*[×x*]\s*(\d+(?:\.\d+)?)\s*%/);
-  if (pctM) {
-    return `NT$${Math.round(unitAmount * parseFloat(pctM[1]) / 100).toLocaleString()}`;
-  }
-  // 保額/單位×N (e.g. 保額 × 1, 單位×0.5)
-  const unitM = formula.match(/(?:保額|單位)\s*[×x*]\s*(\d+(?:\.\d+)?)/);
-  if (unitM) {
-    return `NT$${Math.round(unitAmount * parseFloat(unitM[1])).toLocaleString()}`;
-  }
-  return null;
-}
-
-// ── Items Editor ───────────────────────────────────────────────────────
-
-function ItemsEditor({
+function UnifiedItemsEditor({
   data,
+  items,
+  baseUnit,
+  productId,
+  formulaVerified,
   onDataChange,
+  onItemsChange,
+  onBaseUnitChange,
   onItemClick,
   activePage,
 }: {
   data: AnalysisData;
-  onDataChange: (updated: AnalysisData) => void;
-  onItemClick?: (pageRef: number) => void;
+  items: UnifiedItem[];
+  baseUnit: string;
+  productId: number | null;
+  formulaVerified: boolean;
+  onDataChange: (d: AnalysisData) => void;
+  onItemsChange: (items: UnifiedItem[]) => void;
+  onBaseUnitChange: (u: string) => void;
+  onItemClick?: (page: number) => void;
   activePage?: number;
 }) {
-  const [unitAmount, setUnitAmount] = useState(0);
+  const insuranceTypes = Array.isArray(data.insuranceType) ? data.insuranceType.join("、") : data.insuranceType ?? "";
 
-  const updateItem = (idx: number, field: keyof AnalysisItem, val: string) => {
-    const items = [...(data.items ?? [])];
-    items[idx] = { ...items[idx], [field]: val };
-    onDataChange({ ...data, items });
+  const updateAnalysis = (idx: number, field: keyof AnalysisItem, val: string) => {
+    const next = [...items];
+    next[idx] = { ...next[idx], [field]: val };
+    onItemsChange(next);
+    onDataChange({ ...data, items: next.map(it => ({ name: it.name, formula: it.formula, unit: it.unit, restriction: it.restriction, notes: it.notes, pageRef: it.pageRef })) });
   };
 
-  const insuranceTypes = Array.isArray(data.insuranceType)
-    ? data.insuranceType.join("、")
-    : data.insuranceType ?? "";
+  const updateFormula = (idx: number, patch: Partial<UnifiedItem>) => {
+    const next = [...items];
+    next[idx] = { ...next[idx], ...patch };
+    onItemsChange(next);
+  };
+
+  const addItem = () => {
+    const blank: UnifiedItem = { name: "", formula: "", fType: "fixed", fMultiplier: 1 };
+    onItemsChange([...items, blank]);
+  };
+
+  const removeItem = (idx: number) => {
+    const next = items.filter((_, i) => i !== idx);
+    onItemsChange(next);
+    onDataChange({ ...data, items: next.map(it => ({ name: it.name, formula: it.formula, unit: it.unit, restriction: it.restriction, notes: it.notes, pageRef: it.pageRef })) });
+  };
+
+  const suggestAll = () => {
+    onItemsChange(items.map(it => ({ ...it, ...suggestFType(it) })));
+  };
 
   return (
     <div className="space-y-4">
       {/* Header info */}
       <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-1.5">
-        {[
-          ["保險公司", data.company],
-          ["保單名稱", data.productName],
-          ["險種", insuranceTypes],
-          ["給付基礎", data.baseType],
-        ].filter(([, v]) => v).map(([label, val]) => (
-          <div key={label as string} className="flex gap-3 text-sm">
-            <span className="text-stone-400 w-20 shrink-0">{label as string}</span>
-            <span className="text-stone-700 font-medium">{val as string}</span>
-          </div>
-        ))}
-        {/* Unit amount calculator */}
+        {[["保險公司", data.company], ["保單名稱", data.productName], ["險種", insuranceTypes], ["給付基礎", data.baseType]]
+          .filter(([, v]) => v).map(([label, val]) => (
+            <div key={label as string} className="flex gap-3 text-sm">
+              <span className="text-stone-400 w-20 shrink-0">{label as string}</span>
+              <span className="text-stone-700 font-medium">{val as string}</span>
+            </div>
+          ))}
         <div className="flex gap-3 items-center pt-1 border-t border-amber-100 mt-1">
-          <span className="text-stone-400 w-20 shrink-0 text-sm">每單位保額</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-stone-400">NT$</span>
-            <input
-              type="number"
-              min={0}
-              step={1000}
-              placeholder="輸入查看試算"
-              value={unitAmount || ""}
-              onChange={e => setUnitAmount(Number(e.target.value))}
-              className="w-36 text-sm border border-amber-200 rounded-lg px-2.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 text-stone-700"
-            />
-            {unitAmount > 0 && (
-              <span className="text-xs text-amber-600 font-medium">→ 試算中</span>
-            )}
-          </div>
+          <span className="text-stone-400 w-20 shrink-0 text-xs">保額單位</span>
+          <select
+            value={baseUnit}
+            onChange={e => onBaseUnitChange(e.target.value)}
+            className="text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+          >
+            {["元/日", "萬", "元/月", "元"].map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+          {formulaVerified && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 ml-1">
+              公式已確認
+            </span>
+          )}
+          {productId && (
+            <button onClick={suggestAll} className="ml-auto flex items-center gap-1 text-[11px] text-amber-600 hover:text-amber-800 transition-colors">
+              <Sparkles className="h-3 w-3" />
+              AI 自動建議公式
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Items table */}
-      {data.items && data.items.length > 0 && (
+      {/* Unified items */}
+      {items.length > 0 && (
         <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
-            <span className="text-sm font-semibold text-stone-600">📋 給付項目</span>
-            <span className="text-xs text-stone-400 ml-2">（點擊任一欄位可編輯）</span>
+          <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between">
+            <span className="text-sm font-semibold text-stone-600">📋 給付項目 + 公式</span>
+            <span className="text-xs text-stone-400">點擊文字欄位可編輯</span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-stone-100 bg-stone-50/50">
-                  <th className="text-left px-3 py-2 text-stone-400 font-medium w-32">給付項目</th>
-                  <th className="text-left px-3 py-2 text-stone-400 font-medium">計算公式</th>
-                  <th className="text-left px-3 py-2 text-stone-400 font-medium w-16">單位</th>
-                  <th className="text-left px-3 py-2 text-stone-400 font-medium">限制條件</th>
-                  <th className="text-left px-3 py-2 text-stone-400 font-medium">備註</th>
-                  <th className="text-left px-3 py-2 text-stone-400 font-medium w-12">頁碼</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((item, idx) => {
-                  const isActive = item.pageRef != null && item.pageRef === activePage;
-                  return (
-                    <tr
-                      key={idx}
-                      onClick={() => item.pageRef != null && onItemClick?.(item.pageRef)}
-                      className={`border-b border-stone-50 last:border-0 transition-colors ${
-                        item.pageRef != null
-                          ? "cursor-pointer hover:bg-amber-50/60"
-                          : ""
-                      } ${isActive ? "bg-amber-50 border-l-2 border-l-amber-400" : ""}`}
-                    >
-                      <td className="px-3 py-2 align-top">
-                        <EditableCell value={item.name} onChange={v => updateItem(idx, "name", v)} />
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <EditableCell value={item.formula} onChange={v => updateItem(idx, "formula", v)} />
-                        {unitAmount > 0 && computedAmount(item.formula, unitAmount) && (
-                          <span className="block text-[10px] text-amber-600 font-medium mt-0.5 font-mono">
-                            = {computedAmount(item.formula, unitAmount)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <EditableCell value={item.unit ?? ""} onChange={v => updateItem(idx, "unit", v)} />
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <EditableCell value={item.restriction ?? ""} onChange={v => updateItem(idx, "restriction", v)} />
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <EditableCell value={item.notes ?? ""} onChange={v => updateItem(idx, "notes", v)} />
-                      </td>
-                      <td className="px-3 py-2 align-top text-center">
-                        {item.pageRef != null ? (
-                          <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded font-medium ${
-                            isActive
-                              ? "bg-amber-400 text-white"
-                              : "bg-stone-100 text-stone-500"
-                          }`}>
-                            P.{item.pageRef}
-                          </span>
-                        ) : (
-                          <span className="text-stone-200 text-[10px]">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
-      {/* Calculated amounts summary table */}
-      {unitAmount > 0 && data.items && data.items.some(item => computedAmount(item.formula, unitAmount)) && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-amber-100 border-b border-amber-200 flex items-baseline gap-2">
-            <span className="text-sm font-semibold text-amber-800">💰 試算結果</span>
-            <span className="text-xs text-amber-600">每單位保額 NT${unitAmount.toLocaleString()}</span>
+          <div className="divide-y divide-stone-50">
+            {items.map((item, idx) => {
+              const isActive = item.pageRef != null && item.pageRef === activePage;
+              const isRange = item.fType === "range";
+              return (
+                <div
+                  key={idx}
+                  className={`px-3 py-2.5 transition-colors ${isActive ? "bg-amber-50 border-l-2 border-l-amber-400" : "hover:bg-stone-50/60"}`}
+                >
+                  {/* Row 1: name | ai formula text | page */}
+                  <div className="flex items-start gap-2 mb-1.5">
+                    {/* Name */}
+                    <div className="w-28 shrink-0">
+                      <InlineEdit
+                        value={item.name}
+                        onChange={v => updateAnalysis(idx, "name", v)}
+                        className="font-semibold text-stone-800"
+                      />
+                    </div>
+                    {/* AI formula text */}
+                    <div className="flex-1 min-w-0">
+                      <InlineEdit
+                        value={item.formula}
+                        onChange={v => updateAnalysis(idx, "formula", v)}
+                        className="text-stone-500 font-mono"
+                        placeholder="AI 公式文字"
+                      />
+                      {item.restriction && (
+                        <InlineEdit
+                          value={item.restriction}
+                          onChange={v => updateAnalysis(idx, "restriction", v)}
+                          className="text-[10px] text-stone-400 mt-0.5"
+                        />
+                      )}
+                    </div>
+                    {/* Page */}
+                    <button
+                      onClick={() => item.pageRef != null && onItemClick?.(item.pageRef)}
+                      className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded font-medium ${
+                        item.pageRef != null
+                          ? isActive ? "bg-amber-400 text-white" : "bg-stone-100 text-stone-500 hover:bg-amber-100 cursor-pointer"
+                          : "text-stone-200"
+                      }`}
+                    >
+                      {item.pageRef != null ? `P.${item.pageRef}` : "—"}
+                    </button>
+                    {/* Remove */}
+                    <button onClick={() => removeItem(idx)} className="shrink-0 text-stone-200 hover:text-red-400 transition-colors">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  {/* Row 2: formula structure (only if productId exists) */}
+                  {productId && (
+                    <div className="flex items-center gap-1.5 ml-28 flex-wrap">
+                      <span className="text-[10px] text-stone-300">公式：</span>
+                      <select
+                        value={item.fType}
+                        onChange={e => updateFormula(idx, { fType: e.target.value as FormulaItem["type"] })}
+                        className="text-[10px] border border-stone-200 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                      >
+                        {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+
+                      {isRange ? (
+                        <>
+                          <select
+                            value={item.fRateType ?? "multiplier"}
+                            onChange={e => updateFormula(idx, { fRateType: e.target.value as "multiplier" | "percentage" })}
+                            className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
+                          >
+                            <option value="multiplier">倍</option>
+                            <option value="percentage">%</option>
+                          </select>
+                          <input type="number" min={0} step={0.5} placeholder="最低"
+                            value={item.fMinRate ?? ""}
+                            onChange={e => updateFormula(idx, { fMinRate: parseFloat(e.target.value) || 0 })}
+                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                          />
+                          <span className="text-[10px] text-stone-400">～</span>
+                          <input type="number" min={0} step={0.5} placeholder="最高"
+                            value={item.fMaxRate ?? ""}
+                            onChange={e => updateFormula(idx, { fMaxRate: parseFloat(e.target.value) || 0 })}
+                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                          />
+                          <span className="text-[10px] text-stone-400">{item.fRateType === "percentage" ? "%" : "倍"}</span>
+                        </>
+                      ) : (
+                        <>
+                          <input type="number" min={0} step={0.5} placeholder="倍數"
+                            value={item.fMultiplier ?? ""}
+                            onChange={e => updateFormula(idx, { fMultiplier: parseFloat(e.target.value) || 0 })}
+                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                          />
+                          <span className="text-[10px] text-stone-400">倍</span>
+                        </>
+                      )}
+                      <span className="text-stone-200 mx-1">|</span>
+                      <input type="number" min={0} placeholder="天上限"
+                        value={item.fLimitDays ?? ""}
+                        onChange={e => updateFormula(idx, { fLimitDays: parseInt(e.target.value) || undefined })}
+                        className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none text-stone-500"
+                      />
+                      <span className="text-[10px] text-stone-400">天/年</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-amber-100 bg-amber-50/50">
-                <th className="text-left px-3 py-2 text-amber-700 font-medium">給付項目</th>
-                <th className="text-left px-3 py-2 text-amber-700 font-medium">公式</th>
-                <th className="text-right px-3 py-2 text-amber-700 font-medium">計算金額</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((item, idx) => {
-                const amount = computedAmount(item.formula, unitAmount);
-                if (!amount) return null;
-                return (
-                  <tr key={idx} className="border-b border-amber-50 last:border-0 hover:bg-amber-100/40">
-                    <td className="px-3 py-2 text-stone-700 font-medium">{item.name}</td>
-                    <td className="px-3 py-2 text-stone-500 font-mono">
-                      {item.formula}{item.unit ? <span className="text-stone-400">/{item.unit}</span> : null}
-                    </td>
-                    <td className="px-3 py-2 text-right font-bold text-amber-800">{amount}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+          <div className="px-4 py-2.5 border-t border-stone-100">
+            <button onClick={addItem} className="flex items-center gap-1 text-xs text-stone-400 hover:text-[#C8956C] transition-colors">
+              <Plus className="h-3.5 w-3.5" />
+              新增給付項目
+            </button>
+          </div>
         </div>
       )}
 
@@ -287,49 +338,32 @@ function ItemsEditor({
         <div className="bg-white border border-stone-200 rounded-xl px-4 py-3">
           <p className="text-xs font-semibold text-stone-500 mb-1">📊 年度給付上限</p>
           <p className="text-xs text-stone-700">{data.annualLimit.formula}</p>
-          {unitAmount > 0 && computedAmount(data.annualLimit.formula, unitAmount) && (
-            <p className="text-xs font-bold text-amber-700 mt-0.5">
-              = {computedAmount(data.annualLimit.formula, unitAmount)}
-            </p>
-          )}
-          {data.annualLimit.notes && (
-            <p className="text-xs text-stone-400 mt-1">{data.annualLimit.notes}</p>
-          )}
+          {data.annualLimit.notes && <p className="text-xs text-stone-400 mt-1">{data.annualLimit.notes}</p>}
         </div>
       )}
-
-      {/* Waiting period */}
       {data.waitingPeriod?.note && (
         <div className="bg-white border border-stone-200 rounded-xl px-4 py-3">
           <p className="text-xs font-semibold text-stone-500 mb-1">⏳ 等待期</p>
           <p className="text-xs text-stone-700">{data.waitingPeriod.note}</p>
         </div>
       )}
-
-      {/* Exclusions */}
       {data.exclusions && data.exclusions.length > 0 && (
         <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
             <span className="text-sm font-semibold text-yellow-700">⚠️ 除外責任</span>
           </div>
           <div className="px-4 py-2 space-y-1">
-            {data.exclusions.map((e, i) => (
-              <p key={i} className="text-xs text-red-600">❌ {e}</p>
-            ))}
+            {data.exclusions.map((e, i) => <p key={i} className="text-xs text-red-600">❌ {e}</p>)}
           </div>
         </div>
       )}
-
-      {/* Special restrictions */}
       {data.specialRestrictions && data.specialRestrictions.length > 0 && (
         <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
             <span className="text-sm font-semibold text-indigo-700">📌 特殊限制</span>
           </div>
           <div className="px-4 py-2 space-y-1">
-            {data.specialRestrictions.map((r, i) => (
-              <p key={i} className="text-xs text-indigo-700">• {r}</p>
-            ))}
+            {data.specialRestrictions.map((r, i) => <p key={i} className="text-xs text-indigo-700">• {r}</p>)}
           </div>
         </div>
       )}
@@ -337,6 +371,25 @@ function ItemsEditor({
   );
 }
 
+function InlineEdit({ value, onChange, className = "", placeholder = "" }: {
+  value: string; onChange: (v: string) => void; className?: string; placeholder?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const save = () => { setEditing(false); if (draft !== value) onChange(draft); };
+  return editing ? (
+    <textarea autoFocus rows={2}
+      className={`w-full text-xs border border-amber-300 rounded px-1 py-0.5 bg-amber-50 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400 ${className}`}
+      value={draft} onChange={e => setDraft(e.target.value)} onBlur={save}
+      onKeyDown={e => { if (e.key === "Escape") setEditing(false); }}
+    />
+  ) : (
+    <span className={`block text-xs cursor-pointer hover:bg-amber-50 rounded px-0.5 whitespace-pre-wrap transition-colors ${className}`}
+      onClick={() => { setDraft(value); setEditing(true); }} title="點擊編輯">
+      {value || <span className="text-stone-300 italic text-[10px]">{placeholder || "—"}</span>}
+    </span>
+  );
+}
 
 // ── ReviewDetail ───────────────────────────────────────────────────────
 
@@ -359,37 +412,103 @@ export function ReviewDetail({
   const [archiveResult, setArchiveResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [activePage, setActivePage] = useState(1);
 
+  // Unified state for items + formula
+  const [unifiedItems, setUnifiedItems] = useState<UnifiedItem[]>([]);
+  const [productId, setProductId] = useState<number | null>(null);
+  const [baseUnit, setBaseUnit] = useState("元/日");
+  const [formulaVerified, setFormulaVerified] = useState(false);
+
   const pdfUrl = `/api/pdf-proxy/local?planCode=${encodeURIComponent(product.planCode)}&driveId=${encodeURIComponent(product.pdfDriveId)}`;
 
+  // Load analysis data
   useEffect(() => {
     fetch(`/api/review/${product.id}`)
       .then(r => r.json())
       .then(d => {
-        if (d.error) setAnalysisError(d.error);
-        else setAnalysisData(d);
+        if (d.error) { setAnalysisError(d.error); return; }
+        setAnalysisData(d);
+        // Formula load happens after analysis items are known
       })
       .catch(e => setAnalysisError(String(e)))
       .finally(() => setAnalysisLoading(false));
   }, [product.id]);
+
+  // Load formula from DB and merge with analysis items
+  useEffect(() => {
+    if (!analysisData) return;
+    const items = analysisData.items ?? [];
+    if (!product.planCode) {
+      setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a) } as UnifiedItem)));
+      return;
+    }
+    fetch(`/api/products?planCode=${encodeURIComponent(product.planCode)}`)
+      .then(r => r.json())
+      .then(d => {
+        const p = d.product;
+        if (p) {
+          setProductId(p.id as number);
+          setFormulaVerified(!!p.formula_verified);
+          if (p.formula_json) {
+            const fj = p.formula_json as FormulaJson;
+            setBaseUnit(fj.base_unit);
+            setUnifiedItems(mergeItems(items, fj.items));
+            return;
+          }
+        }
+        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a) } as UnifiedItem)));
+      })
+      .catch(() => {
+        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a) } as UnifiedItem)));
+      });
+  }, [analysisData, product.planCode]);
 
   const handleSave = async () => {
     if (!analysisData) return;
     setSaving(true);
     setSaveResult(null);
     try {
+      // Build updated analysisData from unified items
+      const updatedData: AnalysisData = {
+        ...analysisData,
+        items: unifiedItems.map(it => ({
+          name: it.name, formula: it.formula, unit: it.unit,
+          restriction: it.restriction, notes: it.notes, pageRef: it.pageRef,
+        })),
+      };
+
+      // 1) Save analysis JSON
       const res = await fetch(`/api/review/${product.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: analysisData, sheetUrl: product.sheetUrl }),
+        body: JSON.stringify({ data: updatedData, sheetUrl: product.sheetUrl }),
       });
       const result = await res.json();
-      if (result.success) {
-        setIsDirty(false);
-        setSaveResult({ ok: true, msg: "已儲存 ✓" });
-        setTimeout(() => setSaveResult(null), 2000);
-      } else {
-        setSaveResult({ ok: false, msg: result.error ?? "儲存失敗" });
+      if (!result.success) {
+        setSaveResult({ ok: false, msg: result.error ?? "分析儲存失敗" });
+        return;
       }
+
+      // 2) Save formula to DB (if product found)
+      if (productId && unifiedItems.length > 0) {
+        const formulaPayload: FormulaJson = {
+          base_unit: baseUnit,
+          items: unifiedItems.map(toFormulaItem),
+          filled_by: "",
+          filled_at: "",
+        };
+        const fRes = await fetch(`/api/products/${productId}/formula`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ formula: formulaPayload }),
+        });
+        const fData = await fRes.json();
+        if (fData.ok) setFormulaVerified(true);
+      }
+
+      setAnalysisData(updatedData);
+      setIsDirty(false);
+      setSaveResult({ ok: true, msg: "已儲存 ✓" });
+      setTimeout(() => setSaveResult(null), 2000);
     } catch (e) {
       setSaveResult({ ok: false, msg: String(e) });
     } finally {
@@ -460,10 +579,10 @@ export function ReviewDetail({
               onClick={handleSave}
               disabled={saving}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60"
-              style={{ background: "linear-gradient(135deg, #60a5fa, #2563eb)" }}
+              style={{ background: "linear-gradient(135deg, #C8956C, #A0714F)" }}
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              {saving ? "儲存中…" : "儲存變更"}
+              {saving ? "儲存中…" : "儲存 + 確認公式"}
             </button>
           )}
           {archiveResult ? (
@@ -497,7 +616,7 @@ export function ReviewDetail({
           />
         </div>
 
-        {/* Right: Analysis */}
+        {/* Right: Unified editor */}
         <div className="w-1/2 overflow-y-auto bg-[#FDFAF6]">
           <div className="p-4">
             {analysisLoading ? (
@@ -508,9 +627,15 @@ export function ReviewDetail({
             ) : analysisError ? (
               <div className="text-sm text-red-500 py-8 text-center">{analysisError}</div>
             ) : analysisData ? (
-              <ItemsEditor
+              <UnifiedItemsEditor
                 data={analysisData}
+                items={unifiedItems}
+                baseUnit={baseUnit}
+                productId={productId}
+                formulaVerified={formulaVerified}
                 onDataChange={d => { setAnalysisData(d); setIsDirty(true); }}
+                onItemsChange={items => { setUnifiedItems(items); setIsDirty(true); }}
+                onBaseUnitChange={u => { setBaseUnit(u); setIsDirty(true); }}
                 onItemClick={setActivePage}
                 activePage={activePage}
               />

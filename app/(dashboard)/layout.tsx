@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, Database, ClockIcon, ClipboardCheck,
+  LayoutDashboard, Database, ClipboardCheck,
   ChevronRight, LogOut, Users, BarChart2,
 } from "lucide-react";
 import { useReviewCount } from "@/components/ReviewView";
@@ -25,7 +25,6 @@ function SidebarNav() {
   const navItems = [
     { href: "/analyze", icon: <LayoutDashboard className="h-4 w-4" />, label: "保單分析" },
     { href: "/catalog", icon: <Database className="h-4 w-4" />, label: "商品查詢" },
-    { href: "/history", icon: <ClockIcon className="h-4 w-4" />, label: "歷史紀錄" },
     { href: "/review", icon: <ClipboardCheck className="h-4 w-4" />, label: "保單審核", badge: reviewCount },
   ];
 

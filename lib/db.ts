@@ -27,6 +27,8 @@ export async function ensureInit(): Promise<void> {
       coverage_template TEXT NOT NULL,
       file_path TEXT,
       verified INTEGER NOT NULL DEFAULT 0,
+      formula_json TEXT,
+      formula_verified INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(company_id, plan_code, plan_type, year, version)
@@ -105,6 +107,24 @@ export default db;
 
 // ── Types ──────────────────────────────────────────────────────────
 
+export interface FormulaItem {
+  label: string;
+  type: "fixed" | "multiplier" | "reimbursement" | "range" | "lump_sum";
+  multiplier?: number;
+  rate_type?: "multiplier" | "percentage";
+  min_rate?: number;
+  max_rate?: number;
+  limit?: { days?: number; times?: number };
+  note?: string;
+}
+
+export interface FormulaJson {
+  base_unit: string;
+  items: FormulaItem[];
+  filled_by: string;
+  filled_at: string;
+}
+
 export interface ProductRow {
   id: number;
   company_id: number;
@@ -117,6 +137,8 @@ export interface ProductRow {
   coverage_template: string;
   file_path: string | null;
   verified: number;
+  formula_json: string | null;
+  formula_verified: number;
   created_at: string;
   updated_at: string;
 }

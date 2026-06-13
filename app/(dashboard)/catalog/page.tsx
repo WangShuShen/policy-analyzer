@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2, FileText, Database, SlidersHorizontal, Search, ExternalLink, X,
+  Calculator, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -55,10 +56,114 @@ const planTypeColor: Record<string, string> = {
   "批註條款": "bg-stone-100 text-stone-400",
 };
 
+// ── TrialPanel ────────────────────────────────────────────────────────
+
+interface TrialResult {
+  label: string;
+  type: string;
+  display: string;
+  limit: string;
+  note: string;
+}
+
+function TrialPanel({ productId, baseUnit }: { productId: number; baseUnit: string }) {
+  const [amount, setAmount] = useState("");
+  const [unit, setUnit] = useState(baseUnit);
+  const [results, setResults] = useState<TrialResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleTrial = async () => {
+    const num = parseFloat(amount);
+    if (!num || num <= 0) { setError("請輸入有效保額"); return; }
+    setLoading(true); setError(""); setResults([]);
+    try {
+      const res = await fetch(`/api/products/${productId}/trial`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ insured_amount: num, unit }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); return; }
+      setResults(data.results);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-[#EDE0CE] bg-[#FEF9F2] px-5 py-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Calculator className="h-4 w-4 text-[#C8956C]" />
+        <span className="text-sm font-semibold text-[#8B5E3C]">保額試算</span>
+      </div>
+      <div className="flex items-center gap-2 mb-3">
+        <input
+          type="number"
+          min={0}
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleTrial()}
+          placeholder="輸入保額"
+          className="flex-1 text-sm border border-[#E8D5B7] rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#C8956C]/20 focus:border-[#C8956C]"
+        />
+        <select
+          value={unit}
+          onChange={e => setUnit(e.target.value)}
+          className="text-sm border border-[#E8D5B7] rounded-xl px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#C8956C]/20"
+        >
+          {["元/日", "萬", "元/月", "元"].map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+        <button
+          onClick={handleTrial}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all whitespace-nowrap"
+          style={{ background: "linear-gradient(135deg, #C8956C, #A0714F)" }}
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
+          試算
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+      {results.length > 0 && (
+        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-[#FBF0E3] border-b border-[#EDE0CE]">
+                <th className="text-left px-3 py-2 text-[#8B5E3C] font-semibold">給付項目</th>
+                <th className="text-right px-3 py-2 text-[#8B5E3C] font-semibold">試算金額</th>
+                <th className="text-left px-3 py-2 text-[#8B5E3C] font-semibold hidden sm:table-cell">說明</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r, i) => (
+                <tr key={i} className="border-b border-[#F5EDE0] last:border-0 hover:bg-[#FEF9F2]">
+                  <td className="px-3 py-2 text-stone-700 font-medium">{r.label}</td>
+                  <td className="px-3 py-2 text-right font-bold text-[#8B5E3C] whitespace-nowrap">{r.display}</td>
+                  <td className="px-3 py-2 text-stone-400 hidden sm:table-cell">
+                    {r.limit && <span className="mr-2">{r.limit}</span>}
+                    {r.note && <span className="italic">{r.note}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ProductDrawer ──────────────────────────────────────────────────────
+
 function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: () => void }) {
   const router = useRouter();
   const [pdfStatus, setPdfStatus] = useState<"loading" | "ok" | "error">("loading");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [formulaInfo, setFormulaInfo] = useState<{ id: number; base_unit: string } | null>(null);
+  const [showTrial, setShowTrial] = useState(false);
 
   let tmpl: Record<string, unknown> = {};
   try { tmpl = JSON.parse(product.coverage_template); } catch { /* */ }
@@ -67,6 +172,19 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
   const saleDate = tmpl._saleDate as string | undefined;
   const stopDate = tmpl._stopDate as string | undefined;
   const hasAnalysis = !!product.latest_analysis;
+
+  useEffect(() => {
+    if (!product.plan_code) return;
+    fetch(`/api/products?planCode=${encodeURIComponent(product.plan_code)}`)
+      .then(r => r.json())
+      .then(d => {
+        const p = d.product;
+        if (p && p.formula_verified && p.formula_json) {
+          setFormulaInfo({ id: p.id as number, base_unit: p.formula_json.base_unit ?? "元/日" });
+        }
+      })
+      .catch(() => {});
+  }, [product.plan_code]);
 
   useEffect(() => {
     if (!isCatalog || !product.plan_code) { setPdfStatus("error"); return; }
@@ -132,6 +250,16 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {formulaInfo && (
+                <button
+                  onClick={() => setShowTrial(v => !v)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#C8956C] text-white hover:bg-[#A0714F] transition-colors font-medium"
+                >
+                  <Calculator className="h-3 w-3" />
+                  試算
+                  {showTrial ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                </button>
+              )}
               {hasAnalysis && (
                 <button
                   onClick={handleViewAnalysis}
@@ -156,6 +284,10 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
             </div>
           </div>
         </div>
+
+        {showTrial && formulaInfo && (
+          <TrialPanel productId={formulaInfo.id} baseUnit={formulaInfo.base_unit} />
+        )}
 
         <div className="flex-1 relative bg-stone-100 overflow-hidden">
           {pdfStatus === "loading" && (
