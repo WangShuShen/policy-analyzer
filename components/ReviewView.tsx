@@ -7,6 +7,7 @@ import {
   ExternalLink, Archive, Save, Plus, Trash2, Sparkles,
 } from "lucide-react";
 import type { FormulaItem, FormulaJson } from "@/lib/db";
+import { suggestFormula, TYPE_META } from "@/lib/insuranceRules";
 
 const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
   ssr: false,
@@ -74,21 +75,37 @@ interface UnifiedItem extends AnalysisItem {
   fLimitDays?: number;
 }
 
-function suggestFType(item: AnalysisItem): Partial<UnifiedItem> {
+// 險種感知的公式建議：先由「險種 + 項目名稱」定類型與單位（insuranceRules），
+// 再從 AI 公式文字解析出實際數值（倍數 / 範圍最低~最高）。
+function suggestFType(item: AnalysisItem, category = ""): Partial<UnifiedItem> {
   const f = item.formula ?? "";
-  if (f.includes("～") || f.includes("~") || f.includes("至")) {
-    const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
-    return { fType: "range", fRateType: f.includes("%") ? "percentage" : "multiplier", fMinRate: nums[0] ?? 1, fMaxRate: nums[1] ?? nums[0] ?? 1 };
+  const base = suggestFormula(item.name, category);
+  const out: Partial<UnifiedItem> = { fType: base.fType };
+  // 單位：沿用 AI 既有 unit，否則用規則建議
+  if (!item.unit) out.unit = base.unit;
+
+  // 從公式文字解析數值
+  const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
+  const isRangeText = f.includes("～") || f.includes("~") || f.includes("至");
+
+  if (base.fType === "range" || isRangeText) {
+    out.fType = "range";
+    out.fRateType = f.includes("%") ? "percentage" : (base.rateType ?? "multiplier");
+    out.fMinRate = nums[0] ?? 1;
+    out.fMaxRate = nums[1] ?? nums[0] ?? 1;
+    return out;
   }
   const pct = f.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (pct) return { fType: "multiplier", fMultiplier: parseFloat(pct[1]) / 100 };
+  if (pct && (base.fType === "multiplier")) {
+    out.fMultiplier = parseFloat(pct[1]) / 100;
+    return out;
+  }
   const mult = f.match(/[×x*]\s*(\d+(?:\.\d+)?)/);
-  const m = mult ? parseFloat(mult[1]) : 1;
-  if (/一次|診斷|確診|身故|全殘/.test(item.name + f)) return { fType: "lump_sum", fMultiplier: m };
-  return { fType: "fixed", fMultiplier: m };
+  out.fMultiplier = mult ? parseFloat(mult[1]) : 1;
+  return out;
 }
 
-function mergeItems(analysisItems: AnalysisItem[], formulaItems: FormulaItem[]): UnifiedItem[] {
+function mergeItems(analysisItems: AnalysisItem[], formulaItems: FormulaItem[], category = ""): UnifiedItem[] {
   return analysisItems.map((a, i) => {
     const f = formulaItems[i];
     if (f) {
@@ -102,8 +119,14 @@ function mergeItems(analysisItems: AnalysisItem[], formulaItems: FormulaItem[]):
         fLimitDays: f.limit?.days,
       };
     }
-    return { ...a, ...suggestFType(a) } as UnifiedItem;
+    return { ...a, ...suggestFType(a, category) } as UnifiedItem;
   });
+}
+
+// 由分析資料組出「險種字串」供規則比對（險種 + 給付基礎 + 商品類型）
+function categoryOf(data: AnalysisData): string {
+  const t = Array.isArray(data.insuranceType) ? data.insuranceType.join(" ") : (data.insuranceType ?? "");
+  return [t, data.baseType ?? "", data.productName ?? ""].join(" ");
 }
 
 function toFormulaItem(u: UnifiedItem): FormulaItem {
@@ -168,7 +191,8 @@ function UnifiedItemsEditor({
   };
 
   const suggestAll = () => {
-    onItemsChange(items.map(it => ({ ...it, ...suggestFType(it) })));
+    const cat = categoryOf(data);
+    onItemsChange(items.map(it => ({ ...it, ...suggestFType(it, cat) })));
   };
 
   // ── 給付限制／注意事項 編輯 ──
@@ -284,7 +308,10 @@ function UnifiedItemsEditor({
                   {/* Row 2: formula structure (only if productId exists) */}
                   {productId && (
                     <div className="flex items-center gap-1.5 ml-28 flex-wrap">
-                      <span className="text-[10px] text-stone-300">公式：</span>
+                      {/* 顏色類型標籤（一眼分辨） */}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_META[item.fType]?.chip ?? "bg-stone-100 text-stone-500"}`}>
+                        {TYPE_META[item.fType]?.label ?? item.fType}
+                      </span>
                       <select
                         value={item.fType}
                         onChange={e => updateFormula(idx, { fType: e.target.value as FormulaItem["type"] })}
@@ -513,8 +540,9 @@ export function ReviewDetail({
   useEffect(() => {
     if (!analysisData) return;
     const items = analysisData.items ?? [];
+    const cat = categoryOf(analysisData);
     if (!product.planCode) {
-      setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a) } as UnifiedItem)));
+      setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a, cat) } as UnifiedItem)));
       return;
     }
     fetch(`/api/products?planCode=${encodeURIComponent(product.planCode)}`)
@@ -527,14 +555,14 @@ export function ReviewDetail({
           if (p.formula_json) {
             const fj = p.formula_json as FormulaJson;
             setBaseUnit(fj.base_unit);
-            setUnifiedItems(mergeItems(items, fj.items));
+            setUnifiedItems(mergeItems(items, fj.items, cat));
             return;
           }
         }
-        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a) } as UnifiedItem)));
+        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a, cat) } as UnifiedItem)));
       })
       .catch(() => {
-        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a) } as UnifiedItem)));
+        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a, cat) } as UnifiedItem)));
       });
   }, [analysisData, product.planCode]);
 
