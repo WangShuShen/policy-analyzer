@@ -95,8 +95,13 @@ export async function analyzePolicyPdf(
     source: { type: "base64", media_type: PDF_MEDIA, data: pdfBase64 },
   };
 
+  // 偵測險種僅作標記與單位慣例參考；輸出一律用 BASE_PROMPT 的 items/plans schema
+  // （審核頁需要 items/plans，專科 prompt 的全險圖 schema 不相容，故不在此切換）
   const category = await detectCategory(doc);
-  const sys = (category ? getSpecialistPrompt(category) : null) ?? BASE_PROMPT;
+  const specialistHint = category ? getSpecialistPrompt(category) : null;
+  const sys = specialistHint
+    ? `${BASE_PROMPT}\n\n【此險種專科提醒（僅供提取參考，輸出仍須遵守上方 items/plans schema）】\n本保單為「${category}」，請特別注意該險種的給付項目完整性與金額換算。`
+    : BASE_PROMPT;
 
   const content: Anthropic.ContentBlockParam[] = [doc];
   if (ratePdfBase64) {
