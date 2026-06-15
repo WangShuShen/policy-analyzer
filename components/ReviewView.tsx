@@ -171,6 +171,22 @@ function UnifiedItemsEditor({
     onItemsChange(items.map(it => ({ ...it, ...suggestFType(it) })));
   };
 
+  // ── 給付限制／注意事項 編輯 ──
+  const setAnnualLimit = (patch: Partial<NonNullable<AnalysisData["annualLimit"]>>) =>
+    onDataChange({ ...data, annualLimit: { ...data.annualLimit, ...patch } });
+  const setWaitingNote = (note: string) =>
+    onDataChange({ ...data, waitingPeriod: { ...data.waitingPeriod, note } });
+
+  const setList = (key: "exclusions" | "specialRestrictions", arr: string[]) =>
+    onDataChange({ ...data, [key]: arr });
+  const updateListItem = (key: "exclusions" | "specialRestrictions", i: number, v: string) => {
+    const arr = [...(data[key] ?? [])]; arr[i] = v; setList(key, arr);
+  };
+  const addListItem = (key: "exclusions" | "specialRestrictions") =>
+    setList(key, [...(data[key] ?? []), ""]);
+  const removeListItem = (key: "exclusions" | "specialRestrictions", i: number) =>
+    setList(key, (data[key] ?? []).filter((_, idx) => idx !== i));
+
   return (
     <div className="space-y-4">
       {/* Header info */}
@@ -333,40 +349,100 @@ function UnifiedItemsEditor({
         </div>
       )}
 
-      {/* Annual limit */}
-      {data.annualLimit?.formula && (
-        <div className="bg-white border border-stone-200 rounded-xl px-4 py-3">
-          <p className="text-xs font-semibold text-stone-500 mb-1">📊 年度給付上限</p>
-          <p className="text-xs text-stone-700">{data.annualLimit.formula}</p>
-          {data.annualLimit.notes && <p className="text-xs text-stone-400 mt-1">{data.annualLimit.notes}</p>}
+      {/* ── 區 2：給付限制 ── */}
+      <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
+          <span className="text-sm font-semibold text-stone-600">📊 給付限制</span>
+          <span className="text-xs text-stone-400 ml-2">年度上限與等待期</span>
         </div>
-      )}
-      {data.waitingPeriod?.note && (
-        <div className="bg-white border border-stone-200 rounded-xl px-4 py-3">
-          <p className="text-xs font-semibold text-stone-500 mb-1">⏳ 等待期</p>
-          <p className="text-xs text-stone-700">{data.waitingPeriod.note}</p>
+        <div className="px-4 py-3 space-y-3">
+          <div>
+            <label className="text-[11px] font-medium text-stone-400">年度給付上限</label>
+            <textarea
+              rows={2}
+              value={data.annualLimit?.formula ?? ""}
+              onChange={e => setAnnualLimit({ formula: e.target.value })}
+              placeholder="例：年度累計最高 60 萬元；未填代表無上限"
+              className="w-full mt-1 text-xs border border-stone-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#C8956C] text-stone-700"
+            />
+            <input
+              value={data.annualLimit?.notes ?? ""}
+              onChange={e => setAnnualLimit({ notes: e.target.value })}
+              placeholder="補充說明（選填）"
+              className="w-full mt-1 text-[11px] border border-stone-100 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#C8956C] text-stone-400"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-stone-400">等待期</label>
+            <input
+              value={data.waitingPeriod?.note ?? ""}
+              onChange={e => setWaitingNote(e.target.value)}
+              placeholder="例：疾病等待期 30 天，意外無等待期"
+              className="w-full mt-1 text-xs border border-stone-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C] text-stone-700"
+            />
+          </div>
         </div>
-      )}
-      {data.exclusions && data.exclusions.length > 0 && (
-        <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
-            <span className="text-sm font-semibold text-yellow-700">⚠️ 除外責任</span>
-          </div>
-          <div className="px-4 py-2 space-y-1">
-            {data.exclusions.map((e, i) => <p key={i} className="text-xs text-red-600">❌ {e}</p>)}
-          </div>
+      </div>
+
+      {/* ── 區 3：注意事項 ── */}
+      <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
+          <span className="text-sm font-semibold text-stone-600">⚠️ 注意事項</span>
+          <span className="text-xs text-stone-400 ml-2">除外責任與特殊限制</span>
         </div>
-      )}
-      {data.specialRestrictions && data.specialRestrictions.length > 0 && (
-        <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
-            <span className="text-sm font-semibold text-indigo-700">📌 特殊限制</span>
-          </div>
-          <div className="px-4 py-2 space-y-1">
-            {data.specialRestrictions.map((r, i) => <p key={i} className="text-xs text-indigo-700">• {r}</p>)}
-          </div>
+        <div className="px-4 py-3 space-y-4">
+          <EditableStringList
+            label="除外責任" prefix="❌" accent="text-red-600"
+            items={data.exclusions ?? []}
+            onUpdate={(i, v) => updateListItem("exclusions", i, v)}
+            onAdd={() => addListItem("exclusions")}
+            onRemove={i => removeListItem("exclusions", i)}
+          />
+          <EditableStringList
+            label="特殊限制" prefix="•" accent="text-indigo-700"
+            items={data.specialRestrictions ?? []}
+            onUpdate={(i, v) => updateListItem("specialRestrictions", i, v)}
+            onAdd={() => addListItem("specialRestrictions")}
+            onRemove={i => removeListItem("specialRestrictions", i)}
+          />
         </div>
-      )}
+      </div>
+    </div>
+  );
+}
+
+function EditableStringList({
+  label, prefix, accent, items, onUpdate, onAdd, onRemove,
+}: {
+  label: string; prefix: string; accent: string;
+  items: string[];
+  onUpdate: (i: number, v: string) => void;
+  onAdd: () => void;
+  onRemove: (i: number) => void;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-stone-400 mb-1.5">{label}</p>
+      <div className="space-y-1.5">
+        {items.map((v, i) => (
+          <div key={i} className="flex items-start gap-1.5">
+            <span className={`text-xs ${accent} mt-1.5 shrink-0`}>{prefix}</span>
+            <textarea
+              rows={1}
+              value={v}
+              onChange={e => onUpdate(i, e.target.value)}
+              className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-[#C8956C] text-stone-700"
+            />
+            <button onClick={() => onRemove(i)} className="text-stone-200 hover:text-red-400 transition-colors mt-1.5 shrink-0">
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+        <button onClick={onAdd} className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#C8956C] transition-colors">
+          <Plus className="h-3 w-3" />
+          新增{label}
+        </button>
+      </div>
     </div>
   );
 }
@@ -515,6 +591,18 @@ export function ReviewDetail({
       setSaving(false);
     }
   };
+
+  // Cmd/Ctrl+S 儲存
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (isDirty && !saving) handleSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const handleArchive = async () => {
     if (!confirm(`確認歸檔「${product.product_name}」？\n歸檔後將從待審核區移至正式資料庫。`)) return;

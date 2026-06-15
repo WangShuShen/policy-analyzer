@@ -19,6 +19,12 @@ interface ProductItem {
   verified: number;
   coverage_template: string;
   latest_analysis: string | null;
+  // 河馬風格欄位
+  sale_date?: string | null;
+  stop_date?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  analyzed?: boolean;
 }
 
 const categoryLabel: Record<string, string> = {
@@ -156,6 +162,80 @@ function TrialPanel({ productId, baseUnit }: { productId: number; baseUnit: stri
   );
 }
 
+// ── 已審核分析資訊面板 ──────────────────────────────────────────────────
+
+interface AnalysisItem {
+  name: string; formula: string; unit?: string; restriction?: string; notes?: string;
+}
+interface AnalysisData {
+  items?: AnalysisItem[];
+  annualLimit?: { formula?: string; notes?: string };
+  waitingPeriod?: { note?: string };
+  exclusions?: string[];
+  specialRestrictions?: string[];
+}
+
+function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
+  return (
+    <div className="h-full overflow-y-auto bg-[#FDFAF6] p-5 space-y-4">
+      {/* 給付明細 */}
+      {data.items && data.items.length > 0 && (
+        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-[#FBF0E3] border-b border-[#EDE0CE]">
+            <span className="text-sm font-semibold text-[#8B5E3C]">📋 給付明細</span>
+          </div>
+          <table className="w-full text-xs">
+            <tbody>
+              {data.items.map((it, i) => (
+                <tr key={i} className="border-b border-[#F5EDE0] last:border-0">
+                  <td className="px-3 py-2.5 text-stone-700 font-medium align-top w-36">{it.name}</td>
+                  <td className="px-3 py-2.5 align-top">
+                    <span className="text-stone-600 font-mono">{it.formula}</span>
+                    {it.unit && <span className="text-stone-400">／{it.unit}</span>}
+                    {it.restriction && <div className="text-[11px] text-stone-400 mt-0.5">{it.restriction}</div>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 給付限制 */}
+      {(data.annualLimit?.formula || data.waitingPeriod?.note) && (
+        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
+            <span className="text-sm font-semibold text-stone-600">📊 給付限制</span>
+          </div>
+          <div className="px-4 py-3 space-y-2 text-xs">
+            {data.annualLimit?.formula && (
+              <div><span className="text-stone-400">年度上限：</span><span className="text-stone-700">{data.annualLimit.formula}</span></div>
+            )}
+            {data.waitingPeriod?.note && (
+              <div><span className="text-stone-400">等待期：</span><span className="text-stone-700">{data.waitingPeriod.note}</span></div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 注意事項 */}
+      {((data.exclusions?.length ?? 0) > 0 || (data.specialRestrictions?.length ?? 0) > 0) && (
+        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100">
+            <span className="text-sm font-semibold text-stone-600">⚠️ 注意事項</span>
+          </div>
+          <div className="px-4 py-3 space-y-1.5">
+            {(data.exclusions ?? []).map((e, i) => <p key={`e${i}`} className="text-xs text-red-600">❌ {e}</p>)}
+            {(data.specialRestrictions ?? []).map((r, i) => <p key={`s${i}`} className="text-xs text-indigo-700">• {r}</p>)}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[11px] text-stone-300 text-center pt-2">本資料由 AI 分析、顧問人工審核，僅供參考；實際給付以保單條款為準。</p>
+    </div>
+  );
+}
+
 // ── ProductDrawer ──────────────────────────────────────────────────────
 
 function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: () => void }) {
@@ -164,6 +244,8 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [formulaInfo, setFormulaInfo] = useState<{ id: number; base_unit: string } | null>(null);
   const [showTrial, setShowTrial] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+  const [tab, setTab] = useState<"info" | "pdf">("pdf");
 
   let tmpl: Record<string, unknown> = {};
   try { tmpl = JSON.parse(product.coverage_template); } catch { /* */ }
@@ -181,6 +263,10 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
         const p = d.product;
         if (p && p.formula_verified && p.formula_json) {
           setFormulaInfo({ id: p.id as number, base_unit: p.formula_json.base_unit ?? "元/日" });
+        }
+        if (d.analysis) {
+          setAnalysis(d.analysis as AnalysisData);
+          setTab("info"); // 有已審核分析時預設顯示給付資訊
         }
       })
       .catch(() => {});
@@ -289,6 +375,28 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
           <TrialPanel productId={formulaInfo.id} baseUnit={formulaInfo.base_unit} />
         )}
 
+        {/* 分頁：給付資訊 / 條款 PDF */}
+        {analysis && (
+          <div className="flex border-b border-[#EDE0CE] bg-white shrink-0">
+            {([["info", "給付資訊"], ["pdf", "條款 PDF"]] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={`px-5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
+                  tab === k ? "border-[#C8956C] text-[#8B5E3C]" : "border-transparent text-stone-400 hover:text-stone-600"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {analysis && tab === "info" ? (
+          <div className="flex-1 overflow-hidden">
+            <AnalysisInfoPanel data={analysis} />
+          </div>
+        ) : (
         <div className="flex-1 relative bg-stone-100 overflow-hidden">
           {pdfStatus === "loading" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-400">
@@ -324,6 +432,7 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
             <iframe src={pdfBlobUrl} className="w-full h-full border-0" title="保單條款" />
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -336,6 +445,7 @@ export default function CatalogPage() {
   const [filterKeyword, setFilterKeyword] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [filterActiveOnly, setFilterActiveOnly] = useState(false);
+  const [filterAnalyzedOnly, setFilterAnalyzedOnly] = useState(false);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -359,6 +469,7 @@ export default function CatalogPage() {
       if (filterKeyword) params.set("keyword", filterKeyword);
       if (filterCategory) params.set("category", filterCategory);
       if (filterActiveOnly) params.set("activeOnly", "1");
+      if (filterAnalyzedOnly) params.set("analyzedOnly", "1");
       const res = await fetch(`/api/products?${params}`);
       const data = await res.json();
       setProducts(data.products ?? []);
@@ -369,6 +480,7 @@ export default function CatalogPage() {
 
   const handleClear = () => {
     setFilterCompany(""); setFilterKeyword(""); setFilterCategory("");
+    setFilterActiveOnly(false); setFilterAnalyzedOnly(false);
     setProducts([]); setSearched(false);
   };
 
@@ -450,6 +562,15 @@ export default function CatalogPage() {
                 </div>
                 <span className="text-sm text-stone-500">只看在售</span>
               </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <div
+                  onClick={() => setFilterAnalyzedOnly(v => !v)}
+                  className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${filterAnalyzedOnly ? "bg-[#C8956C]" : "bg-stone-200"}`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${filterAnalyzedOnly ? "translate-x-4" : "translate-x-0"}`} />
+                </div>
+                <span className="text-sm text-stone-500">只看已審核</span>
+              </label>
             </div>
           </CardContent>
         </Card>
@@ -480,15 +601,19 @@ export default function CatalogPage() {
                     <thead>
                       <tr className="border-b border-[#EDE0CE] bg-[#FEF9F2]">
                         <th className="text-left px-6 py-3 text-xs font-semibold text-stone-500">保險公司</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">商品名稱 / 計劃代號</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">年份</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">險種</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">型別</th>
-                        <th className="text-center px-4 py-3 text-xs font-semibold text-stone-500">操作</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">商品名稱 / 代號</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">上市日期</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">狀態</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">契約類型</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">商品類型</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">幣別</th>
+                        <th className="text-center px-4 py-3 text-xs font-semibold text-stone-500">審核</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {products.map((p, i) => (
+                      {products.map((p, i) => {
+                        const onSale = p.status ? p.status !== "停售" : false;
+                        return (
                         <tr
                           key={p.id}
                           onClick={() => setSelectedProduct(p)}
@@ -502,16 +627,16 @@ export default function CatalogPage() {
                           <td className="px-4 py-3.5">
                             <div className="font-medium text-stone-800">{p.product_name}</div>
                             {p.plan_code && p.plan_code !== "未知" && (
-                              <div className="text-xs text-stone-400 mt-0.5">{p.plan_code}</div>
+                              <div className="text-xs text-stone-400 mt-0.5 font-mono">{p.plan_code}</div>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 text-stone-500 whitespace-nowrap">
-                            {p.year ? `${p.year} 年` : "—"}
+                          <td className="px-4 py-3.5 text-stone-500 whitespace-nowrap text-xs">
+                            {p.sale_date || (p.year ? `${p.year}` : "—")}
                           </td>
                           <td className="px-4 py-3.5 whitespace-nowrap">
-                            {p.category ? (
-                              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${categoryColor[p.category] ?? "bg-[#FBF0E3] text-[#8B5E3C]"}`}>
-                                {categoryLabel[p.category] ?? p.category}
+                            {p.status ? (
+                              <span className={`text-xs px-2 py-0.5 rounded font-medium ${onSale ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"}`}>
+                                {p.status}
                               </span>
                             ) : "—"}
                           </td>
@@ -522,36 +647,28 @@ export default function CatalogPage() {
                               </span>
                             ) : "—"}
                           </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            {p.category ? (
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${categoryColor[p.category] ?? "bg-[#FBF0E3] text-[#8B5E3C]"}`}>
+                                {categoryLabel[p.category] ?? p.category}
+                              </span>
+                            ) : "—"}
+                          </td>
+                          <td className="px-4 py-3.5 text-stone-500 whitespace-nowrap text-xs">
+                            {p.currency || "—"}
+                          </td>
                           <td className="px-4 py-3.5 text-center">
-                            {(() => {
-                              let t: Record<string, unknown> = {};
-                              try { t = JSON.parse(p.coverage_template); } catch { /* */ }
-                              if ((t._source === "drive_registry" || t._source === "tii_catalog") && !p.latest_analysis) {
-                                return (
-                                  <a
-                                    href={`https://insprod.tii.org.tw/DetailList.aspx?productId=${p.plan_code}`}
-                                    target="_blank" rel="noreferrer"
-                                    className="text-xs px-3 py-1.5 rounded-lg bg-stone-100 text-stone-400 hover:bg-stone-200 transition-colors font-medium"
-                                  >
-                                    保發中心 ↗
-                                  </a>
-                                );
-                              }
-                              return (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedProduct(p);
-                                  }}
-                                  className="text-xs px-3 py-1.5 rounded-lg bg-[#FBF0E3] text-[#8B5E3C] hover:bg-[#F0D9BC] transition-colors font-medium"
-                                >
-                                  查看全險圖
-                                </button>
-                              );
-                            })()}
+                            {p.analyzed ? (
+                              <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                已審核
+                              </span>
+                            ) : (
+                              <span className="text-xs text-stone-300">未審核</span>
+                            )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

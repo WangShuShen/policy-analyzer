@@ -3,6 +3,7 @@
     "app/api/analyze/route.ts": { "maxDuration": 300 },
     "app/api/verify/route.ts":  { "maxDuration": 120 },
     "app/api/prefill/route.ts": { "maxDuration": 60 },
-    "app/api/admin/seed-drive/route.ts": { "maxDuration": 300 }
+    "app/api/admin/seed-drive/route.ts": { "maxDuration": 300 },
+    "app/api/cron/analyze-daily/route.ts": { "maxDuration": 300 }
   }
 }

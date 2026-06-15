@@ -7,6 +7,7 @@ interface DriveEntry {
   planCode: string;
   contractType?: string;
   productType?: string;
+  currency?: string;
   status?: string;
   saleDate?: string;
   stopDate?: string;
@@ -24,6 +25,11 @@ export interface DriveProduct {
   verified: number;
   coverage_template: string;
   latest_analysis: null;
+  // 河馬風格欄位
+  sale_date: string | null;
+  stop_date: string | null;
+  status: string | null;
+  currency: string | null;
 }
 
 let _cache: DriveProduct[] | null = null;
@@ -49,6 +55,10 @@ function load(): DriveProduct[] {
       _stopDate: e.stopDate ?? "",
     }),
     latest_analysis: null,
+    sale_date: e.saleDate ?? null,
+    stop_date: e.stopDate ?? null,
+    status: e.status ?? null,
+    currency: e.currency ?? null,
   }));
   return _cache;
 }

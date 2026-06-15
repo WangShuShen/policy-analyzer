@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import db, { ensureInit, listAdvisors } from "@/lib/db";
+import db, { ensureInit, listAdvisors, type PolicyRow } from "@/lib/db";
 import { sendDailyAssignment, type PolicySummary } from "@/lib/mailer";
 
-const DB_DIR = process.env.DB_DIR ?? "";
 const DAILY_LIMIT = 20;
 
 function verifySecret(req: NextRequest) {
@@ -19,14 +16,6 @@ export async function POST(req: NextRequest) {
 
   await ensureInit();
 
-  // Load uuid_registry to find uploaded (unreviewed) policies
-  const registryPath = path.join(DB_DIR, "uuid_registry.json");
-  if (!fs.existsSync(registryPath)) {
-    return NextResponse.json({ assigned: 0, message: "registry not found" });
-  }
-
-  const registry = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as Record<string, Record<string, string>>;
-
   const today = new Date().toISOString().slice(0, 10);
 
   // Get already-assigned policy UUIDs for today
@@ -36,14 +25,19 @@ export async function POST(req: NextRequest) {
   });
   const assignedSet = new Set(alreadyAssigned.rows.map(r => r.policy_uuid as string));
 
-  // Collect unassigned uploaded policies
-  const pending: PolicySummary[] = Object.entries(registry)
-    .filter(([uuid, v]) => v.status === "uploaded" && !assignedSet.has(uuid))
-    .map(([uuid, v]) => ({
-      uuid,
-      productName: v.productName ?? "",
-      company: v.company ?? "",
-      planCode: v.planCode ?? uuid,
+  // Collect unassigned policies awaiting review (status='uploaded') from Turso
+  const uploaded = await db.execute({
+    sql: "SELECT * FROM policies WHERE status = 'uploaded' ORDER BY uploaded_at ASC, created_at ASC",
+    args: [],
+  });
+  const pending: PolicySummary[] = uploaded.rows
+    .map(r => r as unknown as PolicyRow)
+    .filter(p => !assignedSet.has(p.uuid))
+    .map(p => ({
+      uuid: p.uuid,
+      productName: p.product_name ?? "",
+      company: p.company ?? "",
+      planCode: p.plan_code ?? p.uuid,
     }));
 
   if (pending.length === 0) {

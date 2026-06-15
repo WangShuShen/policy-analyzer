@@ -68,6 +68,22 @@ export async function ensureInit(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(policy_uuid, assigned_date)
     )`,
+    // 審核流程的唯一真實來源（取代本機 uuid_registry.json + analyzed/*.json）
+    `CREATE TABLE IF NOT EXISTS policies (
+      uuid TEXT PRIMARY KEY,
+      plan_code TEXT NOT NULL,
+      company TEXT,
+      product_name TEXT,
+      pdf_drive_id TEXT,
+      filename TEXT,
+      category TEXT,
+      status TEXT NOT NULL DEFAULT 'uploaded',
+      analysis_json TEXT,
+      uploaded_at TEXT,
+      archived_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
   ], "write").then(() => undefined);
   return initPromise;
 }
@@ -169,4 +185,20 @@ export interface AdvisorRow {
   is_admin: number;
   is_active: number;
   created_at: string;
+}
+
+export interface PolicyRow {
+  uuid: string;
+  plan_code: string;
+  company: string | null;
+  product_name: string | null;
+  pdf_drive_id: string | null;
+  filename: string | null;
+  category: string | null;
+  status: string; // uploaded | archived | failed
+  analysis_json: string | null;
+  uploaded_at: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
 }

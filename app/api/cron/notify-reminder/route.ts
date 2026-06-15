@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import db, { ensureInit, listAdvisors } from "@/lib/db";
+import db, { ensureInit, listAdvisors, type PolicyRow } from "@/lib/db";
 import { sendReminderEmail, type PolicySummary } from "@/lib/mailer";
-
-const DB_DIR = process.env.DB_DIR ?? "";
 
 function verifySecret(req: NextRequest) {
   return req.headers.get("x-cron-secret") === process.env.CRON_SECRET;
@@ -19,11 +15,13 @@ export async function POST(req: NextRequest) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  // Load registry for product names
-  const registryPath = path.join(DB_DIR, "uuid_registry.json");
-  const registry = fs.existsSync(registryPath)
-    ? (JSON.parse(fs.readFileSync(registryPath, "utf-8")) as Record<string, Record<string, string>>)
-    : {};
+  // Load policies (uuid → metadata) from Turso for product names
+  const policyRows = await db.execute({ sql: "SELECT * FROM policies", args: [] });
+  const registry: Record<string, PolicyRow> = {};
+  for (const row of policyRows.rows) {
+    const p = row as unknown as PolicyRow;
+    registry[p.uuid] = p;
+  }
 
   // Find pending (not completed) assignments for today
   const pending = await db.execute({
@@ -55,9 +53,9 @@ export async function POST(req: NextRequest) {
 
     const policies: PolicySummary[] = uuids.map(uuid => ({
       uuid,
-      productName: registry[uuid]?.productName ?? uuid,
+      productName: registry[uuid]?.product_name ?? uuid,
       company: registry[uuid]?.company ?? "",
-      planCode: registry[uuid]?.planCode ?? uuid,
+      planCode: registry[uuid]?.plan_code ?? uuid,
     }));
 
     try {

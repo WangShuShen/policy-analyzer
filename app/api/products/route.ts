@@ -25,7 +25,19 @@ export async function GET(req: NextRequest) {
               ORDER BY p.verified DESC, p.updated_at DESC LIMIT 1`,
         args: [planCode],
       });
-      if (result.rows.length === 0) return NextResponse.json({ product: null });
+      // 已審核分析內容（給付明細／限制／注意事項）
+      const pol = await db.execute({
+        sql: "SELECT analysis_json, status FROM policies WHERE plan_code = ? AND status = 'archived' ORDER BY archived_at DESC LIMIT 1",
+        args: [planCode],
+      });
+      const analysis = pol.rows[0]?.analysis_json
+        ? JSON.parse(pol.rows[0].analysis_json as string)
+        : null;
+
+      if (result.rows.length === 0) {
+        // products 表沒有，但 policies 可能有已審核分析
+        return NextResponse.json({ product: null, analysis });
+      }
       const r = result.rows[0];
       return NextResponse.json({
         product: {
@@ -37,6 +49,7 @@ export async function GET(req: NextRequest) {
           formula_json: r.formula_json ? JSON.parse(r.formula_json as string) : null,
           formula_verified: r.formula_verified,
         },
+        analysis,
       });
     }
 
@@ -45,9 +58,21 @@ export async function GET(req: NextRequest) {
     const keyword = searchParams.get("keyword") || undefined;
     const category = searchParams.get("category") || undefined;
     const activeOnly = searchParams.get("activeOnly") === "1";
+    const analyzedOnly = searchParams.get("analyzedOnly") === "1";
 
     const products = searchDriveProducts({ company, keyword, category, activeOnly });
-    return NextResponse.json({ products });
+
+    // 交叉比對 Turso：標注哪些已審核歸檔
+    await ensureInit();
+    const archived = await db.execute({
+      sql: "SELECT plan_code FROM policies WHERE status = 'archived'",
+      args: [],
+    });
+    const archivedSet = new Set(archived.rows.map(r => r.plan_code as string));
+    let annotated = products.map(p => ({ ...p, analyzed: archivedSet.has(p.plan_code) }));
+    if (analyzedOnly) annotated = annotated.filter(p => p.analyzed);
+
+    return NextResponse.json({ products: annotated });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

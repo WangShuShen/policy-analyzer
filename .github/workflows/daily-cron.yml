@@ -1,23 +1,42 @@
-name: Daily Policy Assignment & Reminder
+name: Daily Policy Analyze · Assign · Reminder
 
 on:
   schedule:
-    # 早上 8:00 台灣時間（UTC+8） = UTC 00:00
+    # 早上 7:30 台灣時間（UTC+8） = UTC 23:30（前一天）→ 自動分析
+    - cron: "30 23 * * *"
+    # 早上 8:00 台灣時間 = UTC 00:00 → 分配保單 + 寄信
     - cron: "0 0 * * *"
-    # 晚上 9:00 台灣時間（UTC+8） = UTC 13:00
+    # 晚上 9:00 台灣時間 = UTC 13:00 → 提醒
     - cron: "0 13 * * *"
   workflow_dispatch:
     inputs:
       job:
         description: "要執行的工作"
         required: true
-        default: "assign"
+        default: "analyze"
         type: choice
         options:
+          - analyze
           - assign
           - remind
 
 jobs:
+  analyze-daily:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'analyze' || github.event.schedule == '30 23 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 每日自動分析（小批次迴圈累積到每日量）
+        run: |
+          for i in $(seq 1 6); do
+            echo "── batch $i ──"
+            RESP=$(curl -s -X POST "${{ secrets.APP_URL }}/api/cron/analyze-daily" \
+              -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+              -H "Content-Type: application/json")
+            echo "$RESP"
+            # 若本批沒有分析任何一筆（analyzed:0），代表待分析清空，提前結束
+            echo "$RESP" | grep -q '"analyzed":0' && { echo "no more pending, stop"; break; }
+          done
+
   assign-daily:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'assign' || github.event.schedule == '0 0 * * *'
     runs-on: ubuntu-latest
