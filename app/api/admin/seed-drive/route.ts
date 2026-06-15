@@ -23,8 +23,8 @@ async function upsertCompany(name: string): Promise<number> {
 }
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-cron-secret");
-  if (secret !== process.env.CRON_SECRET) {
+  const secret = req.headers.get("x-seed-secret");
+  if (secret !== process.env.SEED_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
