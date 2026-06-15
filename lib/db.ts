@@ -132,6 +132,8 @@ export interface FormulaItem {
   max_rate?: number;
   limit?: { days?: number; times?: number };
   note?: string;
+  // 計劃別：各計劃對應的數值（由 type 決定如何使用：倍率→倍數、定額/一次性→金額）
+  plan_values?: Record<string, number>;
 }
 
 export interface FormulaJson {
@@ -139,6 +141,8 @@ export interface FormulaJson {
   items: FormulaItem[];
   filled_by: string;
   filled_at: string;
+  // 計劃清單（如 ["1","2","3","4","5"] 或 ["A","B","C"]）；空代表此商品無計劃別
+  plans?: string[];
 }
 
 export interface ProductRow {

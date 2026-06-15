@@ -72,9 +72,10 @@ interface TrialResult {
   note: string;
 }
 
-function TrialPanel({ productId, baseUnit }: { productId: number; baseUnit: string }) {
+function TrialPanel({ productId, baseUnit, plans = [] }: { productId: number; baseUnit: string; plans?: string[] }) {
   const [amount, setAmount] = useState("");
   const [unit, setUnit] = useState(baseUnit);
+  const [plan, setPlan] = useState(plans[0] ?? "");
   const [results, setResults] = useState<TrialResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -87,7 +88,7 @@ function TrialPanel({ productId, baseUnit }: { productId: number; baseUnit: stri
       const res = await fetch(`/api/products/${productId}/trial`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ insured_amount: num, unit }),
+        body: JSON.stringify({ insured_amount: num, unit, plan: plan || undefined }),
       });
       const data = await res.json();
       if (data.error) { setError(data.error); return; }
@@ -122,6 +123,16 @@ function TrialPanel({ productId, baseUnit }: { productId: number; baseUnit: stri
         >
           {["元/日", "萬", "元/月", "元"].map(u => <option key={u} value={u}>{u}</option>)}
         </select>
+        {plans.length > 0 && (
+          <select
+            value={plan}
+            onChange={e => setPlan(e.target.value)}
+            className="text-sm border border-[#E8D5B7] rounded-xl px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#C8956C]/20"
+            title="計劃別"
+          >
+            {plans.map(p => <option key={p} value={p}>計劃 {p}</option>)}
+          </select>
+        )}
         <button
           onClick={handleTrial}
           disabled={loading}
@@ -242,7 +253,7 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
   const router = useRouter();
   const [pdfStatus, setPdfStatus] = useState<"loading" | "ok" | "error">("loading");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [formulaInfo, setFormulaInfo] = useState<{ id: number; base_unit: string } | null>(null);
+  const [formulaInfo, setFormulaInfo] = useState<{ id: number; base_unit: string; plans: string[] } | null>(null);
   const [showTrial, setShowTrial] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [tab, setTab] = useState<"info" | "pdf">("pdf");
@@ -262,7 +273,7 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
       .then(d => {
         const p = d.product;
         if (p && p.formula_verified && p.formula_json) {
-          setFormulaInfo({ id: p.id as number, base_unit: p.formula_json.base_unit ?? "元/日" });
+          setFormulaInfo({ id: p.id as number, base_unit: p.formula_json.base_unit ?? "元/日", plans: p.formula_json.plans ?? [] });
         }
         if (d.analysis) {
           setAnalysis(d.analysis as AnalysisData);
@@ -372,7 +383,7 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
         </div>
 
         {showTrial && formulaInfo && (
-          <TrialPanel productId={formulaInfo.id} baseUnit={formulaInfo.base_unit} />
+          <TrialPanel productId={formulaInfo.id} baseUnit={formulaInfo.base_unit} plans={formulaInfo.plans} />
         )}
 
         {/* 分頁：給付資訊 / 條款 PDF */}

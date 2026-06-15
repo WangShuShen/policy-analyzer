@@ -73,6 +73,7 @@ interface UnifiedItem extends AnalysisItem {
   fMinRate?: number;
   fMaxRate?: number;
   fLimitDays?: number;
+  fPlanValues?: Record<string, number>; // 計劃別數值（依 fType 解讀）
 }
 
 // 險種感知的公式建議：先由「險種 + 項目名稱」定類型與單位（insuranceRules），
@@ -117,6 +118,7 @@ function mergeItems(analysisItems: AnalysisItem[], formulaItems: FormulaItem[], 
         fMinRate: f.min_rate,
         fMaxRate: f.max_rate,
         fLimitDays: f.limit?.days,
+        fPlanValues: f.plan_values,
       };
     }
     return { ...a, ...suggestFType(a, category) } as UnifiedItem;
@@ -138,6 +140,7 @@ function toFormulaItem(u: UnifiedItem): FormulaItem {
     min_rate: u.fMinRate,
     max_rate: u.fMaxRate,
     limit: u.fLimitDays ? { days: u.fLimitDays } : undefined,
+    plan_values: u.fPlanValues && Object.keys(u.fPlanValues).length > 0 ? u.fPlanValues : undefined,
   };
 }
 
@@ -145,26 +148,38 @@ function UnifiedItemsEditor({
   data,
   items,
   baseUnit,
+  plans,
   productId,
   formulaVerified,
   onDataChange,
   onItemsChange,
   onBaseUnitChange,
+  onPlansChange,
   onItemClick,
   activePage,
 }: {
   data: AnalysisData;
   items: UnifiedItem[];
   baseUnit: string;
+  plans: string[];
   productId: number | null;
   formulaVerified: boolean;
   onDataChange: (d: AnalysisData) => void;
   onItemsChange: (items: UnifiedItem[]) => void;
   onBaseUnitChange: (u: string) => void;
+  onPlansChange: (plans: string[]) => void;
   onItemClick?: (page: number) => void;
   activePage?: number;
 }) {
   const insuranceTypes = Array.isArray(data.insuranceType) ? data.insuranceType.join("、") : data.insuranceType ?? "";
+
+  const updatePlanValue = (idx: number, plan: string, val: number) => {
+    const next = [...items];
+    const pv = { ...(next[idx].fPlanValues ?? {}) };
+    pv[plan] = val;
+    next[idx] = { ...next[idx], fPlanValues: pv };
+    onItemsChange(next);
+  };
 
   const updateAnalysis = (idx: number, field: keyof AnalysisItem, val: string) => {
     const next = [...items];
@@ -242,6 +257,16 @@ function UnifiedItemsEditor({
               AI 自動建議公式
             </button>
           )}
+        </div>
+        {/* 計劃別清單（選填）：用逗號分隔，例如 1,2,3,4,5 或 A,B,C */}
+        <div className="flex gap-3 items-center pt-1">
+          <span className="text-stone-400 w-20 shrink-0 text-xs">計劃別</span>
+          <input
+            value={plans.join(",")}
+            onChange={e => onPlansChange(e.target.value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean))}
+            placeholder="無則留空；多計劃用逗號分隔，如 1,2,3"
+            className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 text-stone-700"
+          />
         </div>
       </div>
 
@@ -330,13 +355,13 @@ function UnifiedItemsEditor({
                             <option value="multiplier">倍</option>
                             <option value="percentage">%</option>
                           </select>
-                          <input type="number" min={0} step={0.5} placeholder="最低"
+                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
                             value={item.fMinRate ?? ""}
                             onChange={e => updateFormula(idx, { fMinRate: parseFloat(e.target.value) || 0 })}
                             className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
                           />
                           <span className="text-[10px] text-stone-400">～</span>
-                          <input type="number" min={0} step={0.5} placeholder="最高"
+                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高"
                             value={item.fMaxRate ?? ""}
                             onChange={e => updateFormula(idx, { fMaxRate: parseFloat(e.target.value) || 0 })}
                             className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
@@ -345,7 +370,7 @@ function UnifiedItemsEditor({
                         </>
                       ) : (
                         <>
-                          <input type="number" min={0} step={0.5} placeholder="倍數"
+                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="倍數"
                             value={item.fMultiplier ?? ""}
                             onChange={e => updateFormula(idx, { fMultiplier: parseFloat(e.target.value) || 0 })}
                             className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
@@ -360,6 +385,23 @@ function UnifiedItemsEditor({
                         className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none text-stone-500"
                       />
                       <span className="text-[10px] text-stone-400">天/年</span>
+                    </div>
+                  )}
+
+                  {/* Row 3: 計劃別數值（依 fType 解讀：倍率→倍數、定額/一次性→金額） */}
+                  {productId && plans.length > 0 && (
+                    <div className="flex items-center gap-1.5 ml-28 flex-wrap mt-1">
+                      <span className="text-[10px] text-stone-300">各計劃{item.fType === "multiplier" ? "倍數" : "金額"}：</span>
+                      {plans.map(pl => (
+                        <span key={pl} className="flex items-center gap-0.5">
+                          <span className="text-[10px] text-stone-400">{pl}</span>
+                          <input type="number" min={0} step="any" inputMode="decimal"
+                            value={item.fPlanValues?.[pl] ?? ""}
+                            onChange={e => updatePlanValue(idx, pl, parseFloat(e.target.value) || 0)}
+                            className="w-14 text-[10px] border border-amber-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                          />
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -519,6 +561,7 @@ export function ReviewDetail({
   const [unifiedItems, setUnifiedItems] = useState<UnifiedItem[]>([]);
   const [productId, setProductId] = useState<number | null>(null);
   const [baseUnit, setBaseUnit] = useState("元/日");
+  const [plans, setPlans] = useState<string[]>([]);
   const [formulaVerified, setFormulaVerified] = useState(false);
 
   const pdfUrl = `/api/pdf-proxy/local?planCode=${encodeURIComponent(product.planCode)}&driveId=${encodeURIComponent(product.pdfDriveId)}`;
@@ -555,6 +598,7 @@ export function ReviewDetail({
           if (p.formula_json) {
             const fj = p.formula_json as FormulaJson;
             setBaseUnit(fj.base_unit);
+            if (fj.plans) setPlans(fj.plans);
             setUnifiedItems(mergeItems(items, fj.items, cat));
             return;
           }
@@ -599,6 +643,7 @@ export function ReviewDetail({
           items: unifiedItems.map(toFormulaItem),
           filled_by: "",
           filled_at: "",
+          plans: plans.length > 0 ? plans : undefined,
         };
         const fRes = await fetch(`/api/products/${productId}/formula`, {
           method: "PUT",
@@ -747,11 +792,13 @@ export function ReviewDetail({
                 data={analysisData}
                 items={unifiedItems}
                 baseUnit={baseUnit}
+                plans={plans}
                 productId={productId}
                 formulaVerified={formulaVerified}
                 onDataChange={d => { setAnalysisData(d); setIsDirty(true); }}
                 onItemsChange={items => { setUnifiedItems(items); setIsDirty(true); }}
                 onBaseUnitChange={u => { setBaseUnit(u); setIsDirty(true); }}
+                onPlansChange={p => { setPlans(p); setIsDirty(true); }}
                 onItemClick={setActivePage}
                 activePage={activePage}
               />

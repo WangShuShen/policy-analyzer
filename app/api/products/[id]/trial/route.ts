@@ -16,24 +16,30 @@ function formatAmount(n: number): string {
   return n.toLocaleString("zh-TW");
 }
 
-function calcItem(item: FormulaItem, amount: number): TrialResult {
+function calcItem(item: FormulaItem, amount: number, plan?: string): TrialResult {
   const limit = item.limit
     ? [item.limit.days ? `年度最高 ${item.limit.days} 天` : "", item.limit.times ? `最多 ${item.limit.times} 次` : ""]
         .filter(Boolean).join("、")
     : "";
 
+  // 計劃別數值（依 type 解讀：倍率→倍數、定額/一次性/限額→絕對金額）
+  const planVal = plan != null && item.plan_values ? item.plan_values[plan] : undefined;
+  const hasPlan = planVal != null;
+
   switch (item.type) {
     case "fixed":
     case "multiplier": {
-      const val = Math.round(amount * (item.multiplier ?? 1));
+      const val = hasPlan && item.type === "fixed"
+        ? Math.round(planVal!)
+        : Math.round(amount * (hasPlan ? planVal! : (item.multiplier ?? 1)));
       return { label: item.label, type: item.type, display: `${formatAmount(val)} 元`, limit, note: item.note ?? "" };
     }
     case "lump_sum": {
-      const val = Math.round(amount * (item.multiplier ?? 1));
+      const val = hasPlan ? Math.round(planVal!) : Math.round(amount * (item.multiplier ?? 1));
       return { label: item.label, type: item.type, display: `${formatAmount(val)} 元`, limit: "一次性給付", note: item.note ?? "" };
     }
     case "reimbursement": {
-      const cap = Math.round(amount * (item.multiplier ?? 1));
+      const cap = hasPlan ? Math.round(planVal!) : Math.round(amount * (item.multiplier ?? 1));
       return { label: item.label, type: item.type, display: `實支實付，上限 ${formatAmount(cap)} 元`, limit, note: item.note ?? "" };
     }
     case "range": {
@@ -69,7 +75,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   await ensureInit();
 
-  const body = await req.json() as { insured_amount: number; unit: string };
+  const body = await req.json() as { insured_amount: number; unit: string; plan?: string };
   if (!body.insured_amount || body.insured_amount <= 0) {
     return NextResponse.json({ error: "請輸入有效的保額" }, { status: 400 });
   }
@@ -90,7 +96,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const formula = JSON.parse(row.formula_json as string) as FormulaJson;
-  const results: TrialResult[] = formula.items.map(item => calcItem(item, body.insured_amount));
+  const results: TrialResult[] = formula.items.map(item => calcItem(item, body.insured_amount, body.plan));
 
   return NextResponse.json({
     product_name: row.product_name,
@@ -98,6 +104,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     category: row.category,
     insured_amount: body.insured_amount,
     unit: body.unit ?? formula.base_unit,
+    plan: body.plan,
+    plans: formula.plans ?? [],
     results,
   });
 }
