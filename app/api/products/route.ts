@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchProducts, getCompanies, getCategories } from "@/lib/policyCache";
+import { searchDriveProducts, getDriveCompanies, getDriveCategories } from "@/lib/driveRegistry";
 import db, { ensureInit } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
@@ -8,11 +8,13 @@ export async function GET(req: NextRequest) {
     const action = searchParams.get("action");
 
     if (action === "meta") {
-      const [companies, categories] = await Promise.all([getCompanies(), getCategories()]);
-      return NextResponse.json({ companies, categories });
+      return NextResponse.json({
+        companies: getDriveCompanies(),
+        categories: getDriveCategories(),
+      });
     }
 
-    // planCode lookup for formula editor
+    // planCode lookup for formula editor — still reads from Turso DB
     const planCode = searchParams.get("planCode");
     if (planCode) {
       await ensureInit();
@@ -38,12 +40,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Default: search drive_registry.json in-memory
     const company = searchParams.get("company") || undefined;
     const keyword = searchParams.get("keyword") || undefined;
     const category = searchParams.get("category") || undefined;
     const activeOnly = searchParams.get("activeOnly") === "1";
 
-    const products = await searchProducts({ company, keyword, category, activeOnly });
+    const products = searchDriveProducts({ company, keyword, category, activeOnly });
     return NextResponse.json({ products });
   } catch (err) {
     console.error(err);

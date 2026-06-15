@@ -9,7 +9,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface ProductItem {
-  id: number;
+  id: string | number;
   company: string;
   product_name: string;
   plan_code: string;
@@ -167,7 +167,7 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
 
   let tmpl: Record<string, unknown> = {};
   try { tmpl = JSON.parse(product.coverage_template); } catch { /* */ }
-  const isCatalog = tmpl._source === "tii_catalog";
+  const isCatalog = tmpl._source === "drive_registry" || tmpl._source === "tii_catalog";
   const isActive = tmpl._active === true;
   const saleDate = tmpl._saleDate as string | undefined;
   const stopDate = tmpl._stopDate as string | undefined;
@@ -378,7 +378,7 @@ export default function CatalogPage() {
         <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>
           商品查詢
         </h2>
-        <p className="text-xs text-stone-400 mt-0.5">搜尋資料庫中已分析的保險商品</p>
+        <p className="text-xs text-stone-400 mt-0.5">搜尋 Google Drive 已審核商品（{3705} 筆南山人壽）</p>
       </div>
 
       <div className="w-full px-8 py-6 space-y-5 overflow-auto flex-1">
@@ -526,7 +526,7 @@ export default function CatalogPage() {
                             {(() => {
                               let t: Record<string, unknown> = {};
                               try { t = JSON.parse(p.coverage_template); } catch { /* */ }
-                              if (t._source === "tii_catalog" && !p.latest_analysis) {
+                              if ((t._source === "drive_registry" || t._source === "tii_catalog") && !p.latest_analysis) {
                                 return (
                                   <a
                                     href={`https://insprod.tii.org.tw/DetailList.aspx?productId=${p.plan_code}`}
