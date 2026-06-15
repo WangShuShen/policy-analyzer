@@ -75,6 +75,7 @@ export async function ensureInit(): Promise<void> {
       company TEXT,
       product_name TEXT,
       pdf_drive_id TEXT,
+      rate_drive_id TEXT,
       filename TEXT,
       category TEXT,
       status TEXT NOT NULL DEFAULT 'uploaded',
@@ -197,6 +198,7 @@ export interface PolicyRow {
   company: string | null;
   product_name: string | null;
   pdf_drive_id: string | null;
+  rate_drive_id: string | null;
   filename: string | null;
   category: string | null;
   status: string; // uploaded | archived | failed

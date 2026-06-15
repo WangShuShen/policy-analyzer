@@ -46,7 +46,14 @@ export async function POST(req: NextRequest) {
       const pdf = await downloadDriveFile(p.pdf_drive_id!);
       if (!pdf || pdf.subarray(0, 4).toString("latin1") !== "%PDF") throw new Error("PDF 下載失敗");
 
-      const { data, category } = await analyzePolicyPdf(pdf.toString("base64"));
+      // 費率 PDF（補計劃別來源，可選）
+      let ratePdfB64: string | undefined;
+      if (p.rate_drive_id) {
+        const rate = await downloadDriveFile(p.rate_drive_id);
+        if (rate && rate.subarray(0, 4).toString("latin1") === "%PDF") ratePdfB64 = rate.toString("base64");
+      }
+
+      const { data, category } = await analyzePolicyPdf(pdf.toString("base64"), undefined, ratePdfB64);
       const enriched = { ...data, _analyzedAt: today, _detectedCategory: category };
 
       await db.execute({

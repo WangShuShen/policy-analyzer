@@ -47,14 +47,14 @@ for (const [plan, info] of Object.entries(index)) {
 
   const reg = regByPlan[plan] ?? {};
   await db.execute({
-    sql: `INSERT INTO policies (uuid, plan_code, company, product_name, pdf_drive_id, category, status, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'pending_analysis', datetime('now'))
+    sql: `INSERT INTO policies (uuid, plan_code, company, product_name, pdf_drive_id, rate_drive_id, category, status, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_analysis', datetime('now'))
           ON CONFLICT(uuid) DO UPDATE SET
-            pdf_drive_id=excluded.pdf_drive_id, company=excluded.company,
+            pdf_drive_id=excluded.pdf_drive_id, rate_drive_id=excluded.rate_drive_id, company=excluded.company,
             product_name=excluded.product_name, category=excluded.category,
             status='pending_analysis', updated_at=datetime('now')`,
     args: [plan, plan, reg.company ?? null, reg.productName ?? info.productFolder ?? null,
-           info.clauseId, reg.productType ?? null],
+           info.clauseId, info.rateId ?? null, reg.productType ?? null],
   });
   ingested++; count++;
 }

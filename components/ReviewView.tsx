@@ -41,6 +41,7 @@ interface AnalysisItem {
   restriction?: string;
   notes?: string;
   pageRef?: number | null;
+  planValues?: Record<string, number>; // AI 抽取的計劃別數值
 }
 
 interface AnalysisData {
@@ -49,6 +50,7 @@ interface AnalysisData {
   planCode?: string;
   insuranceType?: string[];
   baseType?: string;
+  plans?: string[]; // AI 抽取的計劃別清單
   items?: AnalysisItem[];
   annualLimit?: { formula?: string; notes?: string };
   waitingPeriod?: { disease?: number; injury?: number; note?: string };
@@ -84,6 +86,8 @@ function suggestFType(item: AnalysisItem, category = ""): Partial<UnifiedItem> {
   const out: Partial<UnifiedItem> = { fType: base.fType };
   // 單位：沿用 AI 既有 unit，否則用規則建議
   if (!item.unit) out.unit = base.unit;
+  // 計劃別數值：沿用 AI 抽取
+  if (item.planValues && Object.keys(item.planValues).length > 0) out.fPlanValues = item.planValues;
 
   // 從公式文字解析數值
   const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
@@ -584,6 +588,8 @@ export function ReviewDetail({
     if (!analysisData) return;
     const items = analysisData.items ?? [];
     const cat = categoryOf(analysisData);
+    // AI 抽取的計劃別清單（DB 公式未存時的預設）
+    if (analysisData.plans && analysisData.plans.length > 0) setPlans(analysisData.plans);
     if (!product.planCode) {
       setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a, cat) } as UnifiedItem)));
       return;
@@ -598,7 +604,7 @@ export function ReviewDetail({
           if (p.formula_json) {
             const fj = p.formula_json as FormulaJson;
             setBaseUnit(fj.base_unit);
-            if (fj.plans) setPlans(fj.plans);
+            if (fj.plans && fj.plans.length > 0) setPlans(fj.plans);
             setUnifiedItems(mergeItems(items, fj.items, cat));
             return;
           }
