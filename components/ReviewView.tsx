@@ -55,7 +55,8 @@ interface AnalysisData {
   planCode?: string;
   insuranceType?: string[];
   baseType?: string;
-  plans?: string[]; // AI 抽取的計劃別清單
+  baseUnit?: string;        // 保額單位（元/美元/萬元/計劃別/單位數）
+  plans?: string[];         // 計劃別清單
   items?: AnalysisItem[];
   annualLimit?: { formula?: string; notes?: string };
   waitingPeriod?: { disease?: number; injury?: number; note?: string };
@@ -265,14 +266,14 @@ function UnifiedItemsEditor({
             onChange={e => onBaseUnitChange(e.target.value)}
             className="text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
           >
-            {["元/日", "萬", "元/月", "元"].map(u => <option key={u} value={u}>{u}</option>)}
+            {["元", "美元", "萬元", "計劃別", "單位數"].map(u => <option key={u} value={u}>{u}</option>)}
           </select>
           {formulaVerified && (
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 ml-1">
               公式已確認
             </span>
           )}
-          {productId && (
+          {(
             <button onClick={suggestAll} className="ml-auto flex items-center gap-1 text-[11px] text-amber-600 hover:text-amber-800 transition-colors">
               <Sparkles className="h-3 w-3" />
               AI 自動建議公式
@@ -351,7 +352,7 @@ function UnifiedItemsEditor({
                   </div>
 
                   {/* Row 2: 金額來源 value_source + 對應數值 */}
-                  {productId && (
+                  {(
                     <div className="flex items-center gap-1.5 ml-28 flex-wrap">
                       {/* 顏色來源標籤 */}
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${SOURCE_META[item.vSource]?.chip ?? "bg-stone-100 text-stone-500"}`}>
@@ -445,7 +446,7 @@ function UnifiedItemsEditor({
                   )}
 
                   {/* Row 3: 計劃別各計劃金額（value_source=plan 時） */}
-                  {productId && item.vSource === "plan" && plans.length > 0 && (
+                  {item.vSource === "plan" && plans.length > 0 && (
                     <div className="flex items-center gap-1.5 ml-28 flex-wrap mt-1">
                       <span className="text-[10px] text-stone-300">各計劃金額（{item.vUnit}）：</span>
                       {plans.map(pl => (
@@ -616,7 +617,7 @@ export function ReviewDetail({
   // Unified state for items + formula
   const [unifiedItems, setUnifiedItems] = useState<UnifiedItem[]>([]);
   const [productId, setProductId] = useState<number | null>(null);
-  const [baseUnit, setBaseUnit] = useState("元/日");
+  const [baseUnit, setBaseUnit] = useState("元");
   const [plans, setPlans] = useState<string[]>([]);
   const [formulaVerified, setFormulaVerified] = useState(false);
 
@@ -635,37 +636,14 @@ export function ReviewDetail({
       .finally(() => setAnalysisLoading(false));
   }, [product.id]);
 
-  // Load formula from DB and merge with analysis items
+  // 公式 = 分析項目本身（items 自帶 valueSource）；不再依賴 products 表
   useEffect(() => {
     if (!analysisData) return;
     const items = analysisData.items ?? [];
     const cat = categoryOf(analysisData);
-    // AI 抽取的計劃別清單（DB 公式未存時的預設）
     if (analysisData.plans && analysisData.plans.length > 0) setPlans(analysisData.plans);
-    if (!product.planCode) {
-      setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
-      return;
-    }
-    fetch(`/api/products?planCode=${encodeURIComponent(product.planCode)}`)
-      .then(r => r.json())
-      .then(d => {
-        const p = d.product;
-        if (p) {
-          setProductId(p.id as number);
-          setFormulaVerified(!!p.formula_verified);
-          if (p.formula_json) {
-            const fj = p.formula_json as FormulaJson;
-            setBaseUnit(fj.base_unit);
-            if (fj.plans && fj.plans.length > 0) setPlans(fj.plans);
-            setUnifiedItems(mergeItems(items, fj.items, cat));
-            return;
-          }
-        }
-        setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
-      })
-      .catch(() => {
-        setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
-      });
+    if (analysisData.baseUnit) setBaseUnit(analysisData.baseUnit);
+    setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
   }, [analysisData, product.planCode]);
 
   const handleSave = async () => {
@@ -673,45 +651,35 @@ export function ReviewDetail({
     setSaving(true);
     setSaveResult(null);
     try {
-      // Build updated analysisData from unified items
+      // 公式直接寫回 analysis items（含 value_source 結構），公式 = 分析項目本身
       const updatedData: AnalysisData = {
         ...analysisData,
+        plans: plans.length > 0 ? plans : [],
+        baseUnit,
         items: unifiedItems.map(it => ({
-          name: it.name, formula: it.formula, unit: it.unit,
-          restriction: it.restriction, notes: it.notes, pageRef: it.pageRef,
+          name: it.name, formula: it.formula, unit: it.vUnit, restriction: it.restriction,
+          notes: it.notes, pageRef: it.pageRef,
+          valueSource: it.vSource,
+          planValues: it.vSource === "plan" ? it.fPlanValues : undefined,
+          tableRange: it.vSource === "table" ? { min: it.vTableMin ?? 0, max: it.vTableMax ?? 0 } : undefined,
+          insuredRate: it.vSource === "insured" ? { type: it.vRateType ?? "multiplier", rate: it.vRate, min: it.vMinRate, max: it.vMaxRate } : undefined,
+          amount: it.vSource === "fixed" ? it.vAmount : undefined,
+          limit: it.fLimitDays ? { days: it.fLimitDays } : undefined,
         })),
       };
 
-      // 1) Save analysis JSON
+      // 只存 analysis JSON（公式已含在 items；不再依賴 products 表）
       const res = await fetch(`/api/review/${product.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: updatedData, sheetUrl: product.sheetUrl }),
+        body: JSON.stringify({ data: updatedData }),
       });
       const result = await res.json();
       if (!result.success) {
-        setSaveResult({ ok: false, msg: result.error ?? "分析儲存失敗" });
+        setSaveResult({ ok: false, msg: result.error ?? "儲存失敗" });
         return;
       }
-
-      // 2) Save formula to DB (if product found)
-      if (productId && unifiedItems.length > 0) {
-        const formulaPayload: FormulaJson = {
-          base_unit: baseUnit,
-          items: unifiedItems.map(toFormulaItem),
-          filled_by: "",
-          filled_at: "",
-          plans: plans.length > 0 ? plans : undefined,
-        };
-        const fRes = await fetch(`/api/products/${productId}/formula`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ formula: formulaPayload }),
-        });
-        const fData = await fRes.json();
-        if (fData.ok) setFormulaVerified(true);
-      }
-
+      setFormulaVerified(true);
       setAnalysisData(updatedData);
       setIsDirty(false);
       setSaveResult({ ok: true, msg: "已儲存 ✓" });

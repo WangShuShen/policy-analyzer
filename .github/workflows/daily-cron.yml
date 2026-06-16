@@ -2,8 +2,6 @@ name: Daily Policy Analyze · Assign · Reminder
 
 on:
   schedule:
-    # 早上 7:30 台灣時間（UTC+8） = UTC 23:30（前一天）→ 自動分析
-    - cron: "30 23 * * *"
     # 早上 8:00 台灣時間 = UTC 00:00 → 分配保單 + 寄信
     - cron: "0 0 * * *"
     # 晚上 9:00 台灣時間 = UTC 13:00 → 提醒
@@ -13,19 +11,19 @@ on:
       job:
         description: "要執行的工作"
         required: true
-        default: "analyze"
+        default: "assign"
         type: choice
         options:
-          - analyze
+          - analyze   # 手動觸發用（平時改用 Claude Code Agent Skill 批次分析，不自動排程以省 API 成本）
           - assign
           - remind
 
 jobs:
   analyze-daily:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'analyze' || github.event.schedule == '30 23 * * *'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'analyze'
     runs-on: ubuntu-latest
     steps:
-      - name: 每日自動分析（小批次迴圈累積到每日量）
+      - name: 雲端分析（僅手動觸發備援；平時用 Claude Code Agent Skill 批次）
         run: |
           for i in $(seq 1 6); do
             echo "── batch $i ──"
