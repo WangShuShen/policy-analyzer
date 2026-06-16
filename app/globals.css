@@ -130,3 +130,13 @@
     @apply font-sans;
   }
 }
+/* 數字輸入框：拿掉上下調整按鈕（spinner），允許自由輸入小數 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
