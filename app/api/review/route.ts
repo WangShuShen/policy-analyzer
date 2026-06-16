@@ -33,25 +33,25 @@ export async function GET(req: NextRequest) {
     const token = req.cookies.get("auth_token")?.value;
     const payload = token ? await verifyJWT(token) : null;
 
-    // Admin (or unauthenticated dev): show all policies awaiting review
-    if (!payload || payload.isAdmin) {
+    // 只有「未登入(dev)」或「管理者明確要求 ?all=1」才看全部待審
+    const wantAll = req.nextUrl.searchParams.get("all") === "1";
+    if (!payload || (wantAll && payload.isAdmin)) {
       const r = await db.execute({
         sql: "SELECT * FROM policies WHERE status = 'uploaded' ORDER BY uploaded_at DESC, created_at DESC",
         args: [],
       });
       const products = r.rows.map(row => toProduct(row as unknown as PolicyRow));
-      return NextResponse.json({ products, count: products.length });
+      return NextResponse.json({ products, count: products.length, scope: "all" });
     }
 
-    // Advisor: show only today's assigned policies
-    const today = new Date().toISOString().slice(0, 10);
+    // 一般（含管理者）：只顯示「指派給我、且尚待審核」的保單
     const assigned = await db.execute({
       sql: `SELECT p.*, a.status AS assignment_status
             FROM policy_assignments a
             JOIN policies p ON p.uuid = a.policy_uuid
-            WHERE a.advisor_id = ? AND a.assigned_date = ?
+            WHERE a.advisor_id = ? AND p.status = 'uploaded'
             ORDER BY a.status ASC, p.uploaded_at DESC`,
-      args: [payload.advisorId, today],
+      args: [payload.advisorId],
     });
 
     const products = assigned.rows.map(row =>

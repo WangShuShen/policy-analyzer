@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Loader2, FileText, Database, SlidersHorizontal, Search, ExternalLink, X,
+  Loader2, FileText, Database, SlidersHorizontal, Search, X,
   Calculator, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -392,16 +392,6 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
                   查看全險圖
                 </button>
               )}
-              {isCatalog && (
-                <a
-                  href={`https://insprod.tii.org.tw/DetailList.aspx?productId=${product.plan_code}`}
-                  target="_blank" rel="noreferrer"
-                  className="text-xs px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-500 hover:bg-stone-200 transition-colors font-medium flex items-center gap-1"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  保發中心
-                </a>
-              )}
               <button onClick={onClose} className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors">
                 <X className="h-4 w-4" />
               </button>
@@ -439,7 +429,7 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
           {pdfStatus === "loading" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-400">
               <Loader2 className="h-8 w-8 animate-spin" />
-              <p className="text-sm">連線保發中心取得條款…</p>
+              <p className="text-sm">載入條款 PDF…</p>
             </div>
           )}
           {pdfStatus === "error" && (
@@ -449,21 +439,8 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
               </div>
               <div className="text-center">
                 <p className="text-sm font-semibold text-stone-600 mb-1">條款 PDF 尚未建立</p>
-                <p className="text-xs text-stone-400 leading-relaxed">
-                  保發中心需要登入才能取得 PDF。<br />
-                  可點擊右上方「保發中心」連結，<br />
-                  或上傳條款後使用 AI 分析功能。
-                </p>
+                <p className="text-xs text-stone-400 leading-relaxed">此商品尚未上傳條款 PDF。</p>
               </div>
-              <a
-                href={`https://insprod.tii.org.tw/DetailList.aspx?productId=${product.plan_code}`}
-                target="_blank" rel="noreferrer"
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white transition-all"
-                style={{ background: "linear-gradient(135deg, #C8956C, #A0714F)" }}
-              >
-                <ExternalLink className="h-4 w-4" />
-                前往保發中心查看
-              </a>
             </div>
           )}
           {pdfStatus === "ok" && pdfBlobUrl && (
@@ -483,7 +460,6 @@ export default function CatalogPage() {
   const [filterKeyword, setFilterKeyword] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [filterActiveOnly, setFilterActiveOnly] = useState(false);
-  const [filterAnalyzedOnly, setFilterAnalyzedOnly] = useState(false);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -507,7 +483,6 @@ export default function CatalogPage() {
       if (filterKeyword) params.set("keyword", filterKeyword);
       if (filterCategory) params.set("category", filterCategory);
       if (filterActiveOnly) params.set("activeOnly", "1");
-      if (filterAnalyzedOnly) params.set("analyzedOnly", "1");
       const res = await fetch(`/api/products?${params}`);
       const data = await res.json();
       setProducts(data.products ?? []);
@@ -518,7 +493,7 @@ export default function CatalogPage() {
 
   const handleClear = () => {
     setFilterCompany(""); setFilterKeyword(""); setFilterCategory("");
-    setFilterActiveOnly(false); setFilterAnalyzedOnly(false);
+    setFilterActiveOnly(false);
     setProducts([]); setSearched(false);
   };
 
@@ -599,15 +574,6 @@ export default function CatalogPage() {
                   <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${filterActiveOnly ? "translate-x-4" : "translate-x-0"}`} />
                 </div>
                 <span className="text-sm text-stone-500">只看在售</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <div
-                  onClick={() => setFilterAnalyzedOnly(v => !v)}
-                  className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${filterAnalyzedOnly ? "bg-[#C8956C]" : "bg-stone-200"}`}
-                >
-                  <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${filterAnalyzedOnly ? "translate-x-4" : "translate-x-0"}`} />
-                </div>
-                <span className="text-sm text-stone-500">只看已審核</span>
               </label>
             </div>
           </CardContent>
@@ -719,7 +685,7 @@ export default function CatalogPage() {
           <div className="flex flex-col items-center justify-center py-16 text-stone-300">
             <Database className="h-14 w-14 mb-4" />
             <p className="text-sm font-medium text-stone-400">輸入條件後按「查詢」</p>
-            <p className="text-xs text-stone-300 mt-1">可搜尋資料庫中的保險商品（含保發中心資料）</p>
+            <p className="text-xs text-stone-300 mt-1">僅顯示已審核完成的商品</p>
           </div>
         )}
       </div>

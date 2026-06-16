@@ -56,19 +56,19 @@ export async function GET(req: NextRequest) {
     const keyword = searchParams.get("keyword") || undefined;
     const category = searchParams.get("category") || undefined;
     const activeOnly = searchParams.get("activeOnly") === "1";
-    const analyzedOnly = searchParams.get("analyzedOnly") === "1";
 
     const products = searchDriveProducts({ company, keyword, category, activeOnly });
 
-    // 交叉比對 Turso：標注哪些已審核歸檔
+    // 商品查詢只露出「已審核歸檔」的商品（未審核的無意義，不顯示）
     await ensureInit();
     const archived = await db.execute({
       sql: "SELECT plan_code FROM policies WHERE status = 'archived'",
       args: [],
     });
     const archivedSet = new Set(archived.rows.map(r => r.plan_code as string));
-    let annotated = products.map(p => ({ ...p, analyzed: archivedSet.has(p.plan_code) }));
-    if (analyzedOnly) annotated = annotated.filter(p => p.analyzed);
+    const annotated = products
+      .filter(p => archivedSet.has(p.plan_code))
+      .map(p => ({ ...p, analyzed: true }));
 
     return NextResponse.json({ products: annotated });
   } catch (err) {
