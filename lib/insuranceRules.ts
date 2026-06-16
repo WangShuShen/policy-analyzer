@@ -7,13 +7,14 @@
 //   3) 細分商品類型預設（categoryDefaults）
 
 export type FormulaType = "fixed" | "multiplier" | "reimbursement" | "range" | "lump_sum";
-export type ValueSource = "plan" | "table" | "insured" | "reimbursement" | "fixed";
+export type ValueSource = "plan" | "table" | "insured" | "unit" | "fixed";
 
 export interface FormulaSuggestion {
   fType: FormulaType;
   valueSource: ValueSource;
   unit: string;
   rateType?: "multiplier" | "percentage";
+  isLimit?: boolean;   // 性質＝限額（正交於 valueSource，僅影響顯示）
 }
 
 // ── 第 3 層：細分商品類型 → 預設（類型 + 單位）──
@@ -72,7 +73,7 @@ function sourceOf(fType: FormulaType, itemName: string): ValueSource {
     case "lump_sum": return "insured";                  // 一次性＝保額×N%
     case "multiplier": return "insured";                // 倍率＝保額/日額×N
     case "range": return "table";                        // 範圍多為附表
-    case "reimbursement": return "reimbursement";       // 限額＝保額(限額)×倍率，獨立來源
+    case "reimbursement": return "insured";             // 限額金額預設依保額×倍率（限額性質另由 isLimit 標記）
     case "fixed": default: return "fixed";              // 定額＝固定金額
   }
 }
@@ -81,12 +82,12 @@ export function suggestFormula(itemName: string, category = ""): FormulaSuggesti
   // 第 2 層：項目名稱關鍵字（最優先）
   for (const r of itemKeywordRules) {
     if (r.match.test(itemName)) {
-      return { fType: r.fType, valueSource: sourceOf(r.fType, itemName), unit: r.unit, rateType: r.fType === "range" ? "multiplier" : undefined };
+      return { fType: r.fType, valueSource: sourceOf(r.fType, itemName), unit: r.unit, rateType: r.fType === "range" ? "multiplier" : undefined, isLimit: r.fType === "reimbursement" };
     }
   }
   // 第 3 層：細分商品類型預設
   const cat = matchCategory(category);
-  if (cat) return { fType: cat.fType, valueSource: sourceOf(cat.fType, itemName), unit: cat.unit, rateType: cat.fType === "range" ? "multiplier" : undefined };
+  if (cat) return { fType: cat.fType, valueSource: sourceOf(cat.fType, itemName), unit: cat.unit, rateType: cat.fType === "range" ? "multiplier" : undefined, isLimit: cat.fType === "reimbursement" };
 
   // 最終 fallback
   return { fType: "fixed", valueSource: "fixed", unit: "元" };
@@ -97,7 +98,7 @@ export const SOURCE_META: Record<ValueSource, { label: string; chip: string }> =
   plan:    { label: "計劃別", chip: "bg-violet-50 text-violet-700 border border-violet-200" },
   table:   { label: "附表",   chip: "bg-purple-50 text-purple-700 border border-purple-200" },
   insured: { label: "保額計算", chip: "bg-amber-50 text-amber-700 border border-amber-200" },
-  reimbursement: { label: "限額", chip: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+  unit:    { label: "每單位", chip: "bg-teal-50 text-teal-700 border border-teal-200" },
   fixed:   { label: "定額",   chip: "bg-sky-50 text-sky-700 border border-sky-200" },
 };
 

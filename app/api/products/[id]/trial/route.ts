@@ -34,43 +34,41 @@ function calcItem(item: FormulaItem, amount: number, baseUnit: string, plan?: st
 
   // 以新格式 value_source 為主
   if (item.value_source) {
-    switch (item.value_source) {
-      case "plan": {
-        const v = plan != null ? item.plan_values?.[plan] : undefined;
-        return { label: item.label, type: "plan", display: v != null ? fmt(v) : "（請選計劃別）", limit, note };
-      }
-      case "table": {
-        const lo = item.table_range?.min ?? 0, hi = item.table_range?.max ?? 0;
-        return { label: item.label, type: "table",
-          display: lo === hi ? fmt(lo) : `${fmt(lo)} ～ ${fmt(hi)}`, limit, note: note || "依附表項別核給" };
-      }
-      case "insured": {
-        const base = unitToYuan(amount, baseUnit);
-        const r = item.insured_rate;
-        const mul = (x?: number) => r?.type === "percentage" ? (x ?? 0) / 100 : (x ?? 0);
-        if (r?.min != null && r?.max != null) {
-          const rd = r.type === "percentage" ? `${r.min}%～${r.max}%` : `${r.min}倍～${r.max}倍`;
-          return { label: item.label, type: "insured",
-            display: `${fmt(base * mul(r.min))} ～ ${fmt(base * mul(r.max))}（${rd}）`, limit, note };
+    const res: TrialResult = (() => {
+      switch (item.value_source) {
+        case "plan": {
+          const v = plan != null ? item.plan_values?.[plan] : undefined;
+          return { label: item.label, type: "plan", display: v != null ? fmt(v) : "（請選計劃別）", limit, note };
         }
-        return { label: item.label, type: "insured", display: fmt(base * mul(r?.rate ?? 1)), limit, note };
-      }
-      case "reimbursement": {
-        // 限額＝保額(投保限額)×倍率；顯示為「實支實付，上限 X」
-        const base = unitToYuan(amount, baseUnit);
-        const r = item.insured_rate;
-        const mul = (x?: number) => r?.type === "percentage" ? (x ?? 0) / 100 : (x ?? 0);
-        if (r?.min != null && r?.max != null) {
-          const rd = r.type === "percentage" ? `${r.min}%～${r.max}%` : `${r.min}倍～${r.max}倍`;
-          return { label: item.label, type: "reimbursement",
-            display: `實支實付，上限 ${fmt(base * mul(r.min))} ～ ${fmt(base * mul(r.max))}（${rd}）`, limit, note };
+        case "table": {
+          const lo = item.table_range?.min ?? 0, hi = item.table_range?.max ?? 0;
+          return { label: item.label, type: "table",
+            display: lo === hi ? fmt(lo) : `${fmt(lo)} ～ ${fmt(hi)}`, limit, note: note || "依附表項別核給" };
         }
-        return { label: item.label, type: "reimbursement",
-          display: `實支實付，上限 ${fmt(base * mul(r?.rate ?? 1))}`, limit, note };
+        case "insured": {
+          const base = unitToYuan(amount, baseUnit);
+          const r = item.insured_rate;
+          const mul = (x?: number) => r?.type === "percentage" ? (x ?? 0) / 100 : (x ?? 0);
+          if (r?.min != null && r?.max != null) {
+            const rd = r.type === "percentage" ? `${r.min}%～${r.max}%` : `${r.min}倍～${r.max}倍`;
+            return { label: item.label, type: "insured",
+              display: `${fmt(base * mul(r.min))} ～ ${fmt(base * mul(r.max))}（${rd}）`, limit, note };
+          }
+          return { label: item.label, type: "insured", display: fmt(base * mul(r?.rate ?? 1)), limit, note };
+        }
+        case "unit": {
+          // 單位基準：每單位金額 × 單位數 N（N = 顧客輸入的 amount）
+          return { label: item.label, type: "unit", display: fmt((item.amount ?? 0) * amount), limit, note };
+        }
+        case "fixed":
+          return { label: item.label, type: "fixed", display: fmt(item.amount ?? 0), limit, note };
+        default:
+          return { label: item.label, type: "fixed", display: "—", limit, note };
       }
-      case "fixed":
-        return { label: item.label, type: "fixed", display: fmt(item.amount ?? 0), limit, note };
-    }
+    })();
+    // 性質＝限額：顯示加「限額」前綴（不寫實支字樣）
+    if (item.is_limit) res.display = `限額 ${res.display}`;
+    return res;
   }
 
   // ── legacy fallback（舊 type 格式）──

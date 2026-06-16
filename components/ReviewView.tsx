@@ -42,7 +42,8 @@ interface AnalysisItem {
   notes?: string;
   pageRef?: number | null;
   // AI 新格式（金額來源）
-  valueSource?: "plan" | "table" | "insured" | "reimbursement" | "fixed";
+  valueSource?: "plan" | "table" | "insured" | "unit" | "fixed";
+  isLimit?: boolean;        // 性質＝限額（正交於金額來源）
   planValues?: Record<string, number>;
   tableRange?: { min: number; max: number };
   insuredRate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
@@ -66,25 +67,26 @@ interface AnalysisData {
 
 // ── Unified Items + Formula Editor ────────────────────────────────────
 
-type VSource = "plan" | "table" | "insured" | "reimbursement" | "fixed";
+type VSource = "plan" | "table" | "insured" | "unit" | "fixed";
 
 const SOURCE_LABELS: Record<VSource, string> = {
   plan:    "計劃別",
   table:   "附表（最低～最高）",
   insured: "保額計算",
-  reimbursement: "限額",
+  unit:    "每單位",
   fixed:   "定額",
 };
 
 // 計算基準（整張保單）：保額 / 計劃別 / 單位 三選一
 type BaseMode = "insured" | "plan" | "unit";
 const baseUnitToMode = (u: string): BaseMode => u === "計劃別" ? "plan" : u === "單位數" ? "unit" : "insured";
-// 保額基準下，各給付項目可選的金額來源（計劃別已上移為基準，不在此處）
-const ITEM_SOURCE_OPTIONS: VSource[] = ["table", "insured", "reimbursement", "fixed"];
+// 保額基準下，各給付項目可選的金額來源（計劃別/單位已上移為基準；限額為性質旗標另設）
+const ITEM_SOURCE_OPTIONS: VSource[] = ["insured", "table", "fixed"];
 
 interface UnifiedItem extends AnalysisItem {
   vSource: VSource;
   vUnit: string;
+  vIsLimit?: boolean;    // 性質＝限額
   // insured（保額計算）
   vRateType?: "multiplier" | "percentage";
   vRate?: number;        // 單一倍率
@@ -107,6 +109,7 @@ function suggestSource(item: AnalysisItem, category = ""): Partial<UnifiedItem> 
   const out: Partial<UnifiedItem> = {
     vSource: (item.valueSource as VSource) ?? base.valueSource,
     vUnit: item.unit || base.unit,
+    vIsLimit: item.isLimit ?? base.isLimit,
   };
   if (item.planValues && Object.keys(item.planValues).length > 0) out.fPlanValues = item.planValues;
   if (item.tableRange) { out.vTableMin = item.tableRange.min; out.vTableMax = item.tableRange.max; }
@@ -123,7 +126,7 @@ function suggestSource(item: AnalysisItem, category = ""): Partial<UnifiedItem> 
     const f = item.formula;
     const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
     if (out.vSource === "table") { out.vTableMin = nums[0] ?? 0; out.vTableMax = nums[1] ?? nums[0] ?? 0; }
-    else if (out.vSource === "insured" || out.vSource === "reimbursement") {
+    else if (out.vSource === "insured") {
       out.vRateType = f.includes("%") ? "percentage" : "multiplier";
       const isRange = f.includes("～") || f.includes("~") || f.includes("至");
       if (isRange) { out.vMinRate = nums[0]; out.vMaxRate = nums[1] ?? nums[0]; }
@@ -148,6 +151,7 @@ function mergeItems(analysisItems: AnalysisItem[], formulaItems: FormulaItem[], 
         vTableMin: f.table_range?.min,
         vTableMax: f.table_range?.max,
         vAmount: f.amount,
+        vIsLimit: f.is_limit,
         fPlanValues: f.plan_values,
         fLimitDays: f.limit?.days,
       } as UnifiedItem;
@@ -164,12 +168,13 @@ function categoryOf(data: AnalysisData): string {
 
 function toFormulaItem(u: UnifiedItem): FormulaItem {
   const fi: FormulaItem = { label: u.name, value_source: u.vSource, unit: u.vUnit,
+    is_limit: u.vIsLimit || undefined,
     limit: u.fLimitDays ? { days: u.fLimitDays } : undefined,
     restriction: u.restriction, note: u.notes };
   if (u.vSource === "plan" && u.fPlanValues && Object.keys(u.fPlanValues).length > 0) fi.plan_values = u.fPlanValues;
   if (u.vSource === "table") fi.table_range = { min: u.vTableMin ?? 0, max: u.vTableMax ?? 0 };
-  if (u.vSource === "insured" || u.vSource === "reimbursement") fi.insured_rate = { type: u.vRateType ?? "multiplier", rate: u.vRate, min: u.vMinRate, max: u.vMaxRate };
-  if (u.vSource === "fixed") fi.amount = u.vAmount ?? 0;
+  if (u.vSource === "insured") fi.insured_rate = { type: u.vRateType ?? "multiplier", rate: u.vRate, min: u.vMinRate, max: u.vMaxRate };
+  if (u.vSource === "fixed" || u.vSource === "unit") fi.amount = u.vAmount ?? 0;
   return fi;
 }
 
@@ -224,24 +229,23 @@ function UnifiedItemsEditor({
   };
 
   const baseMode = baseUnitToMode(baseUnit);
-  // 切換計算基準：計劃別/單位時，把所有項目的金額來源一併切過去（計劃別→plan、單位→fixed 每單位金額）
+  // 「隨基準變動」的來源（切基準時這些要跟著換；固定/附表不動）
+  const FOLLOWS_BASE: VSource[] = ["insured", "plan", "unit"];
+  const followSourceOf = (m: BaseMode): VSource => m === "plan" ? "plan" : m === "unit" ? "unit" : "insured";
+  // 切換計算基準：只把「隨基準」的項目換成新基準的來源；固定/附表項目維持原樣
   const setBaseMode = (m: BaseMode) => {
-    if (m === "plan") {
-      onBaseUnitChange("計劃別");
-      onItemsChange(items.map(it => ({ ...it, vSource: "plan" as VSource })));
-    } else if (m === "unit") {
-      onBaseUnitChange("單位數");
-      onItemsChange(items.map(it => ({ ...it, vSource: "fixed" as VSource })));
-    } else {
-      onBaseUnitChange(["元", "美元", "萬元"].includes(baseUnit) ? baseUnit : "萬元");
-      // 由計劃別/單位切回保額：原本 plan 的項目重新依規則建議來源
-      const cat = categoryOf(data);
-      onItemsChange(items.map(it => it.vSource === "plan" ? { ...it, ...suggestSource(it, cat) } as UnifiedItem : it));
-    }
+    onBaseUnitChange(m === "plan" ? "計劃別" : m === "unit" ? "單位數" : (["元", "美元", "萬元"].includes(baseUnit) ? baseUnit : "萬元"));
+    const cat = categoryOf(data);
+    const follow = followSourceOf(m);
+    onItemsChange(items.map(it => {
+      if (!FOLLOWS_BASE.includes(it.vSource)) return it;       // 固定/附表 不動
+      if (m === "insured") return { ...it, ...suggestSource(it, cat), vIsLimit: it.vIsLimit } as UnifiedItem;
+      return { ...it, vSource: follow };
+    }));
   };
 
   const addItem = () => {
-    const blank: UnifiedItem = { name: "", formula: "", vSource: baseMode === "plan" ? "plan" : "fixed", vUnit: "元", vAmount: 0 };
+    const blank: UnifiedItem = { name: "", formula: "", vSource: followSourceOf(baseMode), vUnit: "元", vAmount: 0 };
     onItemsChange([...items, blank]);
   };
 
@@ -404,6 +408,14 @@ function UnifiedItemsEditor({
                         {ITEM_SOURCE_OPTIONS.map(v => <option key={v} value={v}>{SOURCE_LABELS[v]}</option>)}
                       </select>
 
+                      {/* 性質：定額 / 限額 */}
+                      <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                        <button type="button" onClick={() => updateFormula(idx, { vIsLimit: false })}
+                          className={`px-1.5 py-0.5 ${!item.vIsLimit ? "bg-sky-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>定額</button>
+                        <button type="button" onClick={() => updateFormula(idx, { vIsLimit: true })}
+                          className={`px-1.5 py-0.5 border-l border-stone-200 ${item.vIsLimit ? "bg-emerald-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>限額</button>
+                      </div>
+
                       {/* 單位 */}
                       <select
                         value={item.vUnit}
@@ -440,17 +452,16 @@ function UnifiedItemsEditor({
                           <span className="text-[10px] text-stone-400">{item.vUnit}</span>
                         </>
                       )}
-                      {(item.vSource === "insured" || item.vSource === "reimbursement") && (() => {
+                      {item.vSource === "insured" && (() => {
                         const isPct = (item.vRateType ?? "multiplier") === "percentage";
                         const suffix = isPct ? "%" : "倍";
-                        // 限額與保額計算共用倍率輸入，僅預覽前綴不同（限額/保額）
-                        const baseLabel = item.vSource === "reimbursement" ? "限額" : "保額";
+                        const prefix = item.vIsLimit ? "限額＝保額" : "保額";
                         // 範圍模式：有填 min/max 任一即視為範圍（與試算端「填了範圍即覆蓋單一值」一致）
                         const isRange = item.vMinRate != null || item.vMaxRate != null;
                         const preview = isRange
                           ? (item.vMinRate != null && item.vMaxRate != null
-                              ? `${baseLabel} × ${item.vMinRate}${suffix} ～ ${item.vMaxRate}${suffix}` : "")
-                          : (item.vRate != null ? `${baseLabel} × ${item.vRate}${suffix}` : "");
+                              ? `${prefix} × ${item.vMinRate}${suffix} ～ ${item.vMaxRate}${suffix}` : "")
+                          : (item.vRate != null ? `${prefix} × ${item.vRate}${suffix}` : "");
                         return (
                           <>
                             <select
@@ -458,8 +469,8 @@ function UnifiedItemsEditor({
                               onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
                               className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
                             >
-                              <option value="multiplier">{baseLabel}×倍</option>
-                              <option value="percentage">{baseLabel}×%</option>
+                              <option value="multiplier">保額×倍</option>
+                              <option value="percentage">保額×%</option>
                             </select>
                             {/* 單一／範圍切換：一次只填一組，避免兩者並存的歧義 */}
                             <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
@@ -560,6 +571,8 @@ function UnifiedItemsEditor({
                 <thead>
                   <tr className="bg-stone-50 text-stone-400">
                     <th className="text-left font-medium px-3 py-2 sticky left-0 bg-stone-50">給付項目</th>
+                    <th className="font-medium px-2 py-2">性質</th>
+                    <th className="font-medium px-2 py-2">來源</th>
                     <th className="font-medium px-2 py-2">單位</th>
                     {baseMode === "plan"
                       ? plans.map(pl => <th key={pl} className="font-medium px-2 py-2 text-center whitespace-nowrap">計劃 {pl}</th>)
@@ -571,10 +584,33 @@ function UnifiedItemsEditor({
                 <tbody className="divide-y divide-stone-50">
                   {items.map((item, idx) => {
                     const isActive = item.pageRef != null && item.pageRef === activePage;
+                    const follow = followSourceOf(baseMode);
+                    const rowMode: "follow" | "fixed" | "table" =
+                      item.vSource === "fixed" ? "fixed" : item.vSource === "table" ? "table" : "follow";
+                    const valSpan = baseMode === "plan" ? plans.length : 1;
                     return (
                       <tr key={idx} className={isActive ? "bg-amber-50" : "hover:bg-stone-50/60"}>
                         <td className="px-3 py-1.5 sticky left-0 bg-white">
                           <InlineEdit value={item.name} onChange={v => updateAnalysis(idx, "name", v)} className="font-semibold text-stone-800" />
+                        </td>
+                        {/* 性質：定額 / 限額 */}
+                        <td className="px-2 py-1.5 text-center">
+                          <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                            <button type="button" onClick={() => updateFormula(idx, { vIsLimit: false })}
+                              className={`px-1.5 py-0.5 ${!item.vIsLimit ? "bg-sky-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>定額</button>
+                            <button type="button" onClick={() => updateFormula(idx, { vIsLimit: true })}
+                              className={`px-1.5 py-0.5 border-l border-stone-200 ${item.vIsLimit ? "bg-emerald-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>限額</button>
+                          </div>
+                        </td>
+                        {/* 來源：隨基準 / 固定 / 附表 */}
+                        <td className="px-2 py-1.5 text-center">
+                          <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                            {([["follow", baseMode === "plan" ? "隨計劃" : "隨單位"], ["fixed", "固定"], ["table", "附表"]] as [string, string][]).map(([m, label], i) => (
+                              <button key={m} type="button"
+                                onClick={() => updateFormula(idx, { vSource: (m === "follow" ? follow : m) as VSource })}
+                                className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${rowMode === m ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>{label}</button>
+                            ))}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <select value={item.vUnit} onChange={e => updateFormula(idx, { vUnit: e.target.value })}
@@ -582,23 +618,45 @@ function UnifiedItemsEditor({
                             {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
                           </select>
                         </td>
-                        {baseMode === "plan"
-                          ? plans.map(pl => (
-                              <td key={pl} className="px-1 py-1.5 text-center">
-                                <input type="number" min={0} step="any" inputMode="decimal"
-                                  value={item.fPlanValues?.[pl] ?? ""}
-                                  onChange={e => updatePlanValue(idx, pl, parseFloat(e.target.value) || 0)}
-                                  className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                              </td>
-                            ))
-                          : (
-                              <td className="px-1 py-1.5 text-center">
-                                <input type="number" min={0} step="any" inputMode="decimal"
-                                  value={item.vAmount ?? ""}
-                                  onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
-                                  className="w-20 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                              </td>
-                            )}
+                        {rowMode === "follow" ? (
+                          baseMode === "plan"
+                            ? plans.map(pl => (
+                                <td key={pl} className="px-1 py-1.5 text-center">
+                                  <input type="number" min={0} step="any" inputMode="decimal"
+                                    value={item.fPlanValues?.[pl] ?? ""}
+                                    onChange={e => updatePlanValue(idx, pl, parseFloat(e.target.value) || 0)}
+                                    className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                </td>
+                              ))
+                            : (
+                                <td className="px-1 py-1.5 text-center">
+                                  <input type="number" min={0} step="any" inputMode="decimal"
+                                    value={item.vAmount ?? ""}
+                                    onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
+                                    className="w-20 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                </td>
+                              )
+                        ) : rowMode === "fixed" ? (
+                          <td colSpan={valSpan} className="px-1 py-1.5 text-center">
+                            <input type="number" min={0} step="any" inputMode="decimal" placeholder="金額"
+                              value={item.vAmount ?? ""}
+                              onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
+                              className="w-24 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                            <span className="text-[10px] text-stone-400 ml-1">{item.vUnit}</span>
+                          </td>
+                        ) : (
+                          <td colSpan={valSpan} className="px-1 py-1.5 text-center whitespace-nowrap">
+                            <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
+                              value={item.vTableMin ?? ""}
+                              onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
+                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                            <span className="text-[10px] text-stone-400 mx-1">～</span>
+                            <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高"
+                              value={item.vTableMax ?? ""}
+                              onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
+                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                          </td>
+                        )}
                         <td className="px-2 py-1.5 text-center">
                           <button onClick={() => item.pageRef != null && onItemClick?.(item.pageRef)}
                             className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${item.pageRef != null ? (isActive ? "bg-amber-400 text-white" : "bg-stone-100 text-stone-500 hover:bg-amber-100") : "text-stone-200"}`}>
@@ -809,10 +867,11 @@ export function ReviewDetail({
           name: it.name, formula: it.formula, unit: it.vUnit, restriction: it.restriction,
           notes: it.notes, pageRef: it.pageRef,
           valueSource: it.vSource,
+          isLimit: it.vIsLimit || undefined,
           planValues: it.vSource === "plan" ? it.fPlanValues : undefined,
           tableRange: it.vSource === "table" ? { min: it.vTableMin ?? 0, max: it.vTableMax ?? 0 } : undefined,
-          insuredRate: (it.vSource === "insured" || it.vSource === "reimbursement") ? { type: it.vRateType ?? "multiplier", rate: it.vRate, min: it.vMinRate, max: it.vMaxRate } : undefined,
-          amount: it.vSource === "fixed" ? it.vAmount : undefined,
+          insuredRate: it.vSource === "insured" ? { type: it.vRateType ?? "multiplier", rate: it.vRate, min: it.vMinRate, max: it.vMaxRate } : undefined,
+          amount: (it.vSource === "fixed" || it.vSource === "unit") ? it.vAmount : undefined,
           limit: it.fLimitDays ? { days: it.fLimitDays } : undefined,
         })),
       };

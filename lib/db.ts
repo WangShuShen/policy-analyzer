@@ -126,21 +126,24 @@ export default db;
 
 // 金額來源（位階由高到低）：計劃 > 附表/單位別 > 保額計算 > 定額
 // 有計劃別就帶計劃撈值、有附表就查表、否則用保額算、再否則定額
-export type ValueSource = "plan" | "table" | "insured" | "reimbursement" | "fixed";
+// 金額來源（依計算基準）：保額→insured、計劃→plan、單位→unit、固定→fixed、附表→table
+export type ValueSource = "plan" | "table" | "insured" | "unit" | "fixed";
 
 export interface FormulaItem {
   label: string;
   value_source: ValueSource;
   unit: string; // 萬 | 元/日 | 元/次 | 元/月 | 元
 
+  // 給付性質（正交於 value_source）：true=限額（顯示「限額 X」），未設=定額給付
+  is_limit?: boolean;
+
   // value_source = "plan"：各計劃別對應的實際金額
   plan_values?: Record<string, number>;
   // value_source = "table"：附表/單位別查出的金額範圍（最低～最高）
   table_range?: { min: number; max: number };
-  // value_source = "insured" / "reimbursement"：用保額(限額)計算（倍數或百分比；可為單一 rate 或範圍）
-  // reimbursement(限額) 與 insured 共用此欄位，差別僅在試算顯示為「實支實付上限」
+  // value_source = "insured"：用保額計算（倍數或百分比；可為單一 rate 或範圍）
   insured_rate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
-  // value_source = "fixed"：直接固定金額
+  // value_source = "fixed"（定額）/ "unit"（每單位金額，試算時 ×單位數 N）：共用 amount
   amount?: number;
 
   limit?: { days?: number; times?: number };
