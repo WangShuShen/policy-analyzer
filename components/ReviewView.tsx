@@ -402,35 +402,65 @@ function UnifiedItemsEditor({
                           <span className="text-[10px] text-stone-400">{item.vUnit}</span>
                         </>
                       )}
-                      {item.vSource === "insured" && (
-                        <>
-                          <select
-                            value={item.vRateType ?? "multiplier"}
-                            onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
-                            className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
-                          >
-                            <option value="multiplier">保額×倍</option>
-                            <option value="percentage">保額×%</option>
-                          </select>
-                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="倍率"
-                            value={item.vRate ?? ""}
-                            onChange={e => updateFormula(idx, { vRate: parseFloat(e.target.value) || 0 })}
-                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                          />
-                          <span className="text-[10px] text-stone-300">或範圍</span>
-                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="低"
-                            value={item.vMinRate ?? ""}
-                            onChange={e => updateFormula(idx, { vMinRate: parseFloat(e.target.value) || 0 })}
-                            className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none"
-                          />
-                          <span className="text-[10px] text-stone-400">～</span>
-                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="高"
-                            value={item.vMaxRate ?? ""}
-                            onChange={e => updateFormula(idx, { vMaxRate: parseFloat(e.target.value) || 0 })}
-                            className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none"
-                          />
-                        </>
-                      )}
+                      {item.vSource === "insured" && (() => {
+                        const isPct = (item.vRateType ?? "multiplier") === "percentage";
+                        const suffix = isPct ? "%" : "倍";
+                        // 範圍模式：有填 min/max 任一即視為範圍（與試算端「填了範圍即覆蓋單一值」一致）
+                        const isRange = item.vMinRate != null || item.vMaxRate != null;
+                        const preview = isRange
+                          ? (item.vMinRate != null && item.vMaxRate != null
+                              ? `保額 × ${item.vMinRate}${suffix} ～ ${item.vMaxRate}${suffix}` : "")
+                          : (item.vRate != null ? `保額 × ${item.vRate}${suffix}` : "");
+                        return (
+                          <>
+                            <select
+                              value={item.vRateType ?? "multiplier"}
+                              onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
+                              className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
+                            >
+                              <option value="multiplier">保額×倍</option>
+                              <option value="percentage">保額×%</option>
+                            </select>
+                            {/* 單一／範圍切換：一次只填一組，避免兩者並存的歧義 */}
+                            <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                              <button type="button"
+                                onClick={() => updateFormula(idx, { vMinRate: undefined, vMaxRate: undefined })}
+                                className={`px-1.5 py-0.5 ${!isRange ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}
+                              >單一</button>
+                              <button type="button"
+                                onClick={() => updateFormula(idx, { vRate: undefined, vMinRate: item.vMinRate ?? item.vRate ?? 0, vMaxRate: item.vMaxRate ?? item.vRate ?? 0 })}
+                                className={`px-1.5 py-0.5 border-l border-stone-200 ${isRange ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}
+                              >範圍</button>
+                            </div>
+                            {!isRange ? (
+                              <>
+                                <input type="number" min={0} step="any" inputMode="decimal" placeholder={isPct ? "百分比" : "倍率"}
+                                  value={item.vRate ?? ""}
+                                  onChange={e => updateFormula(idx, { vRate: parseFloat(e.target.value) || 0 })}
+                                  className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                                />
+                                <span className="text-[10px] text-stone-400">{suffix}</span>
+                              </>
+                            ) : (
+                              <>
+                                <input type="number" min={0} step="any" inputMode="decimal" placeholder="低"
+                                  value={item.vMinRate ?? ""}
+                                  onChange={e => updateFormula(idx, { vMinRate: parseFloat(e.target.value) || 0 })}
+                                  className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                                />
+                                <span className="text-[10px] text-stone-400">{suffix} ～</span>
+                                <input type="number" min={0} step="any" inputMode="decimal" placeholder="高"
+                                  value={item.vMaxRate ?? ""}
+                                  onChange={e => updateFormula(idx, { vMaxRate: parseFloat(e.target.value) || 0 })}
+                                  className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                                />
+                                <span className="text-[10px] text-stone-400">{suffix}</span>
+                              </>
+                            )}
+                            {preview && <span className="text-[10px] text-[#C8956C] font-medium whitespace-nowrap">= {preview}</span>}
+                          </>
+                        );
+                      })()}
                       {item.vSource === "plan" && (
                         <span className="text-[10px] text-stone-400">↓ 各計劃金額見下方</span>
                       )}
