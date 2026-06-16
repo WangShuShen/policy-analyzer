@@ -48,3 +48,4 @@ data/*.db-wal
 
 # Insurance contracts (PDFs, potentially large/copyrighted)
 contracts/
+tmp/
