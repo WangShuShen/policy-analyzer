@@ -7,9 +7,11 @@
 //   3) 細分商品類型預設（categoryDefaults）
 
 export type FormulaType = "fixed" | "multiplier" | "reimbursement" | "range" | "lump_sum";
+export type ValueSource = "plan" | "table" | "insured" | "fixed";
 
 export interface FormulaSuggestion {
   fType: FormulaType;
+  valueSource: ValueSource;
   unit: string;
   rateType?: "multiplier" | "percentage";
 }
@@ -63,22 +65,42 @@ function matchCategory(category: string): { fType: FormulaType; unit: string } |
  * @param itemName 給付項目名稱
  * @param category 商品類型/險種字串（可串接 insuranceType、baseType、category）
  */
+// fType → value_source 對應（金額來源）
+function sourceOf(fType: FormulaType, itemName: string): ValueSource {
+  if (/手術/.test(itemName)) return "table";            // 手術通常依附表項別
+  switch (fType) {
+    case "lump_sum": return "insured";                  // 一次性＝保額×N%
+    case "multiplier": return "insured";                // 倍率＝保額/日額×N
+    case "range": return "table";                        // 範圍多為附表
+    case "reimbursement": return "insured";             // 限額多依保額
+    case "fixed": default: return "fixed";              // 定額＝固定金額
+  }
+}
+
 export function suggestFormula(itemName: string, category = ""): FormulaSuggestion {
   // 第 2 層：項目名稱關鍵字（最優先）
   for (const r of itemKeywordRules) {
     if (r.match.test(itemName)) {
-      return { fType: r.fType, unit: r.unit, rateType: r.fType === "range" ? "multiplier" : undefined };
+      return { fType: r.fType, valueSource: sourceOf(r.fType, itemName), unit: r.unit, rateType: r.fType === "range" ? "multiplier" : undefined };
     }
   }
   // 第 3 層：細分商品類型預設
   const cat = matchCategory(category);
-  if (cat) return { fType: cat.fType, unit: cat.unit, rateType: cat.fType === "range" ? "multiplier" : undefined };
+  if (cat) return { fType: cat.fType, valueSource: sourceOf(cat.fType, itemName), unit: cat.unit, rateType: cat.fType === "range" ? "multiplier" : undefined };
 
   // 最終 fallback
-  return { fType: "fixed", unit: "元" };
+  return { fType: "fixed", valueSource: "fixed", unit: "元" };
 }
 
-// 類型 → 顯示標籤與顏色（審核頁標注用）
+// 金額來源 → 顯示標籤與顏色（審核頁標注用）
+export const SOURCE_META: Record<ValueSource, { label: string; chip: string }> = {
+  plan:    { label: "計劃別", chip: "bg-violet-50 text-violet-700 border border-violet-200" },
+  table:   { label: "附表",   chip: "bg-purple-50 text-purple-700 border border-purple-200" },
+  insured: { label: "保額計算", chip: "bg-amber-50 text-amber-700 border border-amber-200" },
+  fixed:   { label: "定額",   chip: "bg-sky-50 text-sky-700 border border-sky-200" },
+};
+
+// 類型 → 顯示標籤與顏色（保留相容）
 export const TYPE_META: Record<FormulaType, { label: string; chip: string }> = {
   lump_sum:      { label: "一次性", chip: "bg-amber-50 text-amber-700 border border-amber-200" },
   fixed:         { label: "定額",   chip: "bg-sky-50 text-sky-700 border border-sky-200" },

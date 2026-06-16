@@ -176,14 +176,42 @@ function TrialPanel({ productId, baseUnit, plans = [] }: { productId: number; ba
 // ── 已審核分析資訊面板 ──────────────────────────────────────────────────
 
 interface AnalysisItem {
-  name: string; formula: string; unit?: string; restriction?: string; notes?: string;
+  name: string; formula?: string; unit?: string; restriction?: string; notes?: string;
+  valueSource?: "plan" | "table" | "insured" | "fixed";
+  planValues?: Record<string, number>;
+  tableRange?: { min: number; max: number };
+  insuredRate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
+  amount?: number;
 }
 interface AnalysisData {
   items?: AnalysisItem[];
+  plans?: string[];
   annualLimit?: { formula?: string; notes?: string };
   waitingPeriod?: { note?: string };
   exclusions?: string[];
   specialRestrictions?: string[];
+}
+
+// 由結構化欄位組出顯示文字（新格式優先，否則退回 formula 文字）
+function benefitDisplay(it: AnalysisItem): string {
+  const u = it.unit ?? "";
+  const n = (v?: number) => (v ?? 0).toLocaleString("zh-TW");
+  switch (it.valueSource) {
+    case "fixed": return `${n(it.amount)} ${u}`;
+    case "table": return it.tableRange ? `${n(it.tableRange.min)} ～ ${n(it.tableRange.max)} ${u}` : (it.formula ?? "");
+    case "insured": {
+      const r = it.insuredRate; if (!r) return it.formula ?? "";
+      const sfx = r.type === "percentage" ? "%" : "倍";
+      if (r.min != null && r.max != null) return `保額 × ${r.min}${sfx} ～ ${r.max}${sfx}`;
+      return `保額 × ${r.rate ?? 1}${sfx}`;
+    }
+    case "plan": {
+      const pv = it.planValues ?? {};
+      const parts = Object.entries(pv).map(([k, v]) => `計劃${k}=${n(v)}`);
+      return parts.length ? `${parts.join("、")} ${u}` : (it.formula ?? "");
+    }
+    default: return it.formula ?? "";
+  }
 }
 
 function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
@@ -201,8 +229,7 @@ function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
                 <tr key={i} className="border-b border-[#F5EDE0] last:border-0">
                   <td className="px-3 py-2.5 text-stone-700 font-medium align-top w-36">{it.name}</td>
                   <td className="px-3 py-2.5 align-top">
-                    <span className="text-stone-600 font-mono">{it.formula}</span>
-                    {it.unit && <span className="text-stone-400">／{it.unit}</span>}
+                    <span className="text-stone-700 font-medium">{benefitDisplay(it)}</span>
                     {it.restriction && <div className="text-[11px] text-stone-400 mt-0.5">{it.restriction}</div>}
                   </td>
                 </tr>

@@ -124,26 +124,43 @@ export default db;
 
 // ── Types ──────────────────────────────────────────────────────────
 
+// 金額來源（位階由高到低）：計劃 > 附表/單位別 > 保額計算 > 定額
+// 有計劃別就帶計劃撈值、有附表就查表、否則用保額算、再否則定額
+export type ValueSource = "plan" | "table" | "insured" | "fixed";
+
 export interface FormulaItem {
   label: string;
-  type: "fixed" | "multiplier" | "reimbursement" | "range" | "lump_sum";
+  value_source: ValueSource;
+  unit: string; // 萬 | 元/日 | 元/次 | 元/月 | 元
+
+  // value_source = "plan"：各計劃別對應的實際金額
+  plan_values?: Record<string, number>;
+  // value_source = "table"：附表/單位別查出的金額範圍（最低～最高）
+  table_range?: { min: number; max: number };
+  // value_source = "insured"：用保額計算（倍數或百分比；可為單一 rate 或範圍）
+  insured_rate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
+  // value_source = "fixed"：直接固定金額
+  amount?: number;
+
+  limit?: { days?: number; times?: number };
+  restriction?: string;
+  note?: string;
+
+  // ── legacy（舊資料相容，新格式不再使用）──
+  type?: "fixed" | "multiplier" | "reimbursement" | "range" | "lump_sum";
   multiplier?: number;
   rate_type?: "multiplier" | "percentage";
   min_rate?: number;
   max_rate?: number;
-  limit?: { days?: number; times?: number };
-  note?: string;
-  // 計劃別：各計劃對應的數值（由 type 決定如何使用：倍率→倍數、定額/一次性→金額）
-  plan_values?: Record<string, number>;
 }
 
 export interface FormulaJson {
-  base_unit: string;
+  base_unit: string;        // 保額單位（萬 / 元/日 …）
+  currency?: string;        // 幣別（新台幣 / 美元）
+  plans?: string[];         // 計劃清單（如 ["1","2","3"]）；空代表無計劃別
   items: FormulaItem[];
   filled_by: string;
   filled_at: string;
-  // 計劃清單（如 ["1","2","3","4","5"] 或 ["A","B","C"]）；空代表此商品無計劃別
-  plans?: string[];
 }
 
 export interface ProductRow {

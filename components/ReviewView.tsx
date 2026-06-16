@@ -7,7 +7,7 @@ import {
   ExternalLink, Archive, Save, Plus, Trash2, Sparkles,
 } from "lucide-react";
 import type { FormulaItem, FormulaJson } from "@/lib/db";
-import { suggestFormula, TYPE_META } from "@/lib/insuranceRules";
+import { suggestFormula, SOURCE_META } from "@/lib/insuranceRules";
 
 const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
   ssr: false,
@@ -36,12 +36,17 @@ export interface ReviewProduct {
 
 interface AnalysisItem {
   name: string;
-  formula: string;
+  formula?: string;
   unit?: string;
   restriction?: string;
   notes?: string;
   pageRef?: number | null;
-  planValues?: Record<string, number>; // AI 抽取的計劃別數值
+  // AI 新格式（金額來源）
+  valueSource?: "plan" | "table" | "insured" | "fixed";
+  planValues?: Record<string, number>;
+  tableRange?: { min: number; max: number };
+  insuredRate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
+  amount?: number;
 }
 
 interface AnalysisData {
@@ -60,72 +65,86 @@ interface AnalysisData {
 
 // ── Unified Items + Formula Editor ────────────────────────────────────
 
-const TYPE_LABELS: Record<string, string> = {
-  fixed:         "定額",
-  multiplier:    "倍率",
-  reimbursement: "限額（實支）",
-  range:         "範圍型",
-  lump_sum:      "一次性給付",
+type VSource = "plan" | "table" | "insured" | "fixed";
+
+const SOURCE_LABELS: Record<VSource, string> = {
+  plan:    "計劃別",
+  table:   "附表（最低～最高）",
+  insured: "保額計算",
+  fixed:   "定額",
 };
 
 interface UnifiedItem extends AnalysisItem {
-  fType: FormulaItem["type"];
-  fMultiplier?: number;
-  fRateType?: "multiplier" | "percentage";
-  fMinRate?: number;
-  fMaxRate?: number;
+  vSource: VSource;
+  vUnit: string;
+  // insured（保額計算）
+  vRateType?: "multiplier" | "percentage";
+  vRate?: number;        // 單一倍率
+  vMinRate?: number;     // 範圍最低
+  vMaxRate?: number;     // 範圍最高
+  // table（附表）
+  vTableMin?: number;
+  vTableMax?: number;
+  // fixed
+  vAmount?: number;
+  // plan
+  fPlanValues?: Record<string, number>;
+  // 共用
   fLimitDays?: number;
-  fPlanValues?: Record<string, number>; // 計劃別數值（依 fType 解讀）
 }
 
-// 險種感知的公式建議：先由「險種 + 項目名稱」定類型與單位（insuranceRules），
-// 再從 AI 公式文字解析出實際數值（倍數 / 範圍最低~最高）。
-function suggestFType(item: AnalysisItem, category = ""): Partial<UnifiedItem> {
-  const f = item.formula ?? "";
+// 從 AI 分析項目建立 UnifiedItem：優先用 AI 新格式欄位，否則用規則 + 公式文字推斷
+function suggestSource(item: AnalysisItem, category = ""): Partial<UnifiedItem> {
   const base = suggestFormula(item.name, category);
-  const out: Partial<UnifiedItem> = { fType: base.fType };
-  // 單位：沿用 AI 既有 unit，否則用規則建議
-  if (!item.unit) out.unit = base.unit;
-  // 計劃別數值：沿用 AI 抽取
+  const out: Partial<UnifiedItem> = {
+    vSource: (item.valueSource as VSource) ?? base.valueSource,
+    vUnit: item.unit || base.unit,
+  };
   if (item.planValues && Object.keys(item.planValues).length > 0) out.fPlanValues = item.planValues;
-
-  // 從公式文字解析數值
-  const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
-  const isRangeText = f.includes("～") || f.includes("~") || f.includes("至");
-
-  if (base.fType === "range" || isRangeText) {
-    out.fType = "range";
-    out.fRateType = f.includes("%") ? "percentage" : (base.rateType ?? "multiplier");
-    out.fMinRate = nums[0] ?? 1;
-    out.fMaxRate = nums[1] ?? nums[0] ?? 1;
-    return out;
+  if (item.tableRange) { out.vTableMin = item.tableRange.min; out.vTableMax = item.tableRange.max; }
+  if (item.insuredRate) {
+    out.vRateType = item.insuredRate.type;
+    out.vRate = item.insuredRate.rate;
+    out.vMinRate = item.insuredRate.min;
+    out.vMaxRate = item.insuredRate.max;
   }
-  const pct = f.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (pct && (base.fType === "multiplier")) {
-    out.fMultiplier = parseFloat(pct[1]) / 100;
-    return out;
+  if (item.amount != null) out.vAmount = item.amount;
+
+  // 若 AI 未給結構化值，從公式文字補推（相容舊資料）
+  if (!item.valueSource && item.formula) {
+    const f = item.formula;
+    const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
+    if (out.vSource === "table") { out.vTableMin = nums[0] ?? 0; out.vTableMax = nums[1] ?? nums[0] ?? 0; }
+    else if (out.vSource === "insured") {
+      out.vRateType = f.includes("%") ? "percentage" : "multiplier";
+      const isRange = f.includes("～") || f.includes("~") || f.includes("至");
+      if (isRange) { out.vMinRate = nums[0]; out.vMaxRate = nums[1] ?? nums[0]; }
+      else out.vRate = f.includes("%") ? (nums[0] ?? 100) : (nums[0] ?? 1);
+    } else if (out.vSource === "fixed") out.vAmount = nums[0] ?? 0;
   }
-  const mult = f.match(/[×x*]\s*(\d+(?:\.\d+)?)/);
-  out.fMultiplier = mult ? parseFloat(mult[1]) : 1;
   return out;
 }
 
 function mergeItems(analysisItems: AnalysisItem[], formulaItems: FormulaItem[], category = ""): UnifiedItem[] {
   return analysisItems.map((a, i) => {
     const f = formulaItems[i];
-    if (f) {
+    if (f && f.value_source) {
       return {
         ...a,
-        fType: f.type,
-        fMultiplier: f.multiplier,
-        fRateType: f.rate_type,
-        fMinRate: f.min_rate,
-        fMaxRate: f.max_rate,
-        fLimitDays: f.limit?.days,
+        vSource: f.value_source as VSource,
+        vUnit: f.unit,
+        vRateType: f.insured_rate?.type,
+        vRate: f.insured_rate?.rate,
+        vMinRate: f.insured_rate?.min,
+        vMaxRate: f.insured_rate?.max,
+        vTableMin: f.table_range?.min,
+        vTableMax: f.table_range?.max,
+        vAmount: f.amount,
         fPlanValues: f.plan_values,
-      };
+        fLimitDays: f.limit?.days,
+      } as UnifiedItem;
     }
-    return { ...a, ...suggestFType(a, category) } as UnifiedItem;
+    return { ...a, ...suggestSource(a, category) } as UnifiedItem;
   });
 }
 
@@ -136,16 +155,14 @@ function categoryOf(data: AnalysisData): string {
 }
 
 function toFormulaItem(u: UnifiedItem): FormulaItem {
-  return {
-    label: u.name,
-    type: u.fType,
-    multiplier: u.fMultiplier,
-    rate_type: u.fRateType,
-    min_rate: u.fMinRate,
-    max_rate: u.fMaxRate,
+  const fi: FormulaItem = { label: u.name, value_source: u.vSource, unit: u.vUnit,
     limit: u.fLimitDays ? { days: u.fLimitDays } : undefined,
-    plan_values: u.fPlanValues && Object.keys(u.fPlanValues).length > 0 ? u.fPlanValues : undefined,
-  };
+    restriction: u.restriction, note: u.notes };
+  if (u.vSource === "plan" && u.fPlanValues && Object.keys(u.fPlanValues).length > 0) fi.plan_values = u.fPlanValues;
+  if (u.vSource === "table") fi.table_range = { min: u.vTableMin ?? 0, max: u.vTableMax ?? 0 };
+  if (u.vSource === "insured") fi.insured_rate = { type: u.vRateType ?? "multiplier", rate: u.vRate, min: u.vMinRate, max: u.vMaxRate };
+  if (u.vSource === "fixed") fi.amount = u.vAmount ?? 0;
+  return fi;
 }
 
 function UnifiedItemsEditor({
@@ -199,7 +216,7 @@ function UnifiedItemsEditor({
   };
 
   const addItem = () => {
-    const blank: UnifiedItem = { name: "", formula: "", fType: "fixed", fMultiplier: 1 };
+    const blank: UnifiedItem = { name: "", formula: "", vSource: "fixed", vUnit: "元", vAmount: 0 };
     onItemsChange([...items, blank]);
   };
 
@@ -211,7 +228,7 @@ function UnifiedItemsEditor({
 
   const suggestAll = () => {
     const cat = categoryOf(data);
-    onItemsChange(items.map(it => ({ ...it, ...suggestFType(it, cat) })));
+    onItemsChange(items.map(it => ({ ...it, ...suggestSource(it, cat) })));
   };
 
   // ── 給付限制／注意事項 編輯 ──
@@ -285,7 +302,6 @@ function UnifiedItemsEditor({
           <div className="divide-y divide-stone-50">
             {items.map((item, idx) => {
               const isActive = item.pageRef != null && item.pageRef === activePage;
-              const isRange = item.fType === "range";
               return (
                 <div
                   key={idx}
@@ -304,7 +320,7 @@ function UnifiedItemsEditor({
                     {/* AI formula text */}
                     <div className="flex-1 min-w-0">
                       <InlineEdit
-                        value={item.formula}
+                        value={item.formula ?? ""}
                         onChange={v => updateAnalysis(idx, "formula", v)}
                         className="text-stone-500 font-mono"
                         placeholder="AI 公式文字"
@@ -334,54 +350,90 @@ function UnifiedItemsEditor({
                     </button>
                   </div>
 
-                  {/* Row 2: formula structure (only if productId exists) */}
+                  {/* Row 2: 金額來源 value_source + 對應數值 */}
                   {productId && (
                     <div className="flex items-center gap-1.5 ml-28 flex-wrap">
-                      {/* 顏色類型標籤（一眼分辨） */}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_META[item.fType]?.chip ?? "bg-stone-100 text-stone-500"}`}>
-                        {TYPE_META[item.fType]?.label ?? item.fType}
+                      {/* 顏色來源標籤 */}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${SOURCE_META[item.vSource]?.chip ?? "bg-stone-100 text-stone-500"}`}>
+                        {SOURCE_META[item.vSource]?.label ?? item.vSource}
                       </span>
                       <select
-                        value={item.fType}
-                        onChange={e => updateFormula(idx, { fType: e.target.value as FormulaItem["type"] })}
+                        value={item.vSource}
+                        onChange={e => updateFormula(idx, { vSource: e.target.value as VSource })}
                         className="text-[10px] border border-stone-200 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
                       >
-                        {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {Object.entries(SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
 
-                      {isRange ? (
+                      {/* 單位 */}
+                      <select
+                        value={item.vUnit}
+                        onChange={e => updateFormula(idx, { vUnit: e.target.value })}
+                        className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
+                      >
+                        {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+
+                      {/* 依來源顯示對應輸入 */}
+                      {item.vSource === "fixed" && (
                         <>
-                          <select
-                            value={item.fRateType ?? "multiplier"}
-                            onChange={e => updateFormula(idx, { fRateType: e.target.value as "multiplier" | "percentage" })}
-                            className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
-                          >
-                            <option value="multiplier">倍</option>
-                            <option value="percentage">%</option>
-                          </select>
+                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="金額"
+                            value={item.vAmount ?? ""}
+                            onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
+                            className="w-20 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                          />
+                          <span className="text-[10px] text-stone-400">{item.vUnit}</span>
+                        </>
+                      )}
+                      {item.vSource === "table" && (
+                        <>
                           <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
-                            value={item.fMinRate ?? ""}
-                            onChange={e => updateFormula(idx, { fMinRate: parseFloat(e.target.value) || 0 })}
-                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                            value={item.vTableMin ?? ""}
+                            onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
+                            className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
                           />
                           <span className="text-[10px] text-stone-400">～</span>
                           <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高"
-                            value={item.fMaxRate ?? ""}
-                            onChange={e => updateFormula(idx, { fMaxRate: parseFloat(e.target.value) || 0 })}
-                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                            value={item.vTableMax ?? ""}
+                            onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
+                            className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
                           />
-                          <span className="text-[10px] text-stone-400">{item.fRateType === "percentage" ? "%" : "倍"}</span>
-                        </>
-                      ) : (
-                        <>
-                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="倍數"
-                            value={item.fMultiplier ?? ""}
-                            onChange={e => updateFormula(idx, { fMultiplier: parseFloat(e.target.value) || 0 })}
-                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                          />
-                          <span className="text-[10px] text-stone-400">倍</span>
+                          <span className="text-[10px] text-stone-400">{item.vUnit}</span>
                         </>
                       )}
+                      {item.vSource === "insured" && (
+                        <>
+                          <select
+                            value={item.vRateType ?? "multiplier"}
+                            onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
+                            className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
+                          >
+                            <option value="multiplier">保額×倍</option>
+                            <option value="percentage">保額×%</option>
+                          </select>
+                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="倍率"
+                            value={item.vRate ?? ""}
+                            onChange={e => updateFormula(idx, { vRate: parseFloat(e.target.value) || 0 })}
+                            className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
+                          />
+                          <span className="text-[10px] text-stone-300">或範圍</span>
+                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="低"
+                            value={item.vMinRate ?? ""}
+                            onChange={e => updateFormula(idx, { vMinRate: parseFloat(e.target.value) || 0 })}
+                            className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none"
+                          />
+                          <span className="text-[10px] text-stone-400">～</span>
+                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="高"
+                            value={item.vMaxRate ?? ""}
+                            onChange={e => updateFormula(idx, { vMaxRate: parseFloat(e.target.value) || 0 })}
+                            className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none"
+                          />
+                        </>
+                      )}
+                      {item.vSource === "plan" && (
+                        <span className="text-[10px] text-stone-400">↓ 各計劃金額見下方</span>
+                      )}
+
                       <span className="text-stone-200 mx-1">|</span>
                       <input type="number" min={0} placeholder="天上限"
                         value={item.fLimitDays ?? ""}
@@ -392,10 +444,10 @@ function UnifiedItemsEditor({
                     </div>
                   )}
 
-                  {/* Row 3: 計劃別數值（依 fType 解讀：倍率→倍數、定額/一次性→金額） */}
-                  {productId && plans.length > 0 && (
+                  {/* Row 3: 計劃別各計劃金額（value_source=plan 時） */}
+                  {productId && item.vSource === "plan" && plans.length > 0 && (
                     <div className="flex items-center gap-1.5 ml-28 flex-wrap mt-1">
-                      <span className="text-[10px] text-stone-300">各計劃{item.fType === "multiplier" ? "倍數" : "金額"}：</span>
+                      <span className="text-[10px] text-stone-300">各計劃金額（{item.vUnit}）：</span>
                       {plans.map(pl => (
                         <span key={pl} className="flex items-center gap-0.5">
                           <span className="text-[10px] text-stone-400">{pl}</span>
@@ -591,7 +643,7 @@ export function ReviewDetail({
     // AI 抽取的計劃別清單（DB 公式未存時的預設）
     if (analysisData.plans && analysisData.plans.length > 0) setPlans(analysisData.plans);
     if (!product.planCode) {
-      setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a, cat) } as UnifiedItem)));
+      setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
       return;
     }
     fetch(`/api/products?planCode=${encodeURIComponent(product.planCode)}`)
@@ -609,10 +661,10 @@ export function ReviewDetail({
             return;
           }
         }
-        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a, cat) } as UnifiedItem)));
+        setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
       })
       .catch(() => {
-        setUnifiedItems(items.map(a => ({ ...a, ...suggestFType(a, cat) } as UnifiedItem)));
+        setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
       });
   }, [analysisData, product.planCode]);
 
