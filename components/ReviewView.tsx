@@ -7,7 +7,7 @@ import {
   ExternalLink, Archive, Save, Plus, Trash2, Sparkles,
 } from "lucide-react";
 import type { FormulaItem, FormulaJson } from "@/lib/db";
-import { suggestFormula, SOURCE_META } from "@/lib/insuranceRules";
+import { suggestFormula } from "@/lib/insuranceRules";
 
 const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
   ssr: false,
@@ -69,19 +69,27 @@ interface AnalysisData {
 
 type VSource = "plan" | "table" | "insured" | "unit" | "fixed";
 
-const SOURCE_LABELS: Record<VSource, string> = {
-  plan:    "計劃別",
-  table:   "附表（最低～最高）",
-  insured: "保額計算",
-  unit:    "每單位",
-  fixed:   "定額",
-};
-
 // 計算基準（整張保單）：保額 / 計劃別 / 單位 三選一
 type BaseMode = "insured" | "plan" | "unit";
 const baseUnitToMode = (u: string): BaseMode => u === "計劃別" ? "plan" : u === "單位數" ? "unit" : "insured";
-// 保額基準下，各給付項目可選的金額來源（計劃別/單位已上移為基準；限額為性質旗標另設）
-const ITEM_SOURCE_OPTIONS: VSource[] = ["insured", "table", "fixed"];
+const followSourceOf = (m: BaseMode): VSource => m === "plan" ? "plan" : m === "unit" ? "unit" : "insured";
+
+// 每個項目的兩維度（UI 控制）：性質 × 來源 → 推導出 value_source
+// 性質 vShape：fixed(定額) / limit(限額) / range(範圍最低~最高)；來源 vSrc：follow(隨基準) / fixed(固定)
+type VShape = "fixed" | "limit" | "range";
+type VSrc = "follow" | "fixed";
+const shapeOf = (it: { vSource: VSource; vIsLimit?: boolean; vMinRate?: number; vMaxRate?: number }): VShape => {
+  if (it.vSource === "table") return "range";
+  if (it.vSource === "insured" && (it.vMinRate != null || it.vMaxRate != null)) return "range";
+  return it.vIsLimit ? "limit" : "fixed";
+};
+const srcOf = (it: { vSource: VSource }): VSrc =>
+  (it.vSource === "insured" || it.vSource === "plan" || it.vSource === "unit") ? "follow" : "fixed";
+// 由 性質+來源+基準 推導 value_source
+const resolveVSource = (shape: VShape, src: VSrc, base: BaseMode): VSource => {
+  if (shape === "range") return (src === "follow" && base === "insured") ? "insured" : "table";
+  return src === "follow" ? followSourceOf(base) : "fixed";
+};
 
 interface UnifiedItem extends AnalysisItem {
   vSource: VSource;
@@ -231,17 +239,29 @@ function UnifiedItemsEditor({
   const baseMode = baseUnitToMode(baseUnit);
   // 「隨基準變動」的來源（切基準時這些要跟著換；固定/附表不動）
   const FOLLOWS_BASE: VSource[] = ["insured", "plan", "unit"];
-  const followSourceOf = (m: BaseMode): VSource => m === "plan" ? "plan" : m === "unit" ? "unit" : "insured";
   // 切換計算基準：只把「隨基準」的項目換成新基準的來源；固定/附表項目維持原樣
   const setBaseMode = (m: BaseMode) => {
     onBaseUnitChange(m === "plan" ? "計劃別" : m === "unit" ? "單位數" : (["元", "美元", "萬元"].includes(baseUnit) ? baseUnit : "萬元"));
     const cat = categoryOf(data);
-    const follow = followSourceOf(m);
     onItemsChange(items.map(it => {
       if (!FOLLOWS_BASE.includes(it.vSource)) return it;       // 固定/附表 不動
+      // 範圍(insured min/max) 切到 plan/單位無法逐計劃範圍 → 退回固定附表(table)
+      if (m !== "insured" && shapeOf(it) === "range") return { ...it, vSource: "table" } as UnifiedItem;
       if (m === "insured") return { ...it, ...suggestSource(it, cat), vIsLimit: it.vIsLimit } as UnifiedItem;
-      return { ...it, vSource: follow };
+      return { ...it, vSource: followSourceOf(m) };
     }));
+  };
+
+  // 設定某項目的「性質 + 來源」，推導並寫入 value_source 與相關欄位
+  const applyShapeSrc = (idx: number, shape: VShape, src: VSrc) => {
+    const it = items[idx];
+    const vs = resolveVSource(shape, src, baseMode);
+    const patch: Partial<UnifiedItem> = { vSource: vs, vIsLimit: shape === "limit" };
+    if (vs === "insured") {
+      if (shape === "range") { patch.vRate = undefined; patch.vMinRate = it.vMinRate ?? it.vRate ?? 0; patch.vMaxRate = it.vMaxRate ?? it.vRate ?? 0; }
+      else { patch.vMinRate = undefined; patch.vMaxRate = undefined; patch.vRate = it.vRate ?? 1; }
+    }
+    updateFormula(idx, patch);
   };
 
   const addItem = () => {
@@ -396,125 +416,96 @@ function UnifiedItemsEditor({
                   {/* Row 2: 金額來源 value_source + 對應數值 */}
                   {(
                     <div className="flex items-center gap-1.5 ml-28 flex-wrap">
-                      {/* 顏色來源標籤 */}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${SOURCE_META[item.vSource]?.chip ?? "bg-stone-100 text-stone-500"}`}>
-                        {SOURCE_META[item.vSource]?.label ?? item.vSource}
-                      </span>
-                      <select
-                        value={item.vSource}
-                        onChange={e => updateFormula(idx, { vSource: e.target.value as VSource })}
-                        className="text-[10px] border border-stone-200 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                      >
-                        {ITEM_SOURCE_OPTIONS.map(v => <option key={v} value={v}>{SOURCE_LABELS[v]}</option>)}
-                      </select>
-
-                      {/* 性質：定額 / 限額 */}
-                      <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
-                        <button type="button" onClick={() => updateFormula(idx, { vIsLimit: false })}
-                          className={`px-1.5 py-0.5 ${!item.vIsLimit ? "bg-sky-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>定額</button>
-                        <button type="button" onClick={() => updateFormula(idx, { vIsLimit: true })}
-                          className={`px-1.5 py-0.5 border-l border-stone-200 ${item.vIsLimit ? "bg-emerald-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>限額</button>
-                      </div>
-
-                      {/* 單位 */}
-                      <select
-                        value={item.vUnit}
-                        onChange={e => updateFormula(idx, { vUnit: e.target.value })}
-                        className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
-                      >
-                        {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
-                      </select>
-
-                      {/* 依來源顯示對應輸入 */}
-                      {item.vSource === "fixed" && (
-                        <>
-                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="金額"
-                            value={item.vAmount ?? ""}
-                            onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
-                            className="w-20 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                          />
-                          <span className="text-[10px] text-stone-400">{item.vUnit}</span>
-                        </>
-                      )}
-                      {item.vSource === "table" && (
-                        <>
-                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
-                            value={item.vTableMin ?? ""}
-                            onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
-                            className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                          />
-                          <span className="text-[10px] text-stone-400">～</span>
-                          <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高"
-                            value={item.vTableMax ?? ""}
-                            onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
-                            className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                          />
-                          <span className="text-[10px] text-stone-400">{item.vUnit}</span>
-                        </>
-                      )}
-                      {item.vSource === "insured" && (() => {
+                      {(() => {
+                        const shape = shapeOf(item);
+                        const src = srcOf(item);
                         const isPct = (item.vRateType ?? "multiplier") === "percentage";
-                        const suffix = isPct ? "%" : "倍";
-                        const prefix = item.vIsLimit ? "限額＝保額" : "保額";
-                        // 範圍模式：有填 min/max 任一即視為範圍（與試算端「填了範圍即覆蓋單一值」一致）
-                        const isRange = item.vMinRate != null || item.vMaxRate != null;
-                        const preview = isRange
-                          ? (item.vMinRate != null && item.vMaxRate != null
-                              ? `${prefix} × ${item.vMinRate}${suffix} ～ ${item.vMaxRate}${suffix}` : "")
-                          : (item.vRate != null ? `${prefix} × ${item.vRate}${suffix}` : "");
+                        const rsfx = isPct ? "%" : "倍";
+                        const limPfx = shape === "limit" ? "限額 " : "";
+                        let preview = "";
+                        if (src === "follow") {
+                          const ratePfx = shape === "limit" ? "限額＝保額" : "保額";
+                          preview = shape === "range"
+                            ? (item.vMinRate != null && item.vMaxRate != null ? `${ratePfx} × ${item.vMinRate}${rsfx} ～ ${item.vMaxRate}${rsfx}` : "")
+                            : (item.vRate != null ? `${ratePfx} × ${item.vRate}${rsfx}` : "");
+                        } else {
+                          preview = shape === "range"
+                            ? (item.vTableMin != null && item.vTableMax != null ? `${limPfx}${item.vTableMin} ～ ${item.vTableMax} ${item.vUnit}` : "")
+                            : (item.vAmount != null ? `${limPfx}${item.vAmount} ${item.vUnit}` : "");
+                        }
+                        const shapeBtns: [VShape, string, string][] = [["fixed", "定額", "bg-sky-500"], ["limit", "限額", "bg-emerald-500"], ["range", "範圍", "bg-purple-500"]];
                         return (
                           <>
-                            <select
-                              value={item.vRateType ?? "multiplier"}
-                              onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
-                              className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
-                            >
-                              <option value="multiplier">保額×倍</option>
-                              <option value="percentage">保額×%</option>
-                            </select>
-                            {/* 單一／範圍切換：一次只填一組，避免兩者並存的歧義 */}
+                            {/* 性質：定額 / 限額 / 範圍 */}
                             <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
-                              <button type="button"
-                                onClick={() => updateFormula(idx, { vMinRate: undefined, vMaxRate: undefined })}
-                                className={`px-1.5 py-0.5 ${!isRange ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}
-                              >單一</button>
-                              <button type="button"
-                                onClick={() => updateFormula(idx, { vRate: undefined, vMinRate: item.vMinRate ?? item.vRate ?? 0, vMaxRate: item.vMaxRate ?? item.vRate ?? 0 })}
-                                className={`px-1.5 py-0.5 border-l border-stone-200 ${isRange ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}
-                              >範圍</button>
+                              {shapeBtns.map(([s, label, color], i) => (
+                                <button key={s} type="button" onClick={() => applyShapeSrc(idx, s, src)}
+                                  className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${shape === s ? `${color} text-white` : "bg-white text-stone-500 hover:bg-stone-50"}`}>{label}</button>
+                              ))}
                             </div>
-                            {!isRange ? (
+                            {/* 來源：隨保額 / 固定 */}
+                            <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                              {(["follow", "fixed"] as VSrc[]).map((s, i) => (
+                                <button key={s} type="button" onClick={() => applyShapeSrc(idx, shape, s)}
+                                  className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${src === s ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>{s === "follow" ? "隨保額" : "固定"}</button>
+                              ))}
+                            </div>
+                            {/* 單位 */}
+                            <select value={item.vUnit} onChange={e => updateFormula(idx, { vUnit: e.target.value })}
+                              className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
+                              {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                            {/* 值輸入：依 來源 × 性質 */}
+                            {src === "follow" ? (
                               <>
-                                <input type="number" min={0} step="any" inputMode="decimal" placeholder={isPct ? "百分比" : "倍率"}
-                                  value={item.vRate ?? ""}
-                                  onChange={e => updateFormula(idx, { vRate: parseFloat(e.target.value) || 0 })}
-                                  className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                                />
-                                <span className="text-[10px] text-stone-400">{suffix}</span>
+                                <select value={item.vRateType ?? "multiplier"} onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
+                                  className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
+                                  <option value="multiplier">保額×倍</option>
+                                  <option value="percentage">保額×%</option>
+                                </select>
+                                {shape === "range" ? (
+                                  <>
+                                    <input type="number" min={0} step="any" inputMode="decimal" placeholder="低" value={item.vMinRate ?? ""}
+                                      onChange={e => updateFormula(idx, { vMinRate: parseFloat(e.target.value) || 0 })}
+                                      className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    <span className="text-[10px] text-stone-400">{rsfx} ～</span>
+                                    <input type="number" min={0} step="any" inputMode="decimal" placeholder="高" value={item.vMaxRate ?? ""}
+                                      onChange={e => updateFormula(idx, { vMaxRate: parseFloat(e.target.value) || 0 })}
+                                      className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    <span className="text-[10px] text-stone-400">{rsfx}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <input type="number" min={0} step="any" inputMode="decimal" placeholder={isPct ? "百分比" : "倍率"} value={item.vRate ?? ""}
+                                      onChange={e => updateFormula(idx, { vRate: parseFloat(e.target.value) || 0 })}
+                                      className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    <span className="text-[10px] text-stone-400">{rsfx}</span>
+                                  </>
+                                )}
+                              </>
+                            ) : shape === "range" ? (
+                              <>
+                                <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低" value={item.vTableMin ?? ""}
+                                  onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
+                                  className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                <span className="text-[10px] text-stone-400">～</span>
+                                <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高" value={item.vTableMax ?? ""}
+                                  onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
+                                  className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                <span className="text-[10px] text-stone-400">{item.vUnit}</span>
                               </>
                             ) : (
                               <>
-                                <input type="number" min={0} step="any" inputMode="decimal" placeholder="低"
-                                  value={item.vMinRate ?? ""}
-                                  onChange={e => updateFormula(idx, { vMinRate: parseFloat(e.target.value) || 0 })}
-                                  className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                                />
-                                <span className="text-[10px] text-stone-400">{suffix} ～</span>
-                                <input type="number" min={0} step="any" inputMode="decimal" placeholder="高"
-                                  value={item.vMaxRate ?? ""}
-                                  onChange={e => updateFormula(idx, { vMaxRate: parseFloat(e.target.value) || 0 })}
-                                  className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                                />
-                                <span className="text-[10px] text-stone-400">{suffix}</span>
+                                <input type="number" min={0} step="any" inputMode="decimal" placeholder="金額" value={item.vAmount ?? ""}
+                                  onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
+                                  className="w-20 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                <span className="text-[10px] text-stone-400">{item.vUnit}</span>
                               </>
                             )}
                             {preview && <span className="text-[10px] text-[#C8956C] font-medium whitespace-nowrap">= {preview}</span>}
                           </>
                         );
                       })()}
-                      {item.vSource === "plan" && (
-                        <span className="text-[10px] text-stone-400">↓ 各計劃金額見下方</span>
-                      )}
 
                       <span className="text-stone-200 mx-1">|</span>
                       <input type="number" min={0} placeholder="天上限"
@@ -526,22 +517,6 @@ function UnifiedItemsEditor({
                     </div>
                   )}
 
-                  {/* Row 3: 計劃別各計劃金額（value_source=plan 時） */}
-                  {item.vSource === "plan" && plans.length > 0 && (
-                    <div className="flex items-center gap-1.5 ml-28 flex-wrap mt-1">
-                      <span className="text-[10px] text-stone-300">各計劃金額（{item.vUnit}）：</span>
-                      {plans.map(pl => (
-                        <span key={pl} className="flex items-center gap-0.5">
-                          <span className="text-[10px] text-stone-400">{pl}</span>
-                          <input type="number" min={0} step="any" inputMode="decimal"
-                            value={item.fPlanValues?.[pl] ?? ""}
-                            onChange={e => updatePlanValue(idx, pl, parseFloat(e.target.value) || 0)}
-                            className="w-14 text-[10px] border border-amber-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
-                          />
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -584,31 +559,30 @@ function UnifiedItemsEditor({
                 <tbody className="divide-y divide-stone-50">
                   {items.map((item, idx) => {
                     const isActive = item.pageRef != null && item.pageRef === activePage;
-                    const follow = followSourceOf(baseMode);
-                    const rowMode: "follow" | "fixed" | "table" =
-                      item.vSource === "fixed" ? "fixed" : item.vSource === "table" ? "table" : "follow";
+                    const shape = shapeOf(item);
+                    const src = srcOf(item);
                     const valSpan = baseMode === "plan" ? plans.length : 1;
+                    const shapeBtns: [VShape, string, string][] = [["fixed", "定額", "bg-sky-500"], ["limit", "限額", "bg-emerald-500"], ["range", "範圍", "bg-purple-500"]];
                     return (
                       <tr key={idx} className={isActive ? "bg-amber-50" : "hover:bg-stone-50/60"}>
                         <td className="px-3 py-1.5 sticky left-0 bg-white">
                           <InlineEdit value={item.name} onChange={v => updateAnalysis(idx, "name", v)} className="font-semibold text-stone-800" />
                         </td>
-                        {/* 性質：定額 / 限額 */}
+                        {/* 性質：定額 / 限額 / 範圍 */}
                         <td className="px-2 py-1.5 text-center">
                           <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
-                            <button type="button" onClick={() => updateFormula(idx, { vIsLimit: false })}
-                              className={`px-1.5 py-0.5 ${!item.vIsLimit ? "bg-sky-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>定額</button>
-                            <button type="button" onClick={() => updateFormula(idx, { vIsLimit: true })}
-                              className={`px-1.5 py-0.5 border-l border-stone-200 ${item.vIsLimit ? "bg-emerald-500 text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>限額</button>
+                            {shapeBtns.map(([s, label, color], i) => (
+                              <button key={s} type="button" onClick={() => applyShapeSrc(idx, s, src)}
+                                className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${shape === s ? `${color} text-white` : "bg-white text-stone-500 hover:bg-stone-50"}`}>{label}</button>
+                            ))}
                           </div>
                         </td>
-                        {/* 來源：隨基準 / 固定 / 附表 */}
+                        {/* 來源：隨基準 / 固定 */}
                         <td className="px-2 py-1.5 text-center">
                           <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
-                            {([["follow", baseMode === "plan" ? "隨計劃" : "隨單位"], ["fixed", "固定"], ["table", "附表"]] as [string, string][]).map(([m, label], i) => (
-                              <button key={m} type="button"
-                                onClick={() => updateFormula(idx, { vSource: (m === "follow" ? follow : m) as VSource })}
-                                className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${rowMode === m ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>{label}</button>
+                            {(["follow", "fixed"] as VSrc[]).map((s, i) => (
+                              <button key={s} type="button" onClick={() => applyShapeSrc(idx, shape, s)}
+                                className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${src === s ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>{s === "follow" ? (baseMode === "plan" ? "隨計劃" : "隨單位") : "固定"}</button>
                             ))}
                           </div>
                         </td>
@@ -618,7 +592,20 @@ function UnifiedItemsEditor({
                             {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
                           </select>
                         </td>
-                        {rowMode === "follow" ? (
+                        {shape === "range" ? (
+                          <td colSpan={valSpan} className="px-1 py-1.5 text-center whitespace-nowrap">
+                            <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
+                              value={item.vTableMin ?? ""}
+                              onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
+                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                            <span className="text-[10px] text-stone-400 mx-1">～</span>
+                            <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高"
+                              value={item.vTableMax ?? ""}
+                              onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
+                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                            <span className="text-[10px] text-stone-400 ml-1">{item.vUnit}</span>
+                          </td>
+                        ) : src === "follow" ? (
                           baseMode === "plan"
                             ? plans.map(pl => (
                                 <td key={pl} className="px-1 py-1.5 text-center">
@@ -636,25 +623,13 @@ function UnifiedItemsEditor({
                                     className="w-20 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
                                 </td>
                               )
-                        ) : rowMode === "fixed" ? (
+                        ) : (
                           <td colSpan={valSpan} className="px-1 py-1.5 text-center">
                             <input type="number" min={0} step="any" inputMode="decimal" placeholder="金額"
                               value={item.vAmount ?? ""}
                               onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
                               className="w-24 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
                             <span className="text-[10px] text-stone-400 ml-1">{item.vUnit}</span>
-                          </td>
-                        ) : (
-                          <td colSpan={valSpan} className="px-1 py-1.5 text-center whitespace-nowrap">
-                            <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
-                              value={item.vTableMin ?? ""}
-                              onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
-                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                            <span className="text-[10px] text-stone-400 mx-1">～</span>
-                            <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高"
-                              value={item.vTableMax ?? ""}
-                              onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
-                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
                           </td>
                         )}
                         <td className="px-2 py-1.5 text-center">
