@@ -14,12 +14,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // planCode lookup for formula editor — still reads from Turso DB
+    // planCode 查單筆商品 + 已審核分析（給付明細／限制／注意事項）
     const planCode = searchParams.get("planCode");
     if (planCode) {
       await ensureInit();
       const result = await db.execute({
-        sql: `SELECT p.id, p.product_name, p.plan_code, p.category, p.formula_json, p.formula_verified, c.name as company
+        sql: `SELECT p.id, p.product_name, p.plan_code, p.category, c.name as company
               FROM products p JOIN companies c ON c.id = p.company_id
               WHERE p.plan_code = ?
               ORDER BY p.verified DESC, p.updated_at DESC LIMIT 1`,
@@ -46,8 +46,6 @@ export async function GET(req: NextRequest) {
           plan_code: r.plan_code,
           category: r.category,
           company: r.company,
-          formula_json: r.formula_json ? JSON.parse(r.formula_json as string) : null,
-          formula_verified: r.formula_verified,
         },
         analysis,
       });
