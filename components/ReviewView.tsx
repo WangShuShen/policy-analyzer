@@ -58,6 +58,7 @@ interface AnalysisData {
   baseType?: string;
   baseUnit?: string;        // 保額單位（元/美元/萬元/計劃別/單位數）
   plans?: string[];         // 計劃別清單
+  planScale?: boolean;      // 計劃別=等比放大（輸入計劃號×N）；false/未設=各計劃獨立(列舉)
   items?: AnalysisItem[];
   annualLimit?: { formula?: string; notes?: string };
   waitingPeriod?: { disease?: number; injury?: number; note?: string };
@@ -237,25 +238,37 @@ function UnifiedItemsEditor({
   };
 
   const baseMode = baseUnitToMode(baseUnit);
+  // 計劃別「等比放大」：項目以 unit 計（×計劃號）；單欄輸入
+  const planScale = baseMode === "plan" && !!data.planScale;
+  const singleCol = baseMode === "unit" || planScale;      // 矩陣單值欄（vs 各計劃多欄）
+  const effBase: BaseMode = planScale ? "unit" : baseMode;  // 來源推導用：等比視同單位
+  const effFollow = followSourceOf(effBase);                // 隨基準的來源（plan/unit/insured）
   // 「隨基準變動」的來源（切基準時這些要跟著換；固定/附表不動）
   const FOLLOWS_BASE: VSource[] = ["insured", "plan", "unit"];
   // 切換計算基準：只把「隨基準」的項目換成新基準的來源；固定/附表項目維持原樣
   const setBaseMode = (m: BaseMode) => {
     onBaseUnitChange(m === "plan" ? "計劃別" : m === "unit" ? "單位數" : (["元", "美元", "萬元"].includes(baseUnit) ? baseUnit : "萬元"));
     const cat = categoryOf(data);
+    const follow: VSource = m === "plan" && data.planScale ? "unit" : followSourceOf(m);
     onItemsChange(items.map(it => {
       if (!FOLLOWS_BASE.includes(it.vSource)) return it;       // 固定/附表 不動
-      // 範圍(insured min/max) 切到 plan/單位無法逐計劃範圍 → 退回固定附表(table)
       if (m !== "insured" && shapeOf(it) === "range") return { ...it, vSource: "table" } as UnifiedItem;
       if (m === "insured") return { ...it, ...suggestSource(it, cat), vIsLimit: it.vIsLimit } as UnifiedItem;
-      return { ...it, vSource: followSourceOf(m) };
+      return { ...it, vSource: follow };
     }));
+  };
+
+  // 計劃別 列舉/等比 切換：等比→項目以 unit 計、列舉→plan
+  const setPlanScale = (scale: boolean) => {
+    onDataChange({ ...data, planScale: scale });
+    const follow: VSource = scale ? "unit" : "plan";
+    onItemsChange(items.map(it => (it.vSource === "plan" || it.vSource === "unit") ? { ...it, vSource: follow } as UnifiedItem : it));
   };
 
   // 設定某項目的「性質 + 來源」，推導並寫入 value_source 與相關欄位
   const applyShapeSrc = (idx: number, shape: VShape, src: VSrc) => {
     const it = items[idx];
-    const vs = resolveVSource(shape, src, baseMode);
+    const vs = resolveVSource(shape, src, effBase);
     const patch: Partial<UnifiedItem> = { vSource: vs, vIsLimit: shape === "limit" };
     if (vs === "insured") {
       if (shape === "range") { patch.vRate = undefined; patch.vMinRate = it.vMinRate ?? it.vRate ?? 0; patch.vMaxRate = it.vMaxRate ?? it.vRate ?? 0; }
@@ -265,7 +278,7 @@ function UnifiedItemsEditor({
   };
 
   const addItem = () => {
-    const blank: UnifiedItem = { name: "", formula: "", vSource: followSourceOf(baseMode), vUnit: "元", vAmount: 0 };
+    const blank: UnifiedItem = { name: "", formula: "", vSource: effFollow, vUnit: "元", vAmount: 0 };
     onItemsChange([...items, blank]);
   };
 
@@ -340,17 +353,33 @@ function UnifiedItemsEditor({
             </button>
           )}
         </div>
-        {/* 計劃別清單：基準為計劃別時填，逗號分隔，例如 1,2,3,4,5 或 A,B,C */}
+        {/* 計劃別：列舉(各計劃獨立) / 等比(輸入計劃號×N) */}
         {baseMode === "plan" && (
-          <div className="flex gap-3 items-center pt-1">
-            <span className="text-stone-400 w-20 shrink-0 text-xs">計劃別</span>
-            <input
-              value={plans.join(",")}
-              onChange={e => onPlansChange(e.target.value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean))}
-              placeholder="填入各計劃，逗號分隔，如 1,2,3,4,5 或 A,B,C"
-              className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 text-stone-700"
-            />
-          </div>
+          <>
+            <div className="flex gap-3 items-center pt-1">
+              <span className="text-stone-400 w-20 shrink-0 text-xs">計劃別類型</span>
+              <div className="inline-flex rounded-lg overflow-hidden border border-amber-200 text-xs">
+                <button type="button" onClick={() => setPlanScale(false)}
+                  className={`px-3 py-1 ${!planScale ? "bg-[#C8956C] text-white font-medium" : "bg-white text-stone-500 hover:bg-amber-50"}`}>列舉（各計劃獨立）</button>
+                <button type="button" onClick={() => setPlanScale(true)}
+                  className={`px-3 py-1 border-l border-amber-200 ${planScale ? "bg-[#C8956C] text-white font-medium" : "bg-white text-stone-500 hover:bg-amber-50"}`}>等比（計劃號×N）</button>
+              </div>
+            </div>
+            {!planScale && (
+              <div className="flex gap-3 items-center pt-1">
+                <span className="text-stone-400 w-20 shrink-0 text-xs">計劃清單</span>
+                <input
+                  value={plans.join(",")}
+                  onChange={e => onPlansChange(e.target.value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean))}
+                  placeholder="填入各計劃，逗號分隔，如 1,2,3,4,5 或 A,B,C"
+                  className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 text-stone-700"
+                />
+              </div>
+            )}
+            {planScale && (
+              <p className="text-[11px] text-stone-400 pt-1 ml-[5.5rem]">等比型：下方每項填「每計劃金額（基數）」，試算時 × 計劃號</p>
+            )}
+          </>
         )}
       </div>
 
@@ -535,11 +564,11 @@ function UnifiedItemsEditor({
       {items.length > 0 && (baseMode === "plan" || baseMode === "unit") && (
         <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between">
-            <span className="text-sm font-semibold text-stone-600">📋 基準公式列表 · {baseMode === "plan" ? "計劃別" : "單位"}</span>
-            <span className="text-xs text-stone-400">{baseMode === "plan" ? "每個給付項目 × 各計劃金額" : "每個給付項目 · 每壹單位金額"}</span>
+            <span className="text-sm font-semibold text-stone-600">📋 基準公式列表 · {baseMode === "plan" ? (planScale ? "計劃別·等比" : "計劃別") : "單位"}</span>
+            <span className="text-xs text-stone-400">{singleCol ? `每個給付項目 · 每${baseMode === "plan" ? "計劃" : "單位"}金額（基數）` : "每個給付項目 × 各計劃金額"}</span>
           </div>
-          {baseMode === "plan" && plans.length === 0 ? (
-            <div className="px-4 py-6 text-center text-xs text-stone-400">請先在上方「計劃別」填入各計劃（如 1,2,3,4,5）</div>
+          {baseMode === "plan" && !planScale && plans.length === 0 ? (
+            <div className="px-4 py-6 text-center text-xs text-stone-400">請先在上方「計劃清單」填入各計劃（如 1,2,3,4,5）</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -549,9 +578,9 @@ function UnifiedItemsEditor({
                     <th className="font-medium px-2 py-2">性質</th>
                     <th className="font-medium px-2 py-2">來源</th>
                     <th className="font-medium px-2 py-2">單位</th>
-                    {baseMode === "plan"
+                    {!singleCol
                       ? plans.map(pl => <th key={pl} className="font-medium px-2 py-2 text-center whitespace-nowrap">計劃 {pl}</th>)
-                      : <th className="font-medium px-2 py-2 text-center whitespace-nowrap">每壹單位金額</th>}
+                      : <th className="font-medium px-2 py-2 text-center whitespace-nowrap">每{baseMode === "plan" ? "計劃" : "單位"}金額</th>}
                     <th className="font-medium px-2 py-2 text-center">頁</th>
                     <th className="px-2 py-2"></th>
                   </tr>
@@ -561,7 +590,7 @@ function UnifiedItemsEditor({
                     const isActive = item.pageRef != null && item.pageRef === activePage;
                     const shape = shapeOf(item);
                     const src = srcOf(item);
-                    const valSpan = baseMode === "plan" ? plans.length : 1;
+                    const valSpan = singleCol ? 1 : plans.length;
                     const shapeBtns: [VShape, string, string][] = [["fixed", "定額", "bg-sky-500"], ["limit", "限額", "bg-emerald-500"], ["range", "範圍", "bg-purple-500"]];
                     return (
                       <tr key={idx} className={isActive ? "bg-amber-50" : "hover:bg-stone-50/60"}>
@@ -606,7 +635,7 @@ function UnifiedItemsEditor({
                             <span className="text-[10px] text-stone-400 ml-1">{item.vUnit}</span>
                           </td>
                         ) : src === "follow" ? (
-                          baseMode === "plan"
+                          !singleCol
                             ? plans.map(pl => (
                                 <td key={pl} className="px-1 py-1.5 text-center">
                                   <input type="number" min={0} step="any" inputMode="decimal"
