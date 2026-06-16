@@ -72,7 +72,7 @@ interface TrialResult {
   note: string;
 }
 
-function TrialPanel({ productId, baseUnit, plans = [] }: { productId: number; baseUnit: string; plans?: string[] }) {
+function TrialPanel({ planCode, baseUnit, plans = [] }: { planCode: string; baseUnit: string; plans?: string[] }) {
   const [amount, setAmount] = useState("");
   const [unit, setUnit] = useState(baseUnit);
   const [plan, setPlan] = useState(plans[0] ?? "");
@@ -85,7 +85,7 @@ function TrialPanel({ productId, baseUnit, plans = [] }: { productId: number; ba
     if (!num || num <= 0) { setError("請輸入有效保額"); return; }
     setLoading(true); setError(""); setResults([]);
     try {
-      const res = await fetch(`/api/products/${productId}/trial`, {
+      const res = await fetch(`/api/products/${encodeURIComponent(planCode)}/trial`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ insured_amount: num, unit, plan: plan || undefined }),
@@ -177,7 +177,8 @@ function TrialPanel({ productId, baseUnit, plans = [] }: { productId: number; ba
 
 interface AnalysisItem {
   name: string; formula?: string; unit?: string; restriction?: string; notes?: string;
-  valueSource?: "plan" | "table" | "insured" | "fixed";
+  valueSource?: "plan" | "table" | "insured" | "unit" | "fixed";
+  isLimit?: boolean;
   planValues?: Record<string, number>;
   tableRange?: { min: number; max: number };
   insuredRate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
@@ -186,6 +187,7 @@ interface AnalysisItem {
 interface AnalysisData {
   items?: AnalysisItem[];
   plans?: string[];
+  baseUnit?: string;
   annualLimit?: { formula?: string; notes?: string };
   waitingPeriod?: { note?: string };
   exclusions?: string[];
@@ -196,19 +198,22 @@ interface AnalysisData {
 function benefitDisplay(it: AnalysisItem): string {
   const u = it.unit ?? "";
   const n = (v?: number) => (v ?? 0).toLocaleString("zh-TW");
+  const limPfx = it.isLimit ? "限額 " : "";
   switch (it.valueSource) {
-    case "fixed": return `${n(it.amount)} ${u}`;
-    case "table": return it.tableRange ? `${n(it.tableRange.min)} ～ ${n(it.tableRange.max)} ${u}` : (it.formula ?? "");
+    case "fixed": return `${limPfx}${n(it.amount)} ${u}`;
+    case "unit": return `${limPfx}每單位 ${n(it.amount)} ${u}`;
+    case "table": return it.tableRange ? `${limPfx}${n(it.tableRange.min)} ～ ${n(it.tableRange.max)} ${u}` : (it.formula ?? "");
     case "insured": {
       const r = it.insuredRate; if (!r) return it.formula ?? "";
       const sfx = r.type === "percentage" ? "%" : "倍";
-      if (r.min != null && r.max != null) return `保額 × ${r.min}${sfx} ～ ${r.max}${sfx}`;
-      return `保額 × ${r.rate ?? 1}${sfx}`;
+      const pfx = it.isLimit ? "限額＝保額" : "保額";
+      if (r.min != null && r.max != null) return `${pfx} × ${r.min}${sfx} ～ ${r.max}${sfx}`;
+      return `${pfx} × ${r.rate ?? 1}${sfx}`;
     }
     case "plan": {
       const pv = it.planValues ?? {};
       const parts = Object.entries(pv).map(([k, v]) => `計劃${k}=${n(v)}`);
-      return parts.length ? `${parts.join("、")} ${u}` : (it.formula ?? "");
+      return parts.length ? `${limPfx}${parts.join("、")} ${u}` : (it.formula ?? "");
     }
     default: return it.formula ?? "";
   }
@@ -280,7 +285,6 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
   const router = useRouter();
   const [pdfStatus, setPdfStatus] = useState<"loading" | "ok" | "error">("loading");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [formulaInfo, setFormulaInfo] = useState<{ id: number; base_unit: string; plans: string[] } | null>(null);
   const [showTrial, setShowTrial] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [tab, setTab] = useState<"info" | "pdf">("pdf");
@@ -298,10 +302,6 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
     fetch(`/api/products?planCode=${encodeURIComponent(product.plan_code)}`)
       .then(r => r.json())
       .then(d => {
-        const p = d.product;
-        if (p && p.formula_verified && p.formula_json) {
-          setFormulaInfo({ id: p.id as number, base_unit: p.formula_json.base_unit ?? "元/日", plans: p.formula_json.plans ?? [] });
-        }
         if (d.analysis) {
           setAnalysis(d.analysis as AnalysisData);
           setTab("info"); // 有已審核分析時預設顯示給付資訊
@@ -374,7 +374,7 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {formulaInfo && (
+              {!!analysis?.items?.length && (
                 <button
                   onClick={() => setShowTrial(v => !v)}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#C8956C] text-white hover:bg-[#A0714F] transition-colors font-medium"
@@ -409,8 +409,8 @@ function ProductDrawer({ product, onClose }: { product: ProductItem; onClose: ()
           </div>
         </div>
 
-        {showTrial && formulaInfo && (
-          <TrialPanel productId={formulaInfo.id} baseUnit={formulaInfo.base_unit} plans={formulaInfo.plans} />
+        {showTrial && !!analysis?.items?.length && (
+          <TrialPanel planCode={product.plan_code} baseUnit={analysis.baseUnit ?? "元"} plans={analysis.plans ?? []} />
         )}
 
         {/* 分頁：給付資訊 / 條款 PDF */}

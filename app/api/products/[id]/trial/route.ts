@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyJWT } from "@/lib/jwt";
-import db, { ensureInit, type FormulaJson, type FormulaItem } from "@/lib/db";
+import db, { ensureInit, type FormulaItem } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -100,6 +100,32 @@ function calcItem(item: FormulaItem, amount: number, baseUnit: string, plan?: st
   }
 }
 
+// analysis_json 的項目（camelCase，審核頁存的格式）→ FormulaItem（calcItem 用的 snake_case）
+interface AnalysisJsonItem {
+  name: string; unit?: string; formula?: string; restriction?: string; notes?: string;
+  valueSource?: string; isLimit?: boolean;
+  planValues?: Record<string, number>;
+  tableRange?: { min: number; max: number };
+  insuredRate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
+  amount?: number;
+  limit?: { days?: number; times?: number };
+}
+function toFormulaItem(it: AnalysisJsonItem): FormulaItem {
+  return {
+    label: it.name,
+    value_source: (it.valueSource as FormulaItem["value_source"]) ?? "fixed",
+    unit: it.unit ?? "元",
+    is_limit: it.isLimit,
+    plan_values: it.planValues,
+    table_range: it.tableRange,
+    insured_rate: it.insuredRate,
+    amount: it.amount,
+    limit: it.limit,
+    restriction: it.restriction,
+    note: it.notes,
+  };
+}
+
 export async function POST(req: NextRequest, { params }: Params) {
   const token = req.cookies.get("auth_token")?.value;
   if (!token) return NextResponse.json({ error: "未登入" }, { status: 401 });
@@ -107,6 +133,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!payload) return NextResponse.json({ error: "未登入" }, { status: 401 });
 
   const { id } = await params;
+  const planCode = decodeURIComponent(id);
   await ensureInit();
 
   const body = await req.json() as { insured_amount: number; unit: string; plan?: string };
@@ -114,32 +141,32 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "請輸入有效的保額" }, { status: 400 });
   }
 
+  // 試算讀「已審核歸檔」的分析（analysis_json），不再依賴 products.formula_json
   const result = await db.execute({
-    sql: `SELECT p.product_name, p.category, p.formula_json, p.formula_verified, c.name as company
-          FROM products p JOIN companies c ON c.id = p.company_id
-          WHERE p.id = ?`,
-    args: [id],
+    sql: `SELECT analysis_json FROM policies
+          WHERE plan_code = ? AND status = 'archived' AND analysis_json IS NOT NULL
+          ORDER BY archived_at DESC LIMIT 1`,
+    args: [planCode],
   });
   if (result.rows.length === 0) {
-    return NextResponse.json({ error: "找不到商品" }, { status: 404 });
+    return NextResponse.json({ error: "此商品尚無已審核的給付公式" }, { status: 422 });
   }
 
-  const row = result.rows[0];
-  if (!row.formula_verified || !row.formula_json) {
-    return NextResponse.json({ error: "此商品的給付公式尚未設定" }, { status: 422 });
-  }
-
-  const formula = JSON.parse(row.formula_json as string) as FormulaJson;
-  const results: TrialResult[] = formula.items.map(item => calcItem(item, body.insured_amount, body.unit ?? formula.base_unit ?? "元", body.plan));
+  const analysis = JSON.parse(result.rows[0].analysis_json as string) as {
+    company?: string; productName?: string; baseUnit?: string; plans?: string[]; items?: AnalysisJsonItem[];
+  };
+  const baseUnit = body.unit ?? analysis.baseUnit ?? "元";
+  const results: TrialResult[] = (analysis.items ?? [])
+    .map(toFormulaItem)
+    .map(item => calcItem(item, body.insured_amount, baseUnit, body.plan));
 
   return NextResponse.json({
-    product_name: row.product_name,
-    company: row.company,
-    category: row.category,
+    product_name: analysis.productName,
+    company: analysis.company,
     insured_amount: body.insured_amount,
-    unit: body.unit ?? formula.base_unit,
+    unit: baseUnit,
     plan: body.plan,
-    plans: formula.plans ?? [],
+    plans: analysis.plans ?? [],
     results,
   });
 }
