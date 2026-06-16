@@ -126,7 +126,7 @@ export default db;
 
 // 金額來源（位階由高到低）：計劃 > 附表/單位別 > 保額計算 > 定額
 // 有計劃別就帶計劃撈值、有附表就查表、否則用保額算、再否則定額
-export type ValueSource = "plan" | "table" | "insured" | "fixed";
+export type ValueSource = "plan" | "table" | "insured" | "reimbursement" | "fixed";
 
 export interface FormulaItem {
   label: string;
@@ -137,7 +137,8 @@ export interface FormulaItem {
   plan_values?: Record<string, number>;
   // value_source = "table"：附表/單位別查出的金額範圍（最低～最高）
   table_range?: { min: number; max: number };
-  // value_source = "insured"：用保額計算（倍數或百分比；可為單一 rate 或範圍）
+  // value_source = "insured" / "reimbursement"：用保額(限額)計算（倍數或百分比；可為單一 rate 或範圍）
+  // reimbursement(限額) 與 insured 共用此欄位，差別僅在試算顯示為「實支實付上限」
   insured_rate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
   // value_source = "fixed"：直接固定金額
   amount?: number;

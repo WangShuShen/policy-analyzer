@@ -55,6 +55,19 @@ function calcItem(item: FormulaItem, amount: number, baseUnit: string, plan?: st
         }
         return { label: item.label, type: "insured", display: fmt(base * mul(r?.rate ?? 1)), limit, note };
       }
+      case "reimbursement": {
+        // 限額＝保額(投保限額)×倍率；顯示為「實支實付，上限 X」
+        const base = unitToYuan(amount, baseUnit);
+        const r = item.insured_rate;
+        const mul = (x?: number) => r?.type === "percentage" ? (x ?? 0) / 100 : (x ?? 0);
+        if (r?.min != null && r?.max != null) {
+          const rd = r.type === "percentage" ? `${r.min}%～${r.max}%` : `${r.min}倍～${r.max}倍`;
+          return { label: item.label, type: "reimbursement",
+            display: `實支實付，上限 ${fmt(base * mul(r.min))} ～ ${fmt(base * mul(r.max))}（${rd}）`, limit, note };
+        }
+        return { label: item.label, type: "reimbursement",
+          display: `實支實付，上限 ${fmt(base * mul(r?.rate ?? 1))}`, limit, note };
+      }
       case "fixed":
         return { label: item.label, type: "fixed", display: fmt(item.amount ?? 0), limit, note };
     }

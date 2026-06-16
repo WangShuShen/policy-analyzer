@@ -42,7 +42,7 @@ interface AnalysisItem {
   notes?: string;
   pageRef?: number | null;
   // AI 新格式（金額來源）
-  valueSource?: "plan" | "table" | "insured" | "fixed";
+  valueSource?: "plan" | "table" | "insured" | "reimbursement" | "fixed";
   planValues?: Record<string, number>;
   tableRange?: { min: number; max: number };
   insuredRate?: { type: "multiplier" | "percentage"; rate?: number; min?: number; max?: number };
@@ -66,12 +66,13 @@ interface AnalysisData {
 
 // ── Unified Items + Formula Editor ────────────────────────────────────
 
-type VSource = "plan" | "table" | "insured" | "fixed";
+type VSource = "plan" | "table" | "insured" | "reimbursement" | "fixed";
 
 const SOURCE_LABELS: Record<VSource, string> = {
   plan:    "計劃別",
   table:   "附表（最低～最高）",
   insured: "保額計算",
+  reimbursement: "限額",
   fixed:   "定額",
 };
 
@@ -116,7 +117,7 @@ function suggestSource(item: AnalysisItem, category = ""): Partial<UnifiedItem> 
     const f = item.formula;
     const nums = [...f.matchAll(/(\d+(?:\.\d+)?)/g)].map(m => parseFloat(m[1])).filter(n => n > 0);
     if (out.vSource === "table") { out.vTableMin = nums[0] ?? 0; out.vTableMax = nums[1] ?? nums[0] ?? 0; }
-    else if (out.vSource === "insured") {
+    else if (out.vSource === "insured" || out.vSource === "reimbursement") {
       out.vRateType = f.includes("%") ? "percentage" : "multiplier";
       const isRange = f.includes("～") || f.includes("~") || f.includes("至");
       if (isRange) { out.vMinRate = nums[0]; out.vMaxRate = nums[1] ?? nums[0]; }
@@ -161,7 +162,7 @@ function toFormulaItem(u: UnifiedItem): FormulaItem {
     restriction: u.restriction, note: u.notes };
   if (u.vSource === "plan" && u.fPlanValues && Object.keys(u.fPlanValues).length > 0) fi.plan_values = u.fPlanValues;
   if (u.vSource === "table") fi.table_range = { min: u.vTableMin ?? 0, max: u.vTableMax ?? 0 };
-  if (u.vSource === "insured") fi.insured_rate = { type: u.vRateType ?? "multiplier", rate: u.vRate, min: u.vMinRate, max: u.vMaxRate };
+  if (u.vSource === "insured" || u.vSource === "reimbursement") fi.insured_rate = { type: u.vRateType ?? "multiplier", rate: u.vRate, min: u.vMinRate, max: u.vMaxRate };
   if (u.vSource === "fixed") fi.amount = u.vAmount ?? 0;
   return fi;
 }
@@ -402,15 +403,17 @@ function UnifiedItemsEditor({
                           <span className="text-[10px] text-stone-400">{item.vUnit}</span>
                         </>
                       )}
-                      {item.vSource === "insured" && (() => {
+                      {(item.vSource === "insured" || item.vSource === "reimbursement") && (() => {
                         const isPct = (item.vRateType ?? "multiplier") === "percentage";
                         const suffix = isPct ? "%" : "倍";
+                        // 限額與保額計算共用倍率輸入，僅預覽前綴不同（限額/保額）
+                        const baseLabel = item.vSource === "reimbursement" ? "限額" : "保額";
                         // 範圍模式：有填 min/max 任一即視為範圍（與試算端「填了範圍即覆蓋單一值」一致）
                         const isRange = item.vMinRate != null || item.vMaxRate != null;
                         const preview = isRange
                           ? (item.vMinRate != null && item.vMaxRate != null
-                              ? `保額 × ${item.vMinRate}${suffix} ～ ${item.vMaxRate}${suffix}` : "")
-                          : (item.vRate != null ? `保額 × ${item.vRate}${suffix}` : "");
+                              ? `${baseLabel} × ${item.vMinRate}${suffix} ～ ${item.vMaxRate}${suffix}` : "")
+                          : (item.vRate != null ? `${baseLabel} × ${item.vRate}${suffix}` : "");
                         return (
                           <>
                             <select
@@ -418,8 +421,8 @@ function UnifiedItemsEditor({
                               onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
                               className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none"
                             >
-                              <option value="multiplier">保額×倍</option>
-                              <option value="percentage">保額×%</option>
+                              <option value="multiplier">{baseLabel}×倍</option>
+                              <option value="percentage">{baseLabel}×%</option>
                             </select>
                             {/* 單一／範圍切換：一次只填一組，避免兩者並存的歧義 */}
                             <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
@@ -692,7 +695,7 @@ export function ReviewDetail({
           valueSource: it.vSource,
           planValues: it.vSource === "plan" ? it.fPlanValues : undefined,
           tableRange: it.vSource === "table" ? { min: it.vTableMin ?? 0, max: it.vTableMax ?? 0 } : undefined,
-          insuredRate: it.vSource === "insured" ? { type: it.vRateType ?? "multiplier", rate: it.vRate, min: it.vMinRate, max: it.vMaxRate } : undefined,
+          insuredRate: (it.vSource === "insured" || it.vSource === "reimbursement") ? { type: it.vRateType ?? "multiplier", rate: it.vRate, min: it.vMinRate, max: it.vMaxRate } : undefined,
           amount: it.vSource === "fixed" ? it.vAmount : undefined,
           limit: it.fLimitDays ? { days: it.fLimitDays } : undefined,
         })),

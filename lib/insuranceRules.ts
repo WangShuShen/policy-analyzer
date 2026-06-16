@@ -7,7 +7,7 @@
 //   3) 細分商品類型預設（categoryDefaults）
 
 export type FormulaType = "fixed" | "multiplier" | "reimbursement" | "range" | "lump_sum";
-export type ValueSource = "plan" | "table" | "insured" | "fixed";
+export type ValueSource = "plan" | "table" | "insured" | "reimbursement" | "fixed";
 
 export interface FormulaSuggestion {
   fType: FormulaType;
@@ -72,7 +72,7 @@ function sourceOf(fType: FormulaType, itemName: string): ValueSource {
     case "lump_sum": return "insured";                  // 一次性＝保額×N%
     case "multiplier": return "insured";                // 倍率＝保額/日額×N
     case "range": return "table";                        // 範圍多為附表
-    case "reimbursement": return "insured";             // 限額多依保額
+    case "reimbursement": return "reimbursement";       // 限額＝保額(限額)×倍率，獨立來源
     case "fixed": default: return "fixed";              // 定額＝固定金額
   }
 }
@@ -97,6 +97,7 @@ export const SOURCE_META: Record<ValueSource, { label: string; chip: string }> =
   plan:    { label: "計劃別", chip: "bg-violet-50 text-violet-700 border border-violet-200" },
   table:   { label: "附表",   chip: "bg-purple-50 text-purple-700 border border-purple-200" },
   insured: { label: "保額計算", chip: "bg-amber-50 text-amber-700 border border-amber-200" },
+  reimbursement: { label: "限額", chip: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
   fixed:   { label: "定額",   chip: "bg-sky-50 text-sky-700 border border-sky-200" },
 };
 
