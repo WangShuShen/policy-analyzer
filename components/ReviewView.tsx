@@ -76,6 +76,12 @@ const SOURCE_LABELS: Record<VSource, string> = {
   fixed:   "定額",
 };
 
+// 計算基準（整張保單）：保額 / 計劃別 / 單位 三選一
+type BaseMode = "insured" | "plan" | "unit";
+const baseUnitToMode = (u: string): BaseMode => u === "計劃別" ? "plan" : u === "單位數" ? "unit" : "insured";
+// 保額基準下，各給付項目可選的金額來源（計劃別已上移為基準，不在此處）
+const ITEM_SOURCE_OPTIONS: VSource[] = ["table", "insured", "reimbursement", "fixed"];
+
 interface UnifiedItem extends AnalysisItem {
   vSource: VSource;
   vUnit: string;
@@ -217,8 +223,25 @@ function UnifiedItemsEditor({
     onItemsChange(next);
   };
 
+  const baseMode = baseUnitToMode(baseUnit);
+  // 切換計算基準：計劃別/單位時，把所有項目的金額來源一併切過去（計劃別→plan、單位→fixed 每單位金額）
+  const setBaseMode = (m: BaseMode) => {
+    if (m === "plan") {
+      onBaseUnitChange("計劃別");
+      onItemsChange(items.map(it => ({ ...it, vSource: "plan" as VSource })));
+    } else if (m === "unit") {
+      onBaseUnitChange("單位數");
+      onItemsChange(items.map(it => ({ ...it, vSource: "fixed" as VSource })));
+    } else {
+      onBaseUnitChange(["元", "美元", "萬元"].includes(baseUnit) ? baseUnit : "萬元");
+      // 由計劃別/單位切回保額：原本 plan 的項目重新依規則建議來源
+      const cat = categoryOf(data);
+      onItemsChange(items.map(it => it.vSource === "plan" ? { ...it, ...suggestSource(it, cat) } as UnifiedItem : it));
+    }
+  };
+
   const addItem = () => {
-    const blank: UnifiedItem = { name: "", formula: "", vSource: "fixed", vUnit: "元", vAmount: 0 };
+    const blank: UnifiedItem = { name: "", formula: "", vSource: baseMode === "plan" ? "plan" : "fixed", vUnit: "元", vAmount: 0 };
     onItemsChange([...items, blank]);
   };
 
@@ -261,14 +284,26 @@ function UnifiedItemsEditor({
             </div>
           ))}
         <div className="flex gap-3 items-center pt-1 border-t border-amber-100 mt-1">
-          <span className="text-stone-400 w-20 shrink-0 text-xs">保額單位</span>
-          <select
-            value={baseUnit}
-            onChange={e => onBaseUnitChange(e.target.value)}
-            className="text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
-          >
-            {["元", "美元", "萬元", "計劃別", "單位數"].map(u => <option key={u} value={u}>{u}</option>)}
-          </select>
+          <span className="text-stone-400 w-20 shrink-0 text-xs">計算基準</span>
+          {/* 保額 / 計劃別 / 單位 三選一 */}
+          <div className="inline-flex rounded-lg overflow-hidden border border-amber-200">
+            {([["insured", "保額"], ["plan", "計劃別"], ["unit", "單位"]] as [BaseMode, string][]).map(([m, label], i) => (
+              <button key={m} type="button" onClick={() => setBaseMode(m)}
+                className={`text-xs px-3 py-1 ${i > 0 ? "border-l border-amber-200" : ""} ${baseMode === m ? "bg-[#C8956C] text-white font-medium" : "bg-white text-stone-500 hover:bg-amber-50"}`}
+              >{label}</button>
+            ))}
+          </div>
+          {/* 保額基準下，挑保額單位 */}
+          {baseMode === "insured" && (
+            <select
+              value={baseUnit}
+              onChange={e => onBaseUnitChange(e.target.value)}
+              className="text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+            >
+              {["元", "美元", "萬元"].map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          )}
+          {baseMode === "unit" && <span className="text-[11px] text-stone-400">每壹單位給付金額（下方逐項填）</span>}
           {formulaVerified && (
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 ml-1">
               公式已確認
@@ -281,20 +316,22 @@ function UnifiedItemsEditor({
             </button>
           )}
         </div>
-        {/* 計劃別清單（選填）：用逗號分隔，例如 1,2,3,4,5 或 A,B,C */}
-        <div className="flex gap-3 items-center pt-1">
-          <span className="text-stone-400 w-20 shrink-0 text-xs">計劃別</span>
-          <input
-            value={plans.join(",")}
-            onChange={e => onPlansChange(e.target.value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean))}
-            placeholder="無則留空；多計劃用逗號分隔，如 1,2,3"
-            className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 text-stone-700"
-          />
-        </div>
+        {/* 計劃別清單：基準為計劃別時填，逗號分隔，例如 1,2,3,4,5 或 A,B,C */}
+        {baseMode === "plan" && (
+          <div className="flex gap-3 items-center pt-1">
+            <span className="text-stone-400 w-20 shrink-0 text-xs">計劃別</span>
+            <input
+              value={plans.join(",")}
+              onChange={e => onPlansChange(e.target.value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean))}
+              placeholder="填入各計劃，逗號分隔，如 1,2,3,4,5 或 A,B,C"
+              className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 text-stone-700"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Unified items */}
-      {items.length > 0 && (
+      {/* Unified items（保額基準：各項目自選金額來源）*/}
+      {items.length > 0 && baseMode === "insured" && (
         <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between">
             <span className="text-sm font-semibold text-stone-600">📋 給付項目 + 公式</span>
@@ -364,7 +401,7 @@ function UnifiedItemsEditor({
                         onChange={e => updateFormula(idx, { vSource: e.target.value as VSource })}
                         className="text-[10px] border border-stone-200 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#C8956C]"
                       >
-                        {Object.entries(SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {ITEM_SOURCE_OPTIONS.map(v => <option key={v} value={v}>{SOURCE_LABELS[v]}</option>)}
                       </select>
 
                       {/* 單位 */}
@@ -499,6 +536,85 @@ function UnifiedItemsEditor({
             })}
           </div>
 
+          <div className="px-4 py-2.5 border-t border-stone-100">
+            <button onClick={addItem} className="flex items-center gap-1 text-xs text-stone-400 hover:text-[#C8956C] transition-colors">
+              <Plus className="h-3.5 w-3.5" />
+              新增給付項目
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 基準公式列表（計劃別 / 單位基準：項目 × 金額 矩陣）*/}
+      {items.length > 0 && (baseMode === "plan" || baseMode === "unit") && (
+        <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100 flex items-center justify-between">
+            <span className="text-sm font-semibold text-stone-600">📋 基準公式列表 · {baseMode === "plan" ? "計劃別" : "單位"}</span>
+            <span className="text-xs text-stone-400">{baseMode === "plan" ? "每個給付項目 × 各計劃金額" : "每個給付項目 · 每壹單位金額"}</span>
+          </div>
+          {baseMode === "plan" && plans.length === 0 ? (
+            <div className="px-4 py-6 text-center text-xs text-stone-400">請先在上方「計劃別」填入各計劃（如 1,2,3,4,5）</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-stone-50 text-stone-400">
+                    <th className="text-left font-medium px-3 py-2 sticky left-0 bg-stone-50">給付項目</th>
+                    <th className="font-medium px-2 py-2">單位</th>
+                    {baseMode === "plan"
+                      ? plans.map(pl => <th key={pl} className="font-medium px-2 py-2 text-center whitespace-nowrap">計劃 {pl}</th>)
+                      : <th className="font-medium px-2 py-2 text-center whitespace-nowrap">每壹單位金額</th>}
+                    <th className="font-medium px-2 py-2 text-center">頁</th>
+                    <th className="px-2 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-50">
+                  {items.map((item, idx) => {
+                    const isActive = item.pageRef != null && item.pageRef === activePage;
+                    return (
+                      <tr key={idx} className={isActive ? "bg-amber-50" : "hover:bg-stone-50/60"}>
+                        <td className="px-3 py-1.5 sticky left-0 bg-white">
+                          <InlineEdit value={item.name} onChange={v => updateAnalysis(idx, "name", v)} className="font-semibold text-stone-800" />
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <select value={item.vUnit} onChange={e => updateFormula(idx, { vUnit: e.target.value })}
+                            className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
+                            {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
+                          </select>
+                        </td>
+                        {baseMode === "plan"
+                          ? plans.map(pl => (
+                              <td key={pl} className="px-1 py-1.5 text-center">
+                                <input type="number" min={0} step="any" inputMode="decimal"
+                                  value={item.fPlanValues?.[pl] ?? ""}
+                                  onChange={e => updatePlanValue(idx, pl, parseFloat(e.target.value) || 0)}
+                                  className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                              </td>
+                            ))
+                          : (
+                              <td className="px-1 py-1.5 text-center">
+                                <input type="number" min={0} step="any" inputMode="decimal"
+                                  value={item.vAmount ?? ""}
+                                  onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
+                                  className="w-20 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                              </td>
+                            )}
+                        <td className="px-2 py-1.5 text-center">
+                          <button onClick={() => item.pageRef != null && onItemClick?.(item.pageRef)}
+                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${item.pageRef != null ? (isActive ? "bg-amber-400 text-white" : "bg-stone-100 text-stone-500 hover:bg-amber-100") : "text-stone-200"}`}>
+                            {item.pageRef != null ? `P.${item.pageRef}` : "—"}
+                          </button>
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button onClick={() => removeItem(idx)} className="text-stone-200 hover:text-red-400 transition-colors"><Trash2 className="h-3 w-3" /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="px-4 py-2.5 border-t border-stone-100">
             <button onClick={addItem} className="flex items-center gap-1 text-xs text-stone-400 hover:text-[#C8956C] transition-colors">
               <Plus className="h-3.5 w-3.5" />
