@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calculator, Loader2, FileText } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Calculator, Loader2, FileText, ClipboardCheck } from "lucide-react";
 
 // ── 型別 ──────────────────────────────────────────────────────────────
 interface AnalysisItem {
@@ -85,10 +86,6 @@ function TrialPanel({ planCode, analysis }: { planCode: string; analysis: Analys
 
   return (
     <div className="bg-[#FEF9F2] border border-[#EDE0CE] rounded-xl p-4 sm:p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <Calculator className="h-4 w-4 text-[#C8956C]" />
-        <span className="text-sm font-semibold text-[#8B5E3C]">保額試算</span>
-      </div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {isPlanEnum ? (
           <select value={plan} onChange={e => setPlan(e.target.value)}
@@ -182,14 +179,25 @@ function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
   );
 }
 
-// ── 主元件：依 planCode 自取資料，呈現 試算 / 給付資訊 / 條款PDF ──────────
+// ── 區塊標題 ────────────────────────────────────────────────────────────
+function SectionTitle({ icon: Icon, children }: { icon: typeof Calculator; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <Icon className="h-4 w-4 text-[#C8956C]" />
+      <h2 className="text-sm font-semibold text-[#8B5E3C]">{children}</h2>
+    </div>
+  );
+}
+
+// ── 主元件：依 planCode 自取資料，單頁顯示 給付資訊 + 保額試算 + 條款PDF ──────
 export default function ProductDetail({ planCode }: { planCode: string }) {
+  const router = useRouter();
   const [meta, setMeta] = useState<{ product_name?: string; company?: string; category?: string } | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [loadingData, setLoadingData] = useState(true);
-  const [tab, setTab] = useState<"trial" | "info" | "pdf">("trial");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfStatus, setPdfStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [reopening, setReopening] = useState(false);
 
   useEffect(() => {
     fetch(`/api/products?planCode=${encodeURIComponent(planCode)}`)
@@ -211,39 +219,59 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
     return () => { if (revoke) URL.revokeObjectURL(revoke); };
   }, [planCode]);
 
+  // 重新審核：送回審核佇列、跳轉到編輯頁
+  const reopen = async () => {
+    if (reopening) return;
+    if (!confirm("確定要重新審核這個商品嗎？將送回審核佇列、進入編輯頁。")) return;
+    setReopening(true);
+    try {
+      const res = await fetch(`/api/products/${encodeURIComponent(planCode)}/reopen`, { method: "POST" });
+      const data = await res.json();
+      if (data.error || !data.uuid) { alert(data.error ?? "重新審核失敗"); return; }
+      router.push(`/review/${encodeURIComponent(data.uuid)}`);
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setReopening(false);
+    }
+  };
+
   if (loadingData) {
     return <div className="flex items-center justify-center py-20 text-stone-400"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
 
-  const tabs: [typeof tab, string][] = [["trial", "保額試算"], ["info", "給付資訊"], ["pdf", "條款 PDF"]];
-
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 space-y-4">
-      {/* 標題 */}
-      <div>
-        <h1 className="text-lg sm:text-xl font-bold text-stone-800">{meta?.product_name ?? analysis?.productName ?? planCode}</h1>
-        <p className="text-sm text-stone-500 mt-0.5">{meta?.company ?? analysis?.company ?? ""} <span className="font-mono text-xs text-stone-400 ml-1">{planCode}</span></p>
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 space-y-6">
+      {/* 標題 + 重新審核 */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg sm:text-xl font-bold text-stone-800">{meta?.product_name ?? analysis?.productName ?? planCode}</h1>
+          <p className="text-sm text-stone-500 mt-0.5">{meta?.company ?? analysis?.company ?? ""} <span className="font-mono text-xs text-stone-400 ml-1">{planCode}</span></p>
+        </div>
+        <button onClick={reopen} disabled={reopening}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-[#8B5E3C] border border-[#E8D5B7] bg-white hover:bg-[#FBF0E3] disabled:opacity-50 transition-colors whitespace-nowrap shrink-0">
+          {reopening ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
+          重新審核
+        </button>
       </div>
 
-      {/* 分頁 */}
-      <div className="flex gap-1 border-b border-[#EDE0CE]">
-        {tabs.map(([t, label]) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t ? "border-[#C8956C] text-[#8B5E3C]" : "border-transparent text-stone-400 hover:text-stone-600"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* 給付資訊 */}
+      <section>
+        <SectionTitle icon={FileText}>給付資訊</SectionTitle>
+        {analysis ? <AnalysisInfoPanel data={analysis} /> : <p className="text-sm text-stone-400 py-8 text-center">尚無分析資料。</p>}
+      </section>
 
-      {tab === "trial" && (
-        analysis?.items?.length
+      {/* 保額試算 */}
+      <section>
+        <SectionTitle icon={Calculator}>保額試算</SectionTitle>
+        {analysis?.items?.length
           ? <TrialPanel planCode={planCode} analysis={analysis} />
-          : <p className="text-sm text-stone-400 py-8 text-center">此商品尚無已審核的給付公式，無法試算。</p>
-      )}
-      {tab === "info" && (
-        analysis ? <AnalysisInfoPanel data={analysis} /> : <p className="text-sm text-stone-400 py-8 text-center">尚無分析資料。</p>
-      )}
-      {tab === "pdf" && (
+          : <p className="text-sm text-stone-400 py-8 text-center">此商品尚無已審核的給付公式，無法試算。</p>}
+      </section>
+
+      {/* 條款 PDF */}
+      <section>
+        <SectionTitle icon={FileText}>條款 PDF</SectionTitle>
         <div className="h-[70vh] bg-stone-100 rounded-xl overflow-hidden relative">
           {pdfStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center text-stone-400"><Loader2 className="h-6 w-6 animate-spin" /></div>}
           {pdfStatus === "error" && (
@@ -254,7 +282,7 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
           )}
           {pdfStatus === "ok" && pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="保單條款" />}
         </div>
-      )}
+      </section>
     </div>
   );
 }
