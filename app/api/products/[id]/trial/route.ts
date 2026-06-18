@@ -62,6 +62,9 @@ function calcItem(item: FormulaItem, amount: number, baseUnit: string, plan?: st
         }
         case "fixed":
           return { label: item.label, type: "fixed", display: fmt(item.amount ?? 0), limit, note };
+        case "note":
+          // 說明型：無法以公式試算，顯示說明文字
+          return { label: item.label, type: "note", display: "依說明，不適用試算", limit, note: note || item.formula || "" };
         default:
           return { label: item.label, type: "fixed", display: "—", limit, note };
       }
@@ -115,6 +118,7 @@ function toFormulaItem(it: AnalysisJsonItem): FormulaItem {
     label: it.name,
     value_source: (it.valueSource as FormulaItem["value_source"]) ?? "fixed",
     unit: it.unit ?? "元",
+    formula: it.formula,
     is_limit: it.isLimit,
     plan_values: it.planValues,
     table_range: it.tableRange,

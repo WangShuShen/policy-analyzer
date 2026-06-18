@@ -7,7 +7,7 @@ import { Calculator, Loader2, FileText, ClipboardCheck } from "lucide-react";
 // ── 型別 ──────────────────────────────────────────────────────────────
 interface AnalysisItem {
   name: string; formula?: string; unit?: string; restriction?: string; notes?: string;
-  valueSource?: "plan" | "table" | "insured" | "unit" | "fixed";
+  valueSource?: "plan" | "table" | "insured" | "unit" | "fixed" | "note";
   isLimit?: boolean;
   planValues?: Record<string, number>;
   tableRange?: { min: number; max: number };
@@ -33,6 +33,7 @@ function benefitDisplay(it: AnalysisItem): string {
   const n = (v?: number) => (v ?? 0).toLocaleString("zh-TW");
   const lim = it.isLimit ? "限額 " : "";
   switch (it.valueSource) {
+    case "note": return it.formula || "依條款說明";
     case "fixed": return `${lim}${n(it.amount)} ${u}`;
     case "unit": return `${lim}每單位 ${n(it.amount)} ${u}`;
     case "table": return it.tableRange ? `${lim}${n(it.tableRange.min)} ～ ${n(it.tableRange.max)} ${u}` : (it.formula ?? "");

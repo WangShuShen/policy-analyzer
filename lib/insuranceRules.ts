@@ -7,7 +7,7 @@
 //   3) 細分商品類型預設（categoryDefaults）
 
 export type FormulaType = "fixed" | "multiplier" | "reimbursement" | "range" | "lump_sum";
-export type ValueSource = "plan" | "table" | "insured" | "unit" | "fixed";
+export type ValueSource = "plan" | "table" | "insured" | "unit" | "fixed" | "note";
 
 export interface FormulaSuggestion {
   fType: FormulaType;
@@ -100,6 +100,7 @@ export const SOURCE_META: Record<ValueSource, { label: string; chip: string }> =
   insured: { label: "保額計算", chip: "bg-amber-50 text-amber-700 border border-amber-200" },
   unit:    { label: "每單位", chip: "bg-teal-50 text-teal-700 border border-teal-200" },
   fixed:   { label: "定額",   chip: "bg-sky-50 text-sky-700 border border-sky-200" },
+  note:    { label: "說明",   chip: "bg-stone-100 text-stone-600 border border-stone-200" },
 };
 
 // 類型 → 顯示標籤與顏色（保留相容）

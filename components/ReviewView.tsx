@@ -42,7 +42,7 @@ interface AnalysisItem {
   notes?: string;
   pageRef?: number | null;
   // AI 新格式（金額來源）
-  valueSource?: "plan" | "table" | "insured" | "unit" | "fixed";
+  valueSource?: "plan" | "table" | "insured" | "unit" | "fixed" | "note";
   isLimit?: boolean;        // 性質＝限額（正交於金額來源）
   planValues?: Record<string, number>;
   tableRange?: { min: number; max: number };
@@ -68,7 +68,7 @@ interface AnalysisData {
 
 // ── Unified Items + Formula Editor ────────────────────────────────────
 
-type VSource = "plan" | "table" | "insured" | "unit" | "fixed";
+type VSource = "plan" | "table" | "insured" | "unit" | "fixed" | "note";
 
 // 計算基準（整張保單）：保額 / 計劃別 / 單位 三選一
 type BaseMode = "insured" | "plan" | "unit";
@@ -76,10 +76,11 @@ const baseUnitToMode = (u: string): BaseMode => u === "計劃別" ? "plan" : u =
 const followSourceOf = (m: BaseMode): VSource => m === "plan" ? "plan" : m === "unit" ? "unit" : "insured";
 
 // 每個項目的兩維度（UI 控制）：性質 × 來源 → 推導出 value_source
-// 性質 vShape：fixed(定額) / limit(限額) / range(範圍最低~最高)；來源 vSrc：follow(隨基準) / fixed(固定)
-type VShape = "fixed" | "limit" | "range";
+// 性質 vShape：fixed(定額) / limit(限額) / range(範圍最低~最高) / note(說明型，不試算)；來源 vSrc：follow(隨基準) / fixed(固定)
+type VShape = "fixed" | "limit" | "range" | "note";
 type VSrc = "follow" | "fixed";
 const shapeOf = (it: { vSource: VSource; vIsLimit?: boolean; vMinRate?: number; vMaxRate?: number }): VShape => {
+  if (it.vSource === "note") return "note";
   if (it.vSource === "table") return "range";
   if (it.vSource === "insured" && (it.vMinRate != null || it.vMaxRate != null)) return "range";
   return it.vIsLimit ? "limit" : "fixed";
@@ -88,6 +89,7 @@ const srcOf = (it: { vSource: VSource }): VSrc =>
   (it.vSource === "insured" || it.vSource === "plan" || it.vSource === "unit") ? "follow" : "fixed";
 // 由 性質+來源+基準 推導 value_source
 const resolveVSource = (shape: VShape, src: VSrc, base: BaseMode): VSource => {
+  if (shape === "note") return "note";
   if (shape === "range") return (src === "follow" && base === "insured") ? "insured" : "table";
   return src === "follow" ? followSourceOf(base) : "fixed";
 };
@@ -466,16 +468,20 @@ function UnifiedItemsEditor({
                             ? (item.vTableMin != null && item.vTableMax != null ? `${limPfx}${item.vTableMin} ～ ${item.vTableMax} ${item.vUnit}` : "")
                             : (item.vAmount != null ? `${limPfx}${item.vAmount} ${item.vUnit}` : "");
                         }
-                        const shapeBtns: [VShape, string, string][] = [["fixed", "定額", "bg-sky-500"], ["limit", "限額", "bg-emerald-500"], ["range", "範圍", "bg-purple-500"]];
+                        const shapeBtns: [VShape, string, string][] = [["fixed", "定額", "bg-sky-500"], ["limit", "限額", "bg-emerald-500"], ["range", "範圍", "bg-purple-500"], ["note", "說明", "bg-stone-400"]];
                         return (
                           <>
-                            {/* 性質：定額 / 限額 / 範圍 */}
+                            {/* 性質：定額 / 限額 / 範圍 / 說明 */}
                             <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
                               {shapeBtns.map(([s, label, color], i) => (
                                 <button key={s} type="button" onClick={() => applyShapeSrc(idx, s, src)}
                                   className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${shape === s ? `${color} text-white` : "bg-white text-stone-500 hover:bg-stone-50"}`}>{label}</button>
                               ))}
                             </div>
+                            {shape === "note" ? (
+                              <span className="text-[10px] text-stone-400 italic">依說明文字顯示，不參與試算（在上方公式欄填寫，如「所繳保費」）</span>
+                            ) : (
+                            <>
                             {/* 來源：隨保額 / 固定 */}
                             <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
                               {(["follow", "fixed"] as VSrc[]).map((s, i) => (
@@ -536,10 +542,13 @@ function UnifiedItemsEditor({
                               </>
                             )}
                             {preview && <span className="text-[10px] text-[#C8956C] font-medium whitespace-nowrap">= {preview}</span>}
+                            </>
+                            )}
                           </>
                         );
                       })()}
 
+                      {shapeOf(item) !== "note" && <>
                       <span className="text-stone-200 mx-1">|</span>
                       <input type="number" min={0} placeholder="天上限"
                         value={item.fLimitDays ?? ""}
@@ -547,6 +556,7 @@ function UnifiedItemsEditor({
                         className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none text-stone-500"
                       />
                       <span className="text-[10px] text-stone-400">天/年</span>
+                      </>}
                     </div>
                   )}
 
@@ -595,7 +605,7 @@ function UnifiedItemsEditor({
                     const shape = shapeOf(item);
                     const src = srcOf(item);
                     const valSpan = singleCol ? 1 : plans.length;
-                    const shapeBtns: [VShape, string, string][] = [["fixed", "定額", "bg-sky-500"], ["limit", "限額", "bg-emerald-500"], ["range", "範圍", "bg-purple-500"]];
+                    const shapeBtns: [VShape, string, string][] = [["fixed", "定額", "bg-sky-500"], ["limit", "限額", "bg-emerald-500"], ["range", "範圍", "bg-purple-500"], ["note", "說明", "bg-stone-400"]];
                     return (
                       <tr key={idx} className={isActive ? "bg-amber-50" : "hover:bg-stone-50/60"}>
                         <td className="px-3 py-1.5 sticky left-0 bg-white">
@@ -612,20 +622,26 @@ function UnifiedItemsEditor({
                         </td>
                         {/* 來源：隨基準 / 固定 */}
                         <td className="px-2 py-1.5 text-center">
+                          {shape === "note" ? <span className="text-[10px] text-stone-300">—</span> : (
                           <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
                             {(["follow", "fixed"] as VSrc[]).map((s, i) => (
                               <button key={s} type="button" onClick={() => applyShapeSrc(idx, shape, s)}
                                 className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${src === s ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>{s === "follow" ? (baseMode === "plan" ? "隨計劃" : "隨單位") : "固定"}</button>
                             ))}
                           </div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
+                          {shape === "note" ? <span className="text-[10px] text-stone-300">—</span> : (
                           <select value={item.vUnit} onChange={e => updateFormula(idx, { vUnit: e.target.value })}
                             className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
                             {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
                           </select>
+                          )}
                         </td>
-                        {shape === "range" ? (
+                        {shape === "note" ? (
+                          <td colSpan={valSpan} className="px-2 py-1.5 text-center text-[10px] text-stone-400 italic">依說明（不試算）</td>
+                        ) : shape === "range" ? (
                           <td colSpan={valSpan} className="px-1 py-1.5 text-center whitespace-nowrap">
                             <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
                               value={item.vTableMin ?? ""}

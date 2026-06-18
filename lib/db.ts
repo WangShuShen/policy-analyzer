@@ -127,12 +127,15 @@ export default db;
 // 金額來源（位階由高到低）：計劃 > 附表/單位別 > 保額計算 > 定額
 // 有計劃別就帶計劃撈值、有附表就查表、否則用保額算、再否則定額
 // 金額來源（依計算基準）：保額→insured、計劃→plan、單位→unit、固定→fixed、附表→table
-export type ValueSource = "plan" | "table" | "insured" | "unit" | "fixed";
+export type ValueSource = "plan" | "table" | "insured" | "unit" | "fixed" | "note";
 
 export interface FormulaItem {
   label: string;
   value_source: ValueSource;
   unit: string; // 萬 | 元/日 | 元/次 | 元/月 | 元
+
+  // value_source = "note"（說明型）：無法以公式試算（依所繳保費/加計利息等），顯示說明文字
+  formula?: string;
 
   // 給付性質（正交於 value_source）：true=限額（顯示「限額 X」），未設=定額給付
   is_limit?: boolean;
