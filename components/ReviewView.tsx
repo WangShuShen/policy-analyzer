@@ -248,13 +248,17 @@ function UnifiedItemsEditor({
   // 切換計算基準：只把「隨基準」的項目換成新基準的來源；固定/附表項目維持原樣
   const setBaseMode = (m: BaseMode) => {
     onBaseUnitChange(m === "plan" ? "計劃別" : m === "unit" ? "單位數" : (["元", "美元", "萬元"].includes(baseUnit) ? baseUnit : "萬元"));
-    const cat = categoryOf(data);
     const follow: VSource = m === "plan" && data.planScale ? "unit" : followSourceOf(m);
     onItemsChange(items.map(it => {
       if (!FOLLOWS_BASE.includes(it.vSource)) return it;       // 固定/附表 不動
-      if (m !== "insured" && shapeOf(it) === "range") return { ...it, vSource: "table" } as UnifiedItem;
-      if (m === "insured") return { ...it, ...suggestSource(it, cat), vIsLimit: it.vIsLimit } as UnifiedItem;
-      return { ...it, vSource: follow };
+      // 清掉舊的 valueSource，避免 suggestSource 讀到殘留值把基準切換又還原回去
+      if (m !== "insured" && shapeOf(it) === "range") return { ...it, valueSource: undefined, vSource: "table" } as UnifiedItem;
+      if (m === "insured") {
+        // 隨基準 → 保額：單一倍率（沿用既有倍率，否則 ×1）
+        return { ...it, valueSource: undefined, vSource: "insured",
+          vRateType: it.vRateType ?? "multiplier", vRate: it.vRate ?? 1 } as UnifiedItem;
+      }
+      return { ...it, valueSource: undefined, vSource: follow } as UnifiedItem;  // 換成 計劃 / 單位
     }));
   };
 
