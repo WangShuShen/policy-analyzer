@@ -189,11 +189,12 @@ function SectionTitle({ icon: Icon, children }: { icon: typeof Calculator; child
   );
 }
 
-// ── 主元件：依 planCode 自取資料，單頁顯示 給付資訊 + 保額試算 + 條款PDF ──────
+// ── 主元件：依 planCode 自取資料，左右雙欄（給付/試算 ｜ 條款PDF）──────────
 export default function ProductDetail({ planCode }: { planCode: string }) {
   const router = useRouter();
   const [meta, setMeta] = useState<{ product_name?: string; company?: string; category?: string } | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+  const [pdfDriveId, setPdfDriveId] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfStatus, setPdfStatus] = useState<"loading" | "ok" | "error">("loading");
@@ -202,14 +203,18 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
   useEffect(() => {
     fetch(`/api/products?planCode=${encodeURIComponent(planCode)}`)
       .then(r => r.json())
-      .then(d => { setMeta(d.product ?? null); setAnalysis(d.analysis ?? null); })
+      .then(d => { setMeta(d.product ?? null); setAnalysis(d.analysis ?? null); setPdfDriveId(d.pdfDriveId ?? null); })
       .catch(() => {})
       .finally(() => setLoadingData(false));
   }, [planCode]);
 
+  // PDF 來源同審核頁：本地 / Google Drive（pdf_drive_id），非保發中心
   useEffect(() => {
+    if (loadingData) return;
     let revoke = "";
-    fetch(`/api/pdf-proxy?planCode=${encodeURIComponent(planCode)}`)
+    const url = `/api/pdf-proxy/local?planCode=${encodeURIComponent(planCode)}${pdfDriveId ? `&driveId=${encodeURIComponent(pdfDriveId)}` : ""}`;
+    setPdfStatus("loading");
+    fetch(url)
       .then(res => {
         if (res.ok && (res.headers.get("content-type") ?? "").includes("pdf")) return res.blob();
         throw new Error("not-pdf");
@@ -217,7 +222,7 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
       .then(blob => { const u = URL.createObjectURL(blob); revoke = u; setPdfUrl(u); setPdfStatus("ok"); })
       .catch(() => setPdfStatus("error"));
     return () => { if (revoke) URL.revokeObjectURL(revoke); };
-  }, [planCode]);
+  }, [planCode, pdfDriveId, loadingData]);
 
   // 重新審核：送回審核佇列、跳轉到編輯頁
   const reopen = async () => {
@@ -241,7 +246,7 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 space-y-6">
+    <div className="max-w-[100rem] mx-auto px-4 sm:px-6 py-4 space-y-4">
       {/* 標題 + 重新審核 */}
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -255,34 +260,37 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
         </button>
       </div>
 
-      {/* 給付資訊 */}
-      <section>
-        <SectionTitle icon={FileText}>給付資訊</SectionTitle>
-        {analysis ? <AnalysisInfoPanel data={analysis} /> : <p className="text-sm text-stone-400 py-8 text-center">尚無分析資料。</p>}
-      </section>
-
-      {/* 保額試算 */}
-      <section>
-        <SectionTitle icon={Calculator}>保額試算</SectionTitle>
-        {analysis?.items?.length
-          ? <TrialPanel planCode={planCode} analysis={analysis} />
-          : <p className="text-sm text-stone-400 py-8 text-center">此商品尚無已審核的給付公式，無法試算。</p>}
-      </section>
-
-      {/* 條款 PDF */}
-      <section>
-        <SectionTitle icon={FileText}>條款 PDF</SectionTitle>
-        <div className="h-[70vh] bg-stone-100 rounded-xl overflow-hidden relative">
-          {pdfStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center text-stone-400"><Loader2 className="h-6 w-6 animate-spin" /></div>}
-          {pdfStatus === "error" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-400">
-              <FileText className="h-10 w-10" />
-              <p className="text-sm">此商品尚未上傳條款 PDF。</p>
-            </div>
-          )}
-          {pdfStatus === "ok" && pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="保單條款" />}
+      {/* 左右雙欄：左=給付資訊+試算（可捲）｜ 右=PDF（黏頂、滿高）。窄螢幕自動上下堆疊 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* 左欄 */}
+        <div className="space-y-6 lg:max-h-[calc(100vh-9rem)] lg:overflow-auto lg:pr-1">
+          <section>
+            <SectionTitle icon={FileText}>給付資訊</SectionTitle>
+            {analysis ? <AnalysisInfoPanel data={analysis} /> : <p className="text-sm text-stone-400 py-8 text-center">尚無分析資料。</p>}
+          </section>
+          <section>
+            <SectionTitle icon={Calculator}>保額試算</SectionTitle>
+            {analysis?.items?.length
+              ? <TrialPanel planCode={planCode} analysis={analysis} />
+              : <p className="text-sm text-stone-400 py-8 text-center">此商品尚無已審核的給付公式，無法試算。</p>}
+          </section>
         </div>
-      </section>
+
+        {/* 右欄：PDF */}
+        <section className="lg:sticky lg:top-4">
+          <SectionTitle icon={FileText}>條款 PDF</SectionTitle>
+          <div className="h-[60vh] lg:h-[calc(100vh-12rem)] bg-stone-100 rounded-xl overflow-hidden relative">
+            {pdfStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center text-stone-400"><Loader2 className="h-6 w-6 animate-spin" /></div>}
+            {pdfStatus === "error" && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-400">
+                <FileText className="h-10 w-10" />
+                <p className="text-sm">此商品尚未上傳條款 PDF。</p>
+              </div>
+            )}
+            {pdfStatus === "ok" && pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="保單條款" />}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

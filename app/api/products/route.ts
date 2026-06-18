@@ -25,18 +25,19 @@ export async function GET(req: NextRequest) {
               ORDER BY p.verified DESC, p.updated_at DESC LIMIT 1`,
         args: [planCode],
       });
-      // 已審核分析內容（給付明細／限制／注意事項）
+      // 已審核分析內容（給付明細／限制／注意事項）+ Drive PDF 來源
       const pol = await db.execute({
-        sql: "SELECT analysis_json, status FROM policies WHERE plan_code = ? AND status = 'archived' ORDER BY archived_at DESC LIMIT 1",
+        sql: "SELECT analysis_json, status, pdf_drive_id FROM policies WHERE plan_code = ? AND status = 'archived' ORDER BY archived_at DESC LIMIT 1",
         args: [planCode],
       });
       const analysis = pol.rows[0]?.analysis_json
         ? JSON.parse(pol.rows[0].analysis_json as string)
         : null;
+      const pdfDriveId = (pol.rows[0]?.pdf_drive_id as string | null) ?? null;
 
       if (result.rows.length === 0) {
         // products 表沒有，但 policies 可能有已審核分析
-        return NextResponse.json({ product: null, analysis });
+        return NextResponse.json({ product: null, analysis, pdfDriveId });
       }
       const r = result.rows[0];
       return NextResponse.json({
@@ -48,6 +49,7 @@ export async function GET(req: NextRequest) {
           company: r.company,
         },
         analysis,
+        pdfDriveId,
       });
     }
 
