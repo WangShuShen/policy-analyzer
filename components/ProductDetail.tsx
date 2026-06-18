@@ -265,14 +265,14 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
         {/* 左欄 */}
         <div className="space-y-6 lg:max-h-[calc(100vh-9rem)] lg:overflow-auto lg:pr-1">
           <section>
-            <SectionTitle icon={FileText}>給付資訊</SectionTitle>
-            {analysis ? <AnalysisInfoPanel data={analysis} /> : <p className="text-sm text-stone-400 py-8 text-center">尚無分析資料。</p>}
-          </section>
-          <section>
             <SectionTitle icon={Calculator}>保額試算</SectionTitle>
             {analysis?.items?.length
               ? <TrialPanel planCode={planCode} analysis={analysis} />
               : <p className="text-sm text-stone-400 py-8 text-center">此商品尚無已審核的給付公式，無法試算。</p>}
+          </section>
+          <section>
+            <SectionTitle icon={FileText}>給付資訊</SectionTitle>
+            {analysis ? <AnalysisInfoPanel data={analysis} /> : <p className="text-sm text-stone-400 py-8 text-center">尚無分析資料。</p>}
           </section>
         </div>
 
