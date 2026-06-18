@@ -69,9 +69,11 @@ export function searchDriveProducts(params: {
   category?: string;
   activeOnly?: boolean;
   limit?: number;
+  planCodes?: Set<string>;   // 限定只回傳這些 plan_code（在 limit 之前套用，避免被 500 上限切掉）
 }): DriveProduct[] {
-  const { company, keyword, category, activeOnly, limit = 500 } = params;
+  const { company, keyword, category, activeOnly, limit = 500, planCodes } = params;
   let results = load();
+  if (planCodes) results = results.filter(p => planCodes.has(p.plan_code));
   if (company) results = results.filter(p => p.company === company);
   if (keyword) {
     const kw = keyword.toLowerCase();

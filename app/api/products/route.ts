@@ -59,8 +59,6 @@ export async function GET(req: NextRequest) {
     const category = searchParams.get("category") || undefined;
     const activeOnly = searchParams.get("activeOnly") === "1";
 
-    const products = searchDriveProducts({ company, keyword, category, activeOnly });
-
     // 商品查詢只露出「已審核歸檔」的商品（未審核的無意義，不顯示）
     await ensureInit();
     const archived = await db.execute({
@@ -68,9 +66,11 @@ export async function GET(req: NextRequest) {
       args: [],
     });
     const archivedSet = new Set(archived.rows.map(r => r.plan_code as string));
-    const annotated = products
-      .filter(p => archivedSet.has(p.plan_code))
-      .map(p => ({ ...p, analyzed: true }));
+
+    // 先以 archivedSet 篩，再套關鍵字/公司/類別；planCodes 在 limit 之前套用，
+    // 避免歸檔商品落在 registry 500 筆上限之外而被切掉
+    const products = searchDriveProducts({ company, keyword, category, activeOnly, planCodes: archivedSet });
+    const annotated = products.map(p => ({ ...p, analyzed: true }));
 
     return NextResponse.json({ products: annotated });
   } catch (err) {
