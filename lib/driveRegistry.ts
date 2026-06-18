@@ -86,6 +86,8 @@ export function searchDriveProducts(params: {
   if (activeOnly) results = results.filter(p => {
     try { return (JSON.parse(p.coverage_template) as { _active: boolean })._active === true; } catch { return false; }
   });
+  // 指定 planCodes（如商品查詢的歸檔清單）時，結果已是有界集合，不再套 500 上限以免截斷
+  if (planCodes) return results;
   return results.slice(0, limit);
 }
 
