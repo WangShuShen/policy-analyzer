@@ -50,6 +50,22 @@ const categoryColor: Record<string, string> = {
   "意外險": "bg-orange-50 text-orange-700",
 };
 
+// 西元 ISO 日期（YYYY-MM-DD）→ 民國 yyy/mm/dd
+function rocDate(iso?: string | null): string {
+  if (!iso) return "";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${parseInt(m[1], 10) - 1911}/${m[2]}/${m[3]}`;
+}
+
+// 銷售期間顯示：有停售日→區間；否則→「起」（現售）
+function saleRange(saleDate?: string | null, stopDate?: string | null): string {
+  const sale = rocDate(saleDate);
+  const stop = rocDate(stopDate);
+  if (stop) return `民國 ${sale || "—"} ～ ${stop}`;
+  return sale ? `民國 ${sale} 起` : "—";
+}
+
 const planTypeLabel: Record<string, string> = {
   "主約": "主約", "附約": "附約", "批註條款": "批註",
 };
@@ -213,7 +229,7 @@ export default function CatalogPage() {
                       <tr className="border-b border-[#EDE0CE] bg-[#FEF9F2]">
                         <th className="text-left px-6 py-3 text-xs font-semibold text-stone-500">保險公司</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">商品名稱 / 代號</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">上市日期</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">銷售期間</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">狀態</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">契約類型</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">商品類型</th>
@@ -239,7 +255,7 @@ export default function CatalogPage() {
                             )}
                           </td>
                           <td className="px-4 py-3.5 text-stone-500 whitespace-nowrap text-xs">
-                            {p.sale_date || (p.year ? `${p.year}` : "—")}
+                            {saleRange(p.sale_date, p.stop_date)}
                           </td>
                           <td className="px-4 py-3.5 whitespace-nowrap">
                             {p.status ? (
