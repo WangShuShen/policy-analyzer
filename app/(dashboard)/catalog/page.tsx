@@ -22,6 +22,7 @@ interface ProductItem {
   status?: string | null;
   currency?: string | null;
   analyzed?: boolean;
+  insuranceType?: string[];   // 險種（審核 analysis_json.insuranceType）
 }
 
 const categoryLabel: Record<string, string> = {
@@ -216,6 +217,7 @@ export default function CatalogPage() {
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">狀態</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">契約類型</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">商品類型</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">險種</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">幣別</th>
                         <th className="text-center px-4 py-3 text-xs font-semibold text-stone-500">審核</th>
                       </tr>
@@ -258,6 +260,17 @@ export default function CatalogPage() {
                               <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${categoryColor[p.category] ?? "bg-[#FBF0E3] text-[#8B5E3C]"}`}>
                                 {categoryLabel[p.category] ?? p.category}
                               </span>
+                            ) : "—"}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            {p.insuranceType && p.insuranceType.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 max-w-[12rem]">
+                                {p.insuranceType.map((t, ti) => (
+                                  <span key={ti} className="text-xs px-2 py-0.5 rounded-full font-medium bg-teal-50 text-teal-700 whitespace-nowrap">
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
                             ) : "—"}
                           </td>
                           <td className="px-4 py-3.5 text-stone-500 whitespace-nowrap text-xs">
