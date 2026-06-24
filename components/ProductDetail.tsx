@@ -16,6 +16,7 @@ interface AnalysisItem {
 }
 export interface AnalysisData {
   company?: string; productName?: string; planCode?: string;
+  displayCode?: string;   // 商品代號（顧問填，優先顯示）
   items?: AnalysisItem[];
   plans?: string[];
   baseUnit?: string;
@@ -262,8 +263,12 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
       {/* 標題 + 重新審核 */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg sm:text-xl font-bold text-stone-800">{meta?.product_name ?? analysis?.productName ?? planCode}</h1>
-          <p className="text-sm text-stone-500 mt-0.5">{meta?.company ?? analysis?.company ?? ""} <span className="font-mono text-xs text-stone-400 ml-1">{planCode}</span></p>
+          <h1 className="text-lg sm:text-xl font-bold text-stone-800">{analysis?.productName ?? meta?.product_name ?? planCode}</h1>
+          <p className="text-sm text-stone-500 mt-0.5">
+            {analysis?.company ?? meta?.company ?? ""}
+            <span className="font-mono text-xs text-[#8B5E3C] ml-1">代號 {analysis?.displayCode || planCode}</span>
+            {analysis?.displayCode && <span className="font-mono text-[10px] text-stone-300 ml-1">系統碼 {planCode}</span>}
+          </p>
         </div>
         <button onClick={reopen} disabled={reopening}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-[#8B5E3C] border border-[#E8D5B7] bg-white hover:bg-[#FBF0E3] disabled:opacity-50 transition-colors whitespace-nowrap shrink-0">

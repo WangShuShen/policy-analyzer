@@ -23,6 +23,7 @@ interface ProductItem {
   currency?: string | null;
   analyzed?: boolean;
   insuranceType?: string[];   // 險種（審核 analysis_json.insuranceType）
+  displayCode?: string | null; // 商品代號（顧問填）
 }
 
 const categoryLabel: Record<string, string> = {
@@ -250,7 +251,12 @@ export default function CatalogPage() {
                           <td className="px-6 py-3.5 text-stone-600 whitespace-nowrap">{p.company}</td>
                           <td className="px-4 py-3.5">
                             <div className="font-medium text-stone-800">{p.product_name}</div>
-                            {p.plan_code && p.plan_code !== "未知" && (
+                            {p.displayCode ? (
+                              <div className="text-xs mt-0.5 font-mono">
+                                <span className="text-[#8B5E3C]">代號 {p.displayCode}</span>
+                                <span className="text-stone-300 ml-1">系統碼 {p.plan_code}</span>
+                              </div>
+                            ) : p.plan_code && p.plan_code !== "未知" && (
                               <div className="text-xs text-stone-400 mt-0.5 font-mono">{p.plan_code}</div>
                             )}
                           </td>

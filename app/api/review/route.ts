@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import db, { ensureInit, type PolicyRow } from "@/lib/db";
 import { verifyJWT } from "@/lib/jwt";
+import { getDocIds } from "@/lib/driveIndex";
 
 function toProduct(p: PolicyRow, assignmentStatus?: string) {
+  const docs = getDocIds(p.plan_code);
   return {
     id: p.uuid,
     planCode: p.plan_code,
     company: p.company ?? "",
     product_name: p.product_name ?? "",
     sheetUrl: "", // Google Sheet 已退場，保留欄位相容前端
-    pdfDriveId: p.pdf_drive_id ?? "",
+    pdfDriveId: p.pdf_drive_id ?? docs.clauseId ?? "",
+    rateDriveId: docs.rateId,
+    specDriveId: docs.specId,
     filename: p.filename ?? "",
     uploadedAt: p.uploaded_at ?? "",
     category: p.category,

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft, CheckCircle, Loader2, ClipboardCheck,
-  ExternalLink, Archive, Save, Plus, Trash2, Sparkles,
+  ExternalLink, Archive, Save, Plus, Trash2, Sparkles, FileText,
 } from "lucide-react";
 import type { FormulaItem, FormulaJson } from "@/lib/db";
 import { suggestFormula } from "@/lib/insuranceRules";
@@ -28,6 +28,8 @@ export interface ReviewProduct {
   product_name: string;
   sheetUrl: string;
   pdfDriveId: string;
+  rateDriveId?: string | null;   // 費率 PDF
+  specDriveId?: string | null;   // 說明 PDF
   filename: string;
   uploadedAt: string;
   category: string | null;
@@ -54,6 +56,7 @@ interface AnalysisData {
   company?: string;
   productName?: string;
   planCode?: string;
+  displayCode?: string;     // 商品代號（顧問從費率頁讀到的真正代號；可後修，獨立於系統 plan_code）
   insuranceType?: string[];
   baseType?: string;
   baseUnit?: string;        // 保額單位（元/美元/萬元/計劃別/單位數）
@@ -317,15 +320,32 @@ function UnifiedItemsEditor({
 
   return (
     <div className="space-y-4">
-      {/* Header info */}
+      {/* Header info（公司/名稱/代號 可編輯）*/}
       <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-1.5">
-        {[["保險公司", data.company], ["保單名稱", data.productName], ["險種", insuranceTypes], ["給付基礎", data.baseType]]
-          .filter(([, v]) => v).map(([label, val]) => (
-            <div key={label as string} className="flex gap-3 text-sm">
-              <span className="text-stone-400 w-20 shrink-0">{label as string}</span>
-              <span className="text-stone-700 font-medium">{val as string}</span>
-            </div>
-          ))}
+        <div className="flex gap-3 text-sm items-start">
+          <span className="text-stone-400 w-20 shrink-0 pt-0.5">保險公司</span>
+          <InlineEdit value={data.company ?? ""} onChange={v => onDataChange({ ...data, company: v })}
+            className="text-stone-700 font-medium flex-1" placeholder="點擊填寫保險公司" />
+        </div>
+        <div className="flex gap-3 text-sm items-start">
+          <span className="text-stone-400 w-20 shrink-0 pt-0.5">保單名稱</span>
+          <InlineEdit value={data.productName ?? ""} onChange={v => onDataChange({ ...data, productName: v })}
+            className="text-stone-700 font-medium flex-1" placeholder="點擊填寫保單名稱" />
+        </div>
+        <div className="flex gap-3 text-sm items-start">
+          <span className="text-stone-400 w-20 shrink-0 pt-0.5">商品代號</span>
+          <div className="flex-1 min-w-0">
+            <InlineEdit value={data.displayCode ?? ""} onChange={v => onDataChange({ ...data, displayCode: v })}
+              className="text-stone-700 font-medium font-mono" placeholder="點擊填寫（通常在費率頁）" />
+            <span className="block text-[10px] text-stone-300 font-mono mt-0.5">系統碼 {data.planCode ?? ""}</span>
+          </div>
+        </div>
+        {insuranceTypes && (
+          <div className="flex gap-3 text-sm"><span className="text-stone-400 w-20 shrink-0">險種</span><span className="text-stone-700 font-medium">{insuranceTypes}</span></div>
+        )}
+        {data.baseType && (
+          <div className="flex gap-3 text-sm"><span className="text-stone-400 w-20 shrink-0">給付基礎</span><span className="text-stone-700 font-medium">{data.baseType}</span></div>
+        )}
         <div className="flex gap-3 items-center pt-1 border-t border-amber-100 mt-1">
           <span className="text-stone-400 w-20 shrink-0 text-xs">計算基準</span>
           {/* 保額 / 計劃別 / 單位 三選一 */}
@@ -852,7 +872,12 @@ export function ReviewDetail({
   const [plans, setPlans] = useState<string[]>([]);
   const [formulaVerified, setFormulaVerified] = useState(false);
 
-  const pdfUrl = `/api/pdf-proxy/local?planCode=${encodeURIComponent(product.planCode)}&driveId=${encodeURIComponent(product.pdfDriveId)}`;
+  const [docTab, setDocTab] = useState<"clause" | "rate" | "spec">("clause");
+  const docDriveId = docTab === "clause" ? product.pdfDriveId : docTab === "rate" ? product.rateDriveId : product.specDriveId;
+  // 只有條款有本地檔（{planCode}.pdf）；費率/說明僅用 driveId
+  const pdfUrl = docDriveId
+    ? `/api/pdf-proxy/local?${docTab === "clause" ? `planCode=${encodeURIComponent(product.planCode)}&` : ""}driveId=${encodeURIComponent(docDriveId)}`
+    : "";
 
   // Load analysis data
   useEffect(() => {
@@ -868,14 +893,18 @@ export function ReviewDetail({
   }, [product.id]);
 
   // 公式 = 分析項目本身（items 自帶 valueSource）；不再依賴 products 表
+  // 只在「首次載入此保單」時初始化 unifiedItems，避免編輯標頭(onDataChange)時把未存的項目編輯沖掉
+  const initedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!analysisData) return;
+    if (initedRef.current === product.id) return;
+    initedRef.current = product.id;
     const items = analysisData.items ?? [];
     const cat = categoryOf(analysisData);
     if (analysisData.plans && analysisData.plans.length > 0) setPlans(analysisData.plans);
     if (analysisData.baseUnit) setBaseUnit(analysisData.baseUnit);
     setUnifiedItems(items.map(a => ({ ...a, ...suggestSource(a, cat) } as UnifiedItem)));
-  }, [analysisData, product.planCode]);
+  }, [analysisData, product.id]);
 
   const handleSave = async () => {
     if (!analysisData) return;
@@ -1027,12 +1056,26 @@ export function ReviewDetail({
 
       {/* Split body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: PDF */}
-        <div className="w-1/2 border-r border-stone-200 overflow-hidden">
-          <PdfViewerWithPages
-            pdfUrl={pdfUrl}
-            currentPage={activePage}
-          />
+        {/* Left: PDF（條款 / 費率 / 說明 分頁）*/}
+        <div className="w-1/2 border-r border-stone-200 overflow-hidden flex flex-col">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border-b border-stone-100 shrink-0">
+            {([["clause", "條款", product.pdfDriveId], ["rate", "費率", product.rateDriveId], ["spec", "說明", product.specDriveId]] as ["clause" | "rate" | "spec", string, string | null | undefined][]).map(([t, label, id]) => (
+              <button key={t} type="button" onClick={() => setDocTab(t)}
+                className={`text-xs px-3 py-1 rounded-lg transition-colors ${docTab === t ? "bg-[#C8956C] text-white font-medium" : id ? "bg-stone-100 text-stone-600 hover:bg-[#FBF0E3]" : "bg-stone-50 text-stone-300"}`}>
+                {label}{!id && " ·無"}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {pdfUrl ? (
+              <PdfViewerWithPages pdfUrl={pdfUrl} currentPage={docTab === "clause" ? activePage : 1} />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-stone-400">
+                <FileText className="h-10 w-10" />
+                <p className="text-sm">此商品尚未提供{docTab === "clause" ? "條款" : docTab === "rate" ? "費率" : "說明"} PDF。</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right: Unified editor */}

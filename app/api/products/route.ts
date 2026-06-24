@@ -74,14 +74,16 @@ export async function GET(req: NextRequest) {
     });
     const archivedSet = new Set<string>();
     const typeMap = new Map<string, string[]>();   // plan_code → 險種（取最新一筆）
+    const codeMap = new Map<string, string>();     // plan_code → 商品代號（顧問填的 displayCode）
     for (const r of archived.rows) {
       const pc = r.plan_code as string;
       archivedSet.add(pc);
       if (!typeMap.has(pc) && r.analysis_json) {
         try {
-          const a = JSON.parse(r.analysis_json as string) as { insuranceType?: string[] | string };
+          const a = JSON.parse(r.analysis_json as string) as { insuranceType?: string[] | string; displayCode?: string };
           const t = Array.isArray(a.insuranceType) ? a.insuranceType : a.insuranceType ? [a.insuranceType] : [];
           if (t.length) typeMap.set(pc, t);
+          if (a.displayCode) codeMap.set(pc, a.displayCode);
         } catch { /* ignore bad json */ }
       }
     }
@@ -89,7 +91,11 @@ export async function GET(req: NextRequest) {
     // 先以 archivedSet 篩，再套關鍵字/公司/類別；planCodes 在 limit 之前套用，
     // 避免歸檔商品落在 registry 500 筆上限之外而被切掉
     const products = searchDriveProducts({ company, keyword, category, activeOnly, planCodes: archivedSet });
-    const annotated = products.map(p => ({ ...p, analyzed: true, insuranceType: typeMap.get(p.plan_code) ?? [] }));
+    const annotated = products.map(p => ({
+      ...p, analyzed: true,
+      insuranceType: typeMap.get(p.plan_code) ?? [],
+      displayCode: codeMap.get(p.plan_code) ?? null,
+    }));
 
     return NextResponse.json({ products: annotated });
   } catch (err) {
