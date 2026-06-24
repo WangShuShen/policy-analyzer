@@ -37,6 +37,10 @@ const N = Number(process.argv[2]) || 5;
 const outDir = join(ROOT, "tmp", "skill-pdfs");
 mkdirSync(outDir, { recursive: true });
 
+// 條款 Drive ID 以 drive_index.clauseId 為準（policies.pdf_drive_id 有舊失效值），找不到才退回 pdf_drive_id
+let driveIndex = {};
+try { driveIndex = JSON.parse(readFileSync(join(ROOT, "data", "drive_index.json"), "utf8")); } catch {}
+
 const rows = await db.execute({
   sql: `SELECT uuid, plan_code, company, product_name, pdf_drive_id FROM policies
         WHERE status='pending_analysis' AND pdf_drive_id IS NOT NULL AND pdf_drive_id!=''
@@ -46,7 +50,8 @@ const rows = await db.execute({
 const at = await token2();
 const manifest = [];
 for (const r of rows.rows) {
-  const pdf = await download(r.pdf_drive_id, at);
+  const driveId = driveIndex[r.plan_code]?.clauseId || r.pdf_drive_id;
+  const pdf = await download(driveId, at);
   if (!pdf || pdf.subarray(0,4).toString("latin1") !== "%PDF") { console.log("✗ 下載失敗", r.plan_code); continue; }
   const path = join(outDir, `${r.plan_code}.pdf`);
   writeFileSync(path, pdf);
