@@ -195,7 +195,8 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
   const router = useRouter();
   const [meta, setMeta] = useState<{ product_name?: string; company?: string; category?: string } | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
-  const [pdfDriveId, setPdfDriveId] = useState<string | null>(null);
+  const [docIds, setDocIds] = useState<{ clause: string | null; rate: string | null; spec: string | null }>({ clause: null, rate: null, spec: null });
+  const [docTab, setDocTab] = useState<"clause" | "rate" | "spec">("clause");
   const [loadingData, setLoadingData] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfStatus, setPdfStatus] = useState<"loading" | "ok" | "error">("loading");
@@ -204,18 +205,28 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
   useEffect(() => {
     fetch(`/api/products?planCode=${encodeURIComponent(planCode)}`)
       .then(r => r.json())
-      .then(d => { setMeta(d.product ?? null); setAnalysis(d.analysis ?? null); setPdfDriveId(d.pdfDriveId ?? null); })
+      .then(d => {
+        setMeta(d.product ?? null);
+        setAnalysis(d.analysis ?? null);
+        setDocIds({ clause: d.pdfDriveId ?? null, rate: d.rateDriveId ?? null, spec: d.specDriveId ?? null });
+      })
       .catch(() => {})
       .finally(() => setLoadingData(false));
   }, [planCode]);
 
-  // PDF 來源同審核頁：本地 / Google Drive（pdf_drive_id），非保發中心
+  // PDF 來源同審核頁：本地 / Google Drive；條款/費率/說明三種文件依分頁切換
   useEffect(() => {
     if (loadingData) return;
+    const driveId = docIds[docTab];
+    setPdfUrl(null);
+    if (!driveId) { setPdfStatus("error"); return; }
     let revoke = "";
-    const url = `/api/pdf-proxy/local?planCode=${encodeURIComponent(planCode)}${pdfDriveId ? `&driveId=${encodeURIComponent(pdfDriveId)}` : ""}`;
+    // 只有條款有本地檔（{planCode}.pdf）；費率/說明僅用 driveId，避免本地檔誤抓條款
+    const q = new URLSearchParams();
+    if (docTab === "clause") q.set("planCode", planCode);
+    q.set("driveId", driveId);
     setPdfStatus("loading");
-    fetch(url)
+    fetch(`/api/pdf-proxy/local?${q.toString()}`)
       .then(res => {
         if (res.ok && (res.headers.get("content-type") ?? "").includes("pdf")) return res.blob();
         throw new Error("not-pdf");
@@ -223,7 +234,7 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
       .then(blob => { const u = URL.createObjectURL(blob); revoke = u; setPdfUrl(u); setPdfStatus("ok"); })
       .catch(() => setPdfStatus("error"));
     return () => { if (revoke) URL.revokeObjectURL(revoke); };
-  }, [planCode, pdfDriveId, loadingData]);
+  }, [planCode, docIds, docTab, loadingData]);
 
   // 重新審核：送回審核佇列、跳轉到編輯頁
   const reopen = async () => {
@@ -277,18 +288,34 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
           </section>
         </div>
 
-        {/* 右欄：PDF */}
+        {/* 右欄：PDF（條款 / 費率 / 說明 分頁）*/}
         <section className="lg:sticky lg:top-4">
-          <SectionTitle icon={FileText}>條款 PDF</SectionTitle>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-[#C8956C]" />
+              <h2 className="text-sm font-semibold text-[#8B5E3C]">文件</h2>
+            </div>
+            <div className="inline-flex rounded-lg overflow-hidden border border-[#E8D5B7] text-xs">
+              {([["clause", "條款"], ["rate", "費率"], ["spec", "說明"]] as ["clause" | "rate" | "spec", string][]).map(([t, label], i) => {
+                const has = !!docIds[t];
+                return (
+                  <button key={t} type="button" onClick={() => setDocTab(t)}
+                    className={`px-3 py-1 ${i > 0 ? "border-l border-[#E8D5B7]" : ""} ${docTab === t ? "bg-[#C8956C] text-white font-medium" : has ? "bg-white text-stone-600 hover:bg-[#FBF0E3]" : "bg-white text-stone-300"}`}>
+                    {label}{!has && " ·無"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="h-[60vh] lg:h-[calc(100vh-12rem)] bg-stone-100 rounded-xl overflow-hidden relative">
             {pdfStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center text-stone-400"><Loader2 className="h-6 w-6 animate-spin" /></div>}
             {pdfStatus === "error" && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-400">
                 <FileText className="h-10 w-10" />
-                <p className="text-sm">此商品尚未上傳條款 PDF。</p>
+                <p className="text-sm">此商品尚未提供{docTab === "clause" ? "條款" : docTab === "rate" ? "費率" : "說明"} PDF。</p>
               </div>
             )}
-            {pdfStatus === "ok" && pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="保單條款" />}
+            {pdfStatus === "ok" && pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="保單文件" />}
           </div>
         </section>
       </div>

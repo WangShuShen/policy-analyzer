@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchDriveProducts, getDriveCompanies, getDriveCategories } from "@/lib/driveRegistry";
+import { getDocIds } from "@/lib/driveIndex";
 import db, { ensureInit } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
@@ -33,11 +34,15 @@ export async function GET(req: NextRequest) {
       const analysis = pol.rows[0]?.analysis_json
         ? JSON.parse(pol.rows[0].analysis_json as string)
         : null;
-      const pdfDriveId = (pol.rows[0]?.pdf_drive_id as string | null) ?? null;
+      // 三種文件 Drive ID：條款優先用 policies.pdf_drive_id，否則退回索引 clauseId
+      const docIds = getDocIds(planCode);
+      const pdfDriveId = (pol.rows[0]?.pdf_drive_id as string | null) ?? docIds.clauseId;
+      const rateDriveId = docIds.rateId;
+      const specDriveId = docIds.specId;
 
       if (result.rows.length === 0) {
         // products 表沒有，但 policies 可能有已審核分析
-        return NextResponse.json({ product: null, analysis, pdfDriveId });
+        return NextResponse.json({ product: null, analysis, pdfDriveId, rateDriveId, specDriveId });
       }
       const r = result.rows[0];
       return NextResponse.json({
@@ -50,6 +55,8 @@ export async function GET(req: NextRequest) {
         },
         analysis,
         pdfDriveId,
+        rateDriveId,
+        specDriveId,
       });
     }
 
