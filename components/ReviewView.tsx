@@ -24,6 +24,7 @@ const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
 export interface ReviewProduct {
   id: string;          // pdfUUID（uuid_registry.json 的 key）
   planCode: string;
+  displayCode?: string | null;   // 商品代號（顧問填）
   company: string;
   product_name: string;
   sheetUrl: string;
@@ -33,7 +34,25 @@ export interface ReviewProduct {
   filename: string;
   uploadedAt: string;
   category: string | null;
+  insuranceType?: string[];      // 險種（analysis_json）
+  planType?: string | null;      // 契約類型（主約/附約/批註）
+  saleDate?: string | null;      // 上市日（西元 ISO）
+  stopDate?: string | null;      // 停售日
+  productStatus?: string | null; // 現售/停售
+  currency?: string | null;
   assignmentStatus?: string;
+}
+
+// 西元 ISO 日期 → 民國 yyy/mm/dd；銷售期間：有停售日→區間，否則→「起」
+function rocDate(iso?: string | null): string {
+  if (!iso) return "";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${parseInt(m[1], 10) - 1911}/${m[2]}/${m[3]}` : iso;
+}
+function saleRange(saleDate?: string | null, stopDate?: string | null): string {
+  const s = rocDate(saleDate), e = rocDate(stopDate);
+  if (e) return `民國 ${s || "—"} ～ ${e}`;
+  return s ? `民國 ${s} 起` : "";
 }
 
 interface AnalysisItem {
@@ -205,6 +224,7 @@ function UnifiedItemsEditor({
   onPlansChange,
   onItemClick,
   activePage,
+  meta,
 }: {
   data: AnalysisData;
   items: UnifiedItem[];
@@ -218,6 +238,7 @@ function UnifiedItemsEditor({
   onPlansChange: (plans: string[]) => void;
   onItemClick?: (page: number) => void;
   activePage?: number;
+  meta?: { planType?: string | null; saleDate?: string | null; stopDate?: string | null; productStatus?: string | null; currency?: string | null };
 }) {
   const insuranceTypes = Array.isArray(data.insuranceType) ? data.insuranceType.join("、") : data.insuranceType ?? "";
 
@@ -345,6 +366,20 @@ function UnifiedItemsEditor({
         )}
         {data.baseType && (
           <div className="flex gap-3 text-sm"><span className="text-stone-400 w-20 shrink-0">給付基礎</span><span className="text-stone-700 font-medium">{data.baseType}</span></div>
+        )}
+        {meta?.planType && (
+          <div className="flex gap-3 text-sm"><span className="text-stone-400 w-20 shrink-0">契約類型</span><span className="text-stone-700 font-medium">{meta.planType}{meta.currency ? ` · ${meta.currency}` : ""}</span></div>
+        )}
+        {(meta?.saleDate || meta?.stopDate || meta?.productStatus) && (
+          <div className="flex gap-3 text-sm">
+            <span className="text-stone-400 w-20 shrink-0">銷售期間</span>
+            <span className="text-stone-700 font-medium">
+              {saleRange(meta?.saleDate, meta?.stopDate) || "—"}
+              {meta?.productStatus && (
+                <span className={`ml-2 text-xs px-2 py-0.5 rounded-full font-medium ${meta.productStatus !== "停售" ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"}`}>{meta.productStatus}</span>
+              )}
+            </span>
+          </div>
         )}
         <div className="flex gap-3 items-center pt-1 border-t border-amber-100 mt-1">
           <span className="text-stone-400 w-20 shrink-0 text-xs">計算基準</span>
@@ -1102,6 +1137,7 @@ export function ReviewDetail({
                 onPlansChange={p => { setPlans(p); setIsDirty(true); }}
                 onItemClick={setActivePage}
                 activePage={activePage}
+                meta={{ planType: product.planType, saleDate: product.saleDate, stopDate: product.stopDate, productStatus: product.productStatus, currency: product.currency }}
               />
             ) : null}
           </div>
@@ -1139,7 +1175,22 @@ export function ReviewQueue({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-stone-800 truncate">{p.company}</p>
             <p className="text-sm text-stone-600 truncate">{p.product_name}</p>
-            <p className="text-xs text-stone-400 mt-0.5 font-mono">{p.planCode}</p>
+            <p className="text-xs text-stone-400 mt-0.5 font-mono">
+              {p.displayCode ? <>代號 {p.displayCode} <span className="text-stone-300">· 系統碼 {p.planCode}</span></> : p.planCode}
+            </p>
+            {/* 商品脈絡：險種 / 契約類型 / 狀態 / 銷售期間 */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              {(p.insuranceType ?? []).map((t, i) => (
+                <span key={i} className="text-xs px-2 py-0.5 rounded-full font-medium bg-teal-50 text-teal-700">{t}</span>
+              ))}
+              {p.planType && <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-sky-50 text-sky-700">{p.planType}</span>}
+              {p.productStatus && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.productStatus !== "停售" ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-400"}`}>{p.productStatus}</span>
+              )}
+              {saleRange(p.saleDate, p.stopDate) && (
+                <span className="text-xs text-stone-400">{saleRange(p.saleDate, p.stopDate)}</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3 ml-4 shrink-0">
             {p.assignmentStatus === "completed" ? (

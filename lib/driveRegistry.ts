@@ -91,6 +91,11 @@ export function searchDriveProducts(params: {
   return results.slice(0, limit);
 }
 
+// 依 plan_code 取單筆商品 metadata（審核頁/清單補商品脈絡用）
+export function getDriveProduct(planCode: string): DriveProduct | null {
+  return load().find(p => p.plan_code === planCode) ?? null;
+}
+
 export function getDriveCompanies(): string[] {
   return [...new Set(load().map(p => p.company))].sort();
 }
