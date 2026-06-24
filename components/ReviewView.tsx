@@ -337,7 +337,7 @@ function UnifiedItemsEditor({
           <div className="flex-1 min-w-0">
             <InlineEdit value={data.displayCode ?? ""} onChange={v => onDataChange({ ...data, displayCode: v })}
               className="text-stone-700 font-medium font-mono" placeholder="點擊填寫（通常在費率頁）" />
-            <span className="block text-[10px] text-stone-300 font-mono mt-0.5">系統碼 {data.planCode ?? ""}</span>
+            <span className="block text-xs text-stone-300 font-mono mt-0.5">系統碼 {data.planCode ?? ""}</span>
           </div>
         </div>
         {insuranceTypes && (
@@ -366,14 +366,14 @@ function UnifiedItemsEditor({
               {["元", "美元", "萬元"].map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           )}
-          {baseMode === "unit" && <span className="text-[11px] text-stone-400">每壹單位給付金額（下方逐項填）</span>}
+          {baseMode === "unit" && <span className="text-xs text-stone-400">每壹單位給付金額（下方逐項填）</span>}
           {formulaVerified && (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 ml-1">
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 ml-1">
               公式已確認
             </span>
           )}
           {(
-            <button onClick={suggestAll} className="ml-auto flex items-center gap-1 text-[11px] text-amber-600 hover:text-amber-800 transition-colors">
+            <button onClick={suggestAll} className="ml-auto flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 transition-colors">
               <Sparkles className="h-3 w-3" />
               AI 自動建議公式
             </button>
@@ -403,7 +403,7 @@ function UnifiedItemsEditor({
               </div>
             )}
             {planScale && (
-              <p className="text-[11px] text-stone-400 pt-1 ml-[5.5rem]">等比型：下方每項填「每計劃金額（基數）」，試算時 × 計劃號</p>
+              <p className="text-xs text-stone-400 pt-1 ml-[5.5rem]">等比型：下方每項填「每計劃金額（基數）」，試算時 × 計劃號</p>
             )}
           </>
         )}
@@ -447,14 +447,14 @@ function UnifiedItemsEditor({
                         <InlineEdit
                           value={item.restriction}
                           onChange={v => updateAnalysis(idx, "restriction", v)}
-                          className="text-[10px] text-stone-400 mt-0.5"
+                          className="text-xs text-stone-400 mt-0.5"
                         />
                       )}
                     </div>
                     {/* Page */}
                     <button
                       onClick={() => item.pageRef != null && onItemClick?.(item.pageRef)}
-                      className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded font-medium ${
+                      className={`shrink-0 text-xs font-mono px-1.5 py-0.5 rounded font-medium ${
                         item.pageRef != null
                           ? isActive ? "bg-amber-400 text-white" : "bg-stone-100 text-stone-500 hover:bg-amber-100 cursor-pointer"
                           : "text-stone-200"
@@ -492,18 +492,18 @@ function UnifiedItemsEditor({
                         return (
                           <>
                             {/* 性質：定額 / 限額 / 範圍 / 說明 */}
-                            <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                            <div className="inline-flex rounded overflow-hidden border border-stone-200 text-xs">
                               {shapeBtns.map(([s, label, color], i) => (
                                 <button key={s} type="button" onClick={() => applyShapeSrc(idx, s, src)}
                                   className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${shape === s ? `${color} text-white` : "bg-white text-stone-500 hover:bg-stone-50"}`}>{label}</button>
                               ))}
                             </div>
                             {shape === "note" ? (
-                              <span className="text-[10px] text-stone-400 italic">依說明文字顯示，不參與試算（在上方公式欄填寫，如「所繳保費」）</span>
+                              <span className="text-xs text-stone-400 italic">依說明文字顯示，不參與試算（在上方公式欄填寫，如「所繳保費」）</span>
                             ) : (
                             <>
                             {/* 來源：隨保額 / 固定 */}
-                            <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                            <div className="inline-flex rounded overflow-hidden border border-stone-200 text-xs">
                               {(["follow", "fixed"] as VSrc[]).map((s, i) => (
                                 <button key={s} type="button" onClick={() => applyShapeSrc(idx, shape, s)}
                                   className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${src === s ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>{s === "follow" ? "隨保額" : "固定"}</button>
@@ -511,14 +511,14 @@ function UnifiedItemsEditor({
                             </div>
                             {/* 單位 */}
                             <select value={item.vUnit} onChange={e => updateFormula(idx, { vUnit: e.target.value })}
-                              className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
+                              className="text-xs border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
                               {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
                             </select>
                             {/* 值輸入：依 來源 × 性質 */}
                             {src === "follow" ? (
                               <>
                                 <select value={item.vRateType ?? "multiplier"} onChange={e => updateFormula(idx, { vRateType: e.target.value as "multiplier" | "percentage" })}
-                                  className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
+                                  className="text-xs border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
                                   <option value="multiplier">保額×倍</option>
                                   <option value="percentage">保額×%</option>
                                 </select>
@@ -526,19 +526,19 @@ function UnifiedItemsEditor({
                                   <>
                                     <input type="number" min={0} step="any" inputMode="decimal" placeholder="低" value={item.vMinRate ?? ""}
                                       onChange={e => updateFormula(idx, { vMinRate: parseFloat(e.target.value) || 0 })}
-                                      className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                                    <span className="text-[10px] text-stone-400">{rsfx} ～</span>
+                                      className="w-12 text-xs border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    <span className="text-xs text-stone-400">{rsfx} ～</span>
                                     <input type="number" min={0} step="any" inputMode="decimal" placeholder="高" value={item.vMaxRate ?? ""}
                                       onChange={e => updateFormula(idx, { vMaxRate: parseFloat(e.target.value) || 0 })}
-                                      className="w-12 text-[10px] border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                                    <span className="text-[10px] text-stone-400">{rsfx}</span>
+                                      className="w-12 text-xs border border-stone-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    <span className="text-xs text-stone-400">{rsfx}</span>
                                   </>
                                 ) : (
                                   <>
                                     <input type="number" min={0} step="any" inputMode="decimal" placeholder={isPct ? "百分比" : "倍率"} value={item.vRate ?? ""}
                                       onChange={e => updateFormula(idx, { vRate: parseFloat(e.target.value) || 0 })}
-                                      className="w-14 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                                    <span className="text-[10px] text-stone-400">{rsfx}</span>
+                                      className="w-14 text-xs border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    <span className="text-xs text-stone-400">{rsfx}</span>
                                   </>
                                 )}
                               </>
@@ -546,22 +546,22 @@ function UnifiedItemsEditor({
                               <>
                                 <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低" value={item.vTableMin ?? ""}
                                   onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
-                                  className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                                <span className="text-[10px] text-stone-400">～</span>
+                                  className="w-16 text-xs border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                <span className="text-xs text-stone-400">～</span>
                                 <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高" value={item.vTableMax ?? ""}
                                   onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
-                                  className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                                <span className="text-[10px] text-stone-400">{item.vUnit}</span>
+                                  className="w-16 text-xs border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                <span className="text-xs text-stone-400">{item.vUnit}</span>
                               </>
                             ) : (
                               <>
                                 <input type="number" min={0} step="any" inputMode="decimal" placeholder="金額" value={item.vAmount ?? ""}
                                   onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
-                                  className="w-20 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                                <span className="text-[10px] text-stone-400">{item.vUnit}</span>
+                                  className="w-20 text-xs border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                <span className="text-xs text-stone-400">{item.vUnit}</span>
                               </>
                             )}
-                            {preview && <span className="text-[10px] text-[#C8956C] font-medium whitespace-nowrap">= {preview}</span>}
+                            {preview && <span className="text-xs text-[#C8956C] font-medium whitespace-nowrap">= {preview}</span>}
                             </>
                             )}
                           </>
@@ -573,9 +573,9 @@ function UnifiedItemsEditor({
                       <input type="number" min={0} placeholder="天上限"
                         value={item.fLimitDays ?? ""}
                         onChange={e => updateFormula(idx, { fLimitDays: parseInt(e.target.value) || undefined })}
-                        className="w-16 text-[10px] border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none text-stone-500"
+                        className="w-16 text-xs border border-stone-200 rounded px-1.5 py-0.5 focus:outline-none text-stone-500"
                       />
-                      <span className="text-[10px] text-stone-400">天/年</span>
+                      <span className="text-xs text-stone-400">天/年</span>
                       </>}
                     </div>
                   )}
@@ -633,7 +633,7 @@ function UnifiedItemsEditor({
                         </td>
                         {/* 性質：定額 / 限額 / 範圍 */}
                         <td className="px-2 py-1.5 text-center">
-                          <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                          <div className="inline-flex rounded overflow-hidden border border-stone-200 text-xs">
                             {shapeBtns.map(([s, label, color], i) => (
                               <button key={s} type="button" onClick={() => applyShapeSrc(idx, s, src)}
                                 className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${shape === s ? `${color} text-white` : "bg-white text-stone-500 hover:bg-stone-50"}`}>{label}</button>
@@ -642,8 +642,8 @@ function UnifiedItemsEditor({
                         </td>
                         {/* 來源：隨基準 / 固定 */}
                         <td className="px-2 py-1.5 text-center">
-                          {shape === "note" ? <span className="text-[10px] text-stone-300">—</span> : (
-                          <div className="inline-flex rounded overflow-hidden border border-stone-200 text-[10px]">
+                          {shape === "note" ? <span className="text-xs text-stone-300">—</span> : (
+                          <div className="inline-flex rounded overflow-hidden border border-stone-200 text-xs">
                             {(["follow", "fixed"] as VSrc[]).map((s, i) => (
                               <button key={s} type="button" onClick={() => applyShapeSrc(idx, shape, s)}
                                 className={`px-1.5 py-0.5 ${i > 0 ? "border-l border-stone-200" : ""} ${src === s ? "bg-[#C8956C] text-white" : "bg-white text-stone-500 hover:bg-stone-50"}`}>{s === "follow" ? (baseMode === "plan" ? "隨計劃" : "隨單位") : "固定"}</button>
@@ -652,27 +652,27 @@ function UnifiedItemsEditor({
                           )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
-                          {shape === "note" ? <span className="text-[10px] text-stone-300">—</span> : (
+                          {shape === "note" ? <span className="text-xs text-stone-300">—</span> : (
                           <select value={item.vUnit} onChange={e => updateFormula(idx, { vUnit: e.target.value })}
-                            className="text-[10px] border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
+                            className="text-xs border border-stone-200 rounded px-1 py-0.5 bg-white focus:outline-none">
                             {["萬", "元", "元/日", "元/次", "元/月"].map(u => <option key={u} value={u}>{u}</option>)}
                           </select>
                           )}
                         </td>
                         {shape === "note" ? (
-                          <td colSpan={valSpan} className="px-2 py-1.5 text-center text-[10px] text-stone-400 italic">依說明（不試算）</td>
+                          <td colSpan={valSpan} className="px-2 py-1.5 text-center text-xs text-stone-400 italic">依說明（不試算）</td>
                         ) : shape === "range" ? (
                           <td colSpan={valSpan} className="px-1 py-1.5 text-center whitespace-nowrap">
                             <input type="number" min={0} step="any" inputMode="decimal" placeholder="最低"
                               value={item.vTableMin ?? ""}
                               onChange={e => updateFormula(idx, { vTableMin: parseFloat(e.target.value) || 0 })}
-                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                            <span className="text-[10px] text-stone-400 mx-1">～</span>
+                              className="w-16 text-xs border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                            <span className="text-xs text-stone-400 mx-1">～</span>
                             <input type="number" min={0} step="any" inputMode="decimal" placeholder="最高"
                               value={item.vTableMax ?? ""}
                               onChange={e => updateFormula(idx, { vTableMax: parseFloat(e.target.value) || 0 })}
-                              className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                            <span className="text-[10px] text-stone-400 ml-1">{item.vUnit}</span>
+                              className="w-16 text-xs border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                            <span className="text-xs text-stone-400 ml-1">{item.vUnit}</span>
                           </td>
                         ) : src === "follow" ? (
                           !singleCol
@@ -681,7 +681,7 @@ function UnifiedItemsEditor({
                                   <input type="number" min={0} step="any" inputMode="decimal"
                                     value={item.fPlanValues?.[pl] ?? ""}
                                     onChange={e => updatePlanValue(idx, pl, parseFloat(e.target.value) || 0)}
-                                    className="w-16 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    className="w-16 text-xs border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
                                 </td>
                               ))
                             : (
@@ -689,7 +689,7 @@ function UnifiedItemsEditor({
                                   <input type="number" min={0} step="any" inputMode="decimal"
                                     value={item.vAmount ?? ""}
                                     onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
-                                    className="w-20 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                                    className="w-20 text-xs border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
                                 </td>
                               )
                         ) : (
@@ -697,13 +697,13 @@ function UnifiedItemsEditor({
                             <input type="number" min={0} step="any" inputMode="decimal" placeholder="金額"
                               value={item.vAmount ?? ""}
                               onChange={e => updateFormula(idx, { vAmount: parseFloat(e.target.value) || 0 })}
-                              className="w-24 text-[10px] border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
-                            <span className="text-[10px] text-stone-400 ml-1">{item.vUnit}</span>
+                              className="w-24 text-xs border border-amber-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-[#C8956C]" />
+                            <span className="text-xs text-stone-400 ml-1">{item.vUnit}</span>
                           </td>
                         )}
                         <td className="px-2 py-1.5 text-center">
                           <button onClick={() => item.pageRef != null && onItemClick?.(item.pageRef)}
-                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${item.pageRef != null ? (isActive ? "bg-amber-400 text-white" : "bg-stone-100 text-stone-500 hover:bg-amber-100") : "text-stone-200"}`}>
+                            className={`text-xs font-mono px-1.5 py-0.5 rounded ${item.pageRef != null ? (isActive ? "bg-amber-400 text-white" : "bg-stone-100 text-stone-500 hover:bg-amber-100") : "text-stone-200"}`}>
                             {item.pageRef != null ? `P.${item.pageRef}` : "—"}
                           </button>
                         </td>
@@ -734,7 +734,7 @@ function UnifiedItemsEditor({
         </div>
         <div className="px-4 py-3 space-y-3">
           <div>
-            <label className="text-[11px] font-medium text-stone-400">年度給付上限</label>
+            <label className="text-xs font-medium text-stone-400">年度給付上限</label>
             <textarea
               rows={2}
               value={data.annualLimit?.formula ?? ""}
@@ -746,11 +746,11 @@ function UnifiedItemsEditor({
               value={data.annualLimit?.notes ?? ""}
               onChange={e => setAnnualLimit({ notes: e.target.value })}
               placeholder="補充說明（選填）"
-              className="w-full mt-1 text-[11px] border border-stone-100 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#C8956C] text-stone-400"
+              className="w-full mt-1 text-xs border border-stone-100 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#C8956C] text-stone-400"
             />
           </div>
           <div>
-            <label className="text-[11px] font-medium text-stone-400">等待期</label>
+            <label className="text-xs font-medium text-stone-400">等待期</label>
             <input
               value={data.waitingPeriod?.note ?? ""}
               onChange={e => setWaitingNote(e.target.value)}
@@ -799,7 +799,7 @@ function EditableStringList({
 }) {
   return (
     <div>
-      <p className="text-[11px] font-medium text-stone-400 mb-1.5">{label}</p>
+      <p className="text-xs font-medium text-stone-400 mb-1.5">{label}</p>
       <div className="space-y-1.5">
         {items.map((v, i) => (
           <div key={i} className="flex items-start gap-1.5">
@@ -815,7 +815,7 @@ function EditableStringList({
             </button>
           </div>
         ))}
-        <button onClick={onAdd} className="flex items-center gap-1 text-[11px] text-stone-400 hover:text-[#C8956C] transition-colors">
+        <button onClick={onAdd} className="flex items-center gap-1 text-xs text-stone-400 hover:text-[#C8956C] transition-colors">
           <Plus className="h-3 w-3" />
           新增{label}
         </button>
@@ -832,14 +832,14 @@ function InlineEdit({ value, onChange, className = "", placeholder = "" }: {
   const save = () => { setEditing(false); if (draft !== value) onChange(draft); };
   return editing ? (
     <textarea autoFocus rows={2}
-      className={`w-full text-xs border border-amber-300 rounded px-1 py-0.5 bg-amber-50 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400 ${className}`}
+      className={`w-full text-sm border border-amber-300 rounded px-1 py-0.5 bg-amber-50 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400 ${className}`}
       value={draft} onChange={e => setDraft(e.target.value)} onBlur={save}
       onKeyDown={e => { if (e.key === "Escape") setEditing(false); }}
     />
   ) : (
-    <span className={`block text-xs cursor-pointer hover:bg-amber-50 rounded px-0.5 whitespace-pre-wrap transition-colors ${className}`}
+    <span className={`block text-sm cursor-pointer hover:bg-amber-50 rounded px-0.5 whitespace-pre-wrap transition-colors ${className}`}
       onClick={() => { setDraft(value); setEditing(true); }} title="點擊編輯">
-      {value || <span className="text-stone-300 italic text-[10px]">{placeholder || "—"}</span>}
+      {value || <span className="text-stone-300 italic text-xs">{placeholder || "—"}</span>}
     </span>
   );
 }
@@ -1143,11 +1143,11 @@ export function ReviewQueue({
           </div>
           <div className="flex items-center gap-3 ml-4 shrink-0">
             {p.assignmentStatus === "completed" ? (
-              <span className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">
+              <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">
                 <CheckCircle className="h-3 w-3" /> 已完成
               </span>
             ) : p.assignmentStatus === "pending" ? (
-              <span className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
+              <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
                 待審核
               </span>
             ) : p.uploadedAt && (
