@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, Loader2, FileText, ClipboardCheck } from "lucide-react";
+import { ConfirmModal } from "./ConfirmModal";
 
 // ── 型別 ──────────────────────────────────────────────────────────────
 interface AnalysisItem {
@@ -202,6 +203,7 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfStatus, setPdfStatus] = useState<"loading" | "ok" | "error">("loading");
   const [reopening, setReopening] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
 
   useEffect(() => {
     fetch(`/api/products?planCode=${encodeURIComponent(planCode)}`)
@@ -240,7 +242,7 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
   // 重新審核：送回審核佇列、跳轉到編輯頁
   const reopen = async () => {
     if (reopening) return;
-    if (!confirm("確定要重新審核這個商品嗎？將送回審核佇列、進入編輯頁。")) return;
+    setConfirmReopen(false);
     setReopening(true);
     try {
       const res = await fetch(`/api/products/${encodeURIComponent(planCode)}/reopen`, { method: "POST" });
@@ -270,12 +272,22 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
             {analysis?.displayCode && <span className="font-mono text-[10px] text-stone-300 ml-1">系統碼 {planCode}</span>}
           </p>
         </div>
-        <button onClick={reopen} disabled={reopening}
+        <button onClick={() => setConfirmReopen(true)} disabled={reopening}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-[#8B5E3C] border border-[#E8D5B7] bg-white hover:bg-[#FBF0E3] disabled:opacity-50 transition-colors whitespace-nowrap shrink-0">
           {reopening ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
           重新審核
         </button>
       </div>
+
+      <ConfirmModal
+        open={confirmReopen}
+        title="重新審核"
+        message="確定要重新審核這個商品嗎？將送回審核佇列並進入編輯頁。"
+        confirmText="送回審核"
+        loading={reopening}
+        onConfirm={reopen}
+        onCancel={() => setConfirmReopen(false)}
+      />
 
       {/* 左右雙欄：左=給付資訊+試算（可捲）｜ 右=PDF（黏頂、滿高）。窄螢幕自動上下堆疊 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

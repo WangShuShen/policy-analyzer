@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { FormulaItem, FormulaJson } from "@/lib/db";
 import { suggestFormula } from "@/lib/insuranceRules";
+import { ConfirmModal } from "./ConfirmModal";
 
 const PdfViewerWithPages = dynamic(() => import("./PdfViewerWithPages"), {
   ssr: false,
@@ -898,6 +899,7 @@ export function ReviewDetail({
   const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveResult, setArchiveResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [activePage, setActivePage] = useState(1);
 
   // Unified state for items + formula
@@ -1000,7 +1002,7 @@ export function ReviewDetail({
   });
 
   const handleArchive = async () => {
-    if (!confirm(`確認歸檔「${product.product_name}」？\n歸檔後將從待審核區移至正式資料庫。`)) return;
+    setConfirmArchive(false);
     setArchiving(true);
     setArchiveResult(null);
     try {
@@ -1075,7 +1077,7 @@ export function ReviewDetail({
             </span>
           ) : (
             <button
-              onClick={handleArchive}
+              onClick={() => setConfirmArchive(true)}
               disabled={archiving}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60"
               style={{ background: "linear-gradient(135deg, #4ade80, #16a34a)" }}
@@ -1088,6 +1090,16 @@ export function ReviewDetail({
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        open={confirmArchive}
+        title="通過審核 · 歸檔"
+        message={`確認歸檔「${product.product_name}」？\n歸檔後將從待審核區移至正式資料庫，商品查詢即可看到。`}
+        confirmText="確認歸檔"
+        loading={archiving}
+        onConfirm={handleArchive}
+        onCancel={() => setConfirmArchive(false)}
+      />
 
       {/* Split body */}
       <div className="flex flex-1 overflow-hidden">
