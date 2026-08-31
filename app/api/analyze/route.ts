@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findProduct, storeAnalysis, applyCorrections } from "@/lib/policyCache";
 import { CATEGORY_DETECT_PROMPT, getSpecialistPrompt } from "@/lib/specialistPrompts";
 import { requireIdentity } from "@/lib/auth";
+import { consume, refund } from "@/lib/entitlements";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -380,6 +381,8 @@ async function detectCategory(
 export async function POST(req: NextRequest) {
   const auth = await requireIdentity(req);
   if (auth instanceof NextResponse) return auth;
+  // 只有實際扣抵過的請求才需要在失敗時退還，否則會誤退到上一次的額度。
+  let consumed = false;
   try {
     const formData = await req.formData();
     const rawFiles = formData.getAll("files") as File[];
@@ -395,6 +398,12 @@ export async function POST(req: NextRequest) {
 
     const unsupported = rawFiles.find(f => !f.type.startsWith("image/") && f.type !== "application/pdf");
     if (unsupported) return NextResponse.json({ error: `不支援的格式：${unsupported.name}` }, { status: 400 });
+
+    // 額度在通過輸入驗證後才扣抵：格式錯誤等使用者失誤不應消耗次數。
+    // 之後若分析途中失敗，catch 區塊會 refund 回去。
+    const quota = await consume(auth, "analyze");
+    if (!quota.ok) return quota.response;
+    consumed = true;
 
     // 先把所有檔案讀進記憶體，分析完後再儲存
     const fileBuffers: { buffer: Buffer; file: File }[] = [];
@@ -525,6 +534,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error(err);
+    // 分析失敗不該扣掉使用者的額度（免費版每月僅 1 次）。
+    if (consumed) await refund(auth, "analyze");
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

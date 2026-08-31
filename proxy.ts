@@ -13,6 +13,7 @@ export async function proxy(req: NextRequest) {
     pathname === "/api/setup-admin" ||
     pathname === "/api/admin/seed-drive" ||
     pathname === "/login" ||
+    pathname === "/pricing" ||
     pathname === "/favicon.ico" ||
     /\.(png|jpg|jpeg|svg|ico|webp|gif|woff2?|ttf|otf)$/.test(pathname)
   ) {

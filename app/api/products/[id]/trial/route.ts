@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyJWT } from "@/lib/jwt";
+import { consume } from "@/lib/entitlements";
 import db, { ensureInit, type FormulaItem } from "@/lib/db";
 
 type Params = { params: Promise<{ id: string }> };
@@ -135,6 +136,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!token) return NextResponse.json({ error: "未登入" }, { status: 401 });
   const payload = await verifyJWT(token);
   if (!payload) return NextResponse.json({ error: "未登入" }, { status: 401 });
+
+  // 公式試算屬付費功能：免費版不開放。
+  const quota = await consume(payload, "formula.trial");
+  if (!quota.ok) return quota.response;
 
   const { id } = await params;
   const planCode = decodeURIComponent(id);

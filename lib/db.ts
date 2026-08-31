@@ -82,6 +82,16 @@ export async function ensureInit(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       last_login_at TEXT
     )`,
+    // 每月用量計數。period 為 YYYY-MM，換月自然產生新列，
+    // 因此「每月重置」是隱含行為，不需要排程去歸零。
+    `CREATE TABLE IF NOT EXISTS usage_counters (
+      user_id TEXT NOT NULL,
+      period TEXT NOT NULL,
+      action TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, period, action)
+    )`,
     // 審核流程的唯一真實來源（取代本機 uuid_registry.json + analyzed/*.json）
     `CREATE TABLE IF NOT EXISTS policies (
       uuid TEXT PRIMARY KEY,
