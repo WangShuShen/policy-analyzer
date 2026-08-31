@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import db, { ensureInit, type PolicyRow } from "@/lib/db";
 import { verifyJWT } from "@/lib/jwt";
+import { requireAdvisor } from "@/lib/auth";
 
 // GET /api/review/[id] → load analyzed JSON for this policy (from Turso)
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const guard = await requireAdvisor(_req);
+  if (guard instanceof NextResponse) return guard;
   try {
     const { id } = await params;
     await ensureInit();
@@ -29,6 +32,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const guard = await requireAdvisor(req);
+  if (guard instanceof NextResponse) return guard;
   try {
     const { id } = await params;
     const { data } = await req.json();
@@ -59,6 +64,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const guard = await requireAdvisor(req);
+  if (guard instanceof NextResponse) return guard;
   try {
     const { id } = await params;
     await ensureInit();

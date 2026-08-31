@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { searchDriveProducts, getDriveCompanies, getDriveCategories } from "@/lib/driveRegistry";
 import { getDocIds } from "@/lib/driveIndex";
 import db, { ensureInit } from "@/lib/db";
+import { requireIdentity } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireIdentity(req);
+  if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = req.nextUrl;
     const action = searchParams.get("action");

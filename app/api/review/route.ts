@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db, { ensureInit, type PolicyRow } from "@/lib/db";
 import { verifyJWT } from "@/lib/jwt";
+import { requireAdvisor } from "@/lib/auth";
 import { getDocIds } from "@/lib/driveIndex";
 import { getDriveProduct } from "@/lib/driveRegistry";
 
@@ -42,6 +43,8 @@ function toProduct(p: PolicyRow, assignmentStatus?: string) {
 }
 
 export async function GET(req: NextRequest) {
+  const guard = await requireAdvisor(req);
+  if (guard instanceof NextResponse) return guard;
   try {
     await ensureInit();
 

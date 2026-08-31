@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAnalysis } from "@/lib/verifier";
+import { requireIdentity } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
+  const auth = await requireIdentity(req);
+  if (auth instanceof NextResponse) return auth;
   try {
     const formData = await req.formData();
     const rawFiles = formData.getAll("files") as File[];
