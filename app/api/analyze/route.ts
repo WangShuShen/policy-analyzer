@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { findProduct, storeAnalysis, applyCorrections } from "@/lib/policyCache";
 import { CATEGORY_DETECT_PROMPT, getSpecialistPrompt } from "@/lib/specialistPrompts";
+import { requireIdentity } from "@/lib/auth";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -377,6 +378,8 @@ async function detectCategory(
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireIdentity(req);
+  if (auth instanceof NextResponse) return auth;
   try {
     const formData = await req.formData();
     const rawFiles = formData.getAll("files") as File[];
@@ -508,6 +511,7 @@ export async function POST(req: NextRequest) {
         filePath: filePath ?? undefined,
         insuredAmount: amount,
         analysisJson: analysisResult,
+        userId: auth.advisorId,
       });
       if (!fromCache) productId = stored.productId;
     }

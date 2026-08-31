@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdvisorByEmail } from "@/lib/db";
+import { getAdvisorByEmail, upsertUserOnLogin } from "@/lib/db";
 import { signJWT } from "@/lib/jwt";
 
 export async function GET(req: NextRequest) {
@@ -60,23 +60,39 @@ export async function GET(req: NextRequest) {
   // Normalize to lowercase to avoid case mismatch
   const email = (userInfo.email as string).toLowerCase().trim();
 
-  // Check if email is in the advisors allowlist
+  const displayName = ((userInfo.name as string) || email.split("@")[0]).trim();
+
+  // 先看是否為內部顧問（白名單）；不是的話一律以客戶身分自助註冊。
   const advisor = await getAdvisorByEmail(email);
 
-  if (!advisor) {
-    // Pass the actual email as a hint so admin knows what to add
-    return NextResponse.redirect(loginUrl("not_authorized", email));
+  let jwt: string;
+  let landing = "/";
+
+  if (advisor) {
+    jwt = await signJWT({
+      advisorId: advisor.id,
+      email: advisor.email,
+      name: advisor.name,
+      isAdmin: advisor.is_admin === 1,
+      role: "advisor",
+    });
+  } else {
+    const { user } = await upsertUserOnLogin(email, displayName);
+    if (user.is_active !== 1) {
+      return NextResponse.redirect(loginUrl("account_disabled", email));
+    }
+    jwt = await signJWT({
+      advisorId: user.id,
+      email: user.email,
+      name: user.name,
+      isAdmin: false,
+      role: "customer",
+      plan: user.plan,
+    });
+    landing = "/catalog";
   }
 
-  // Issue JWT
-  const jwt = await signJWT({
-    advisorId: advisor.id,
-    email: advisor.email,
-    name: advisor.name,
-    isAdmin: advisor.is_admin === 1,
-  });
-
-  const res = NextResponse.redirect(new URL("/", req.url));
+  const res = NextResponse.redirect(new URL(landing, req.url));
 
   res.cookies.set("auth_token", jwt, {
     httpOnly: true,

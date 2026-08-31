@@ -90,6 +90,8 @@ export interface StoreParams {
   filePath?: string;
   insuredAmount: string;
   analysisJson: Record<string, unknown>;
+  /** 發起這次分析的使用者（顧問為 advisors.id、客戶為 users.id）。 */
+  userId?: string;
 }
 
 export async function storeAnalysis(params: StoreParams): Promise<{ productId: number; analysisId: number }> {
@@ -141,13 +143,14 @@ export async function storeAnalysis(params: StoreParams): Promise<{ productId: n
   }
 
   const analysisResult = await db.execute({
-    sql: `INSERT INTO analyses (product_id, insured_amount, analysis_json, file_path)
-          VALUES (?, ?, ?, ?)`,
+    sql: `INSERT INTO analyses (product_id, insured_amount, analysis_json, file_path, user_id)
+          VALUES (?, ?, ?, ?, ?)`,
     args: [
       productId,
       params.insuredAmount,
       JSON.stringify(params.analysisJson),
       params.filePath ?? null,
+      params.userId ?? null,
     ],
   });
 
