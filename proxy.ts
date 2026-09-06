@@ -10,6 +10,9 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/cron") ||
+    // 金流回呼由綠界伺服器發出，不會帶 cookie；被擋掉會導致付款成功卻沒升級方案。
+    // 此路徑改以 CheckMacValue 驗簽自保。
+    pathname.startsWith("/api/webhooks/") ||
     pathname === "/api/setup-admin" ||
     pathname === "/api/admin/seed-drive" ||
     pathname === "/login" ||

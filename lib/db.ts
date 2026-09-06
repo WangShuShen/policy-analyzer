@@ -92,6 +92,34 @@ export async function ensureInit(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (user_id, period, action)
     )`,
+    // 訂閱狀態（一位使用者同時只會有一筆 active）
+    `CREATE TABLE IF NOT EXISTS subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      merchant_trade_no TEXT NOT NULL UNIQUE,
+      gwsr TEXT,
+      current_period_end TEXT,
+      fail_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // 每次扣款的原始紀錄。(merchant_trade_no, trade_no) 唯一，
+    // 綠界重送 webhook 時據此做冪等，不會重複加值。
+    `CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      merchant_trade_no TEXT NOT NULL,
+      trade_no TEXT NOT NULL,
+      user_id TEXT,
+      plan TEXT,
+      amount INTEGER,
+      rtn_code INTEGER,
+      rtn_msg TEXT,
+      raw TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(merchant_trade_no, trade_no)
+    )`,
     // 審核流程的唯一真實來源（取代本機 uuid_registry.json + analyzed/*.json）
     `CREATE TABLE IF NOT EXISTS policies (
       uuid TEXT PRIMARY KEY,
@@ -112,6 +140,9 @@ export async function ensureInit(): Promise<void> {
   ], "write")
     // CREATE TABLE IF NOT EXISTS 不會替既有資料表補欄位，故追加欄位遷移。
     .then(() => ensureColumn("analyses", "user_id", "user_id TEXT"))
+    // rate_drive_id 早已寫在建表語句裡，但先前建立的資料表沒有這個欄位，
+    // 導致 cron 讀到 undefined、費率表被靜默略過（不會報錯，所以一直沒被發現）。
+    .then(() => ensureColumn("policies", "rate_drive_id", "rate_drive_id TEXT"))
     .then(() => undefined);
   return initPromise;
 }
