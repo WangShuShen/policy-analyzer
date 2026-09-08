@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import db, { ensureInit } from "@/lib/db";
 import { verifyJWT } from "@/lib/jwt";
+import { requireAdvisor } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const guard = await requireAdvisor(req);
+  if (guard instanceof NextResponse) return guard;
   const token = req.cookies.get("auth_token")?.value;
   const payload = token ? await verifyJWT(token) : null;
   if (!payload) return NextResponse.json({ total: 0, completed: 0, pending: 0 });

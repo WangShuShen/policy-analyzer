@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyJWT } from "@/lib/jwt";
+import { requireAdvisor } from "@/lib/auth";
 import db, { ensureInit } from "@/lib/db";
 import crypto from "crypto";
 
@@ -8,6 +9,8 @@ type Params = { params: Promise<{ id: string }> };
 // POST /api/products/[id]/reopen — 把已歸檔商品送回審核佇列（id = planCode）
 // 將 policy status 改回 uploaded、指派給目前顧問，回傳 uuid 供前端跳轉編輯頁
 export async function POST(req: NextRequest, { params }: Params) {
+  const guard = await requireAdvisor(req);
+  if (guard instanceof NextResponse) return guard;
   try {
     const { id } = await params;
     const planCode = decodeURIComponent(id);

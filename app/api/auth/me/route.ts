@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyJWT } from "@/lib/jwt";
+import { roleOf, verifyJWT } from "@/lib/jwt";
 
 export async function GET(req: NextRequest) {
   const token = req.cookies.get("auth_token")?.value;
@@ -14,5 +14,7 @@ export async function GET(req: NextRequest) {
     email: payload.email,
     name: payload.name,
     isAdmin: payload.isAdmin,
+    role: roleOf(payload),
+    plan: payload.plan ?? null,
   });
 }

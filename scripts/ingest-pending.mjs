@@ -37,16 +37,22 @@ await db.executeMultiple(`
 const LIMIT = Number(process.argv[2]) || 0; // 0 = 全部
 let ingested = 0, skipped = 0, count = 0;
 
+// 一次撈回所有既有狀態，避免每筆一次 SELECT（索引擴大到上萬筆後往返成本會爆掉）
+const existing = new Map();
+for (const r of (await db.execute("SELECT uuid, status FROM policies")).rows) {
+  existing.set(r.uuid, r.status);
+}
+
+const pending = [];
 for (const [plan, info] of Object.entries(index)) {
   if (!info.clauseId) { skipped++; continue; }
   if (LIMIT && count >= LIMIT) break;
 
   // 已存在且已分析（uploaded/archived）→ 不覆蓋
-  const exist = await db.execute({ sql: "SELECT status FROM policies WHERE uuid = ?", args: [plan] });
-  if (exist.rows[0] && ["uploaded", "archived"].includes(exist.rows[0].status)) { skipped++; continue; }
+  if (["uploaded", "archived"].includes(existing.get(plan))) { skipped++; continue; }
 
   const reg = regByPlan[plan] ?? {};
-  await db.execute({
+  pending.push({
     sql: `INSERT INTO policies (uuid, plan_code, company, product_name, pdf_drive_id, rate_drive_id, category, status, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_analysis', datetime('now'))
           ON CONFLICT(uuid) DO UPDATE SET
@@ -57,6 +63,11 @@ for (const [plan, info] of Object.entries(index)) {
            info.clauseId, info.rateId ?? null, reg.productType ?? null],
   });
   ingested++; count++;
+}
+
+for (let i = 0; i < pending.length; i += 200) {
+  await db.batch(pending.slice(i, i + 200), "write");
+  console.log(`  寫入 ${Math.min(i + 200, pending.length)}/${pending.length}`);
 }
 
 const c = await db.execute("SELECT status, COUNT(*) n FROM policies GROUP BY status ORDER BY status");

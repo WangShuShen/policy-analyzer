@@ -1,9 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { requireIdentity } from "@/lib/auth";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
+  const auth = await requireIdentity(req);
+  if (auth instanceof NextResponse) return auth;
   try {
     const formData = await req.formData();
     const rawFiles = formData.getAll("files") as File[];

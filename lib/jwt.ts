@@ -1,9 +1,20 @@
+export type UserRole = "advisor" | "customer";
+
 export interface JWTPayload {
+  /** 顧問為 advisors.id；客戶為 users.id。沿用舊欄位名以相容既有 token。 */
   advisorId: string;
   email: string;
   name: string;
   isAdmin: boolean;
+  /** 舊 token 沒有此欄位；在客戶帳號上線前只有顧問能登入，故一律視為 advisor。 */
+  role?: UserRole;
+  /** 客戶方案：free / basic / pro / disciple。顧問不適用。 */
+  plan?: string;
   exp: number;
+}
+
+export function roleOf(payload: JWTPayload): UserRole {
+  return payload.role ?? "advisor";
 }
 
 function base64url(buf: ArrayBuffer | Uint8Array): string {

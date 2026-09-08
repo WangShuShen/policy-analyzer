@@ -68,6 +68,58 @@ export async function ensureInit(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(policy_uuid, assigned_date)
     )`,
+    // 客戶帳號（訂閱制使用者）。與內部顧問白名單 advisors 刻意分離：
+    // advisors 是員工，users 是付費客戶，兩者權限與生命週期完全不同。
+    `CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      plan TEXT NOT NULL DEFAULT 'free',
+      plan_expires_at TEXT,
+      quota_used INTEGER NOT NULL DEFAULT 0,
+      quota_reset_at TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_login_at TEXT
+    )`,
+    // 每月用量計數。period 為 YYYY-MM，換月自然產生新列，
+    // 因此「每月重置」是隱含行為，不需要排程去歸零。
+    `CREATE TABLE IF NOT EXISTS usage_counters (
+      user_id TEXT NOT NULL,
+      period TEXT NOT NULL,
+      action TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, period, action)
+    )`,
+    // 訂閱狀態（一位使用者同時只會有一筆 active）
+    `CREATE TABLE IF NOT EXISTS subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      merchant_trade_no TEXT NOT NULL UNIQUE,
+      gwsr TEXT,
+      current_period_end TEXT,
+      fail_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // 每次扣款的原始紀錄。(merchant_trade_no, trade_no) 唯一，
+    // 綠界重送 webhook 時據此做冪等，不會重複加值。
+    `CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      merchant_trade_no TEXT NOT NULL,
+      trade_no TEXT NOT NULL,
+      user_id TEXT,
+      plan TEXT,
+      amount INTEGER,
+      rtn_code INTEGER,
+      rtn_msg TEXT,
+      raw TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(merchant_trade_no, trade_no)
+    )`,
     // 審核流程的唯一真實來源（取代本機 uuid_registry.json + analyzed/*.json）
     `CREATE TABLE IF NOT EXISTS policies (
       uuid TEXT PRIMARY KEY,
@@ -85,8 +137,23 @@ export async function ensureInit(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
-  ], "write").then(() => undefined);
+  ], "write")
+    // CREATE TABLE IF NOT EXISTS 不會替既有資料表補欄位，故追加欄位遷移。
+    .then(() => ensureColumn("analyses", "user_id", "user_id TEXT"))
+    // rate_drive_id 早已寫在建表語句裡，但先前建立的資料表沒有這個欄位，
+    // 導致 cron 讀到 undefined、費率表被靜默略過（不會報錯，所以一直沒被發現）。
+    .then(() => ensureColumn("policies", "rate_drive_id", "rate_drive_id TEXT"))
+    .then(() => undefined);
   return initPromise;
+}
+
+/** 補欄位用的簡易遷移：欄位已存在就跳過。 */
+async function ensureColumn(table: string, column: string, ddl: string): Promise<void> {
+  const info = await db.execute(`PRAGMA table_info(${table})`);
+  const exists = info.rows.some(r => (r.name as string) === column);
+  if (!exists) {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
 }
 
 export async function getAdvisorByEmail(email: string): Promise<AdvisorRow | null> {
@@ -118,6 +185,74 @@ export async function listAdvisors(): Promise<AdvisorRow[]> {
     is_active: r.is_active as number,
     created_at: r.created_at as string,
   }));
+}
+
+// ── 客戶帳號（訂閱制） ──────────────────────────────────────────────
+
+function mapUser(r: Record<string, unknown>): UserRow {
+  return {
+    id: r.id as string,
+    email: r.email as string,
+    name: r.name as string,
+    plan: r.plan as string,
+    plan_expires_at: (r.plan_expires_at as string) ?? null,
+    quota_used: Number(r.quota_used ?? 0),
+    quota_reset_at: (r.quota_reset_at as string) ?? null,
+    is_active: Number(r.is_active ?? 1),
+    created_at: r.created_at as string,
+    last_login_at: (r.last_login_at as string) ?? null,
+  };
+}
+
+export async function getUserByEmail(email: string): Promise<UserRow | null> {
+  await ensureInit();
+  const result = await db.execute({
+    sql: "SELECT * FROM users WHERE email = ?",
+    args: [email],
+  });
+  if (result.rows.length === 0) return null;
+  return mapUser(result.rows[0] as unknown as Record<string, unknown>);
+}
+
+/**
+ * 客戶登入時取得帳號，不存在則自動註冊（免費方案）。
+ * 回傳的 justCreated 供呼叫端決定是否導向新手引導。
+ */
+export async function upsertUserOnLogin(
+  email: string,
+  name: string
+): Promise<{ user: UserRow; justCreated: boolean }> {
+  const existing = await getUserByEmail(email);
+  if (existing) {
+    await db.execute({
+      sql: "UPDATE users SET last_login_at = datetime('now'), name = ? WHERE id = ?",
+      args: [name, existing.id],
+    });
+    return { user: { ...existing, name, last_login_at: new Date().toISOString() }, justCreated: false };
+  }
+
+  const id = crypto.randomUUID();
+  await db.execute({
+    sql: `INSERT INTO users (id, email, name, plan, last_login_at)
+          VALUES (?, ?, ?, 'free', datetime('now'))`,
+    args: [id, email, name],
+  });
+  const created = await getUserByEmail(email);
+  if (!created) throw new Error("建立使用者後查詢失敗");
+  return { user: created, justCreated: true };
+}
+
+export interface UserRow {
+  id: string;
+  email: string;
+  name: string;
+  plan: string;
+  plan_expires_at: string | null;
+  quota_used: number;
+  quota_reset_at: string | null;
+  is_active: number;
+  created_at: string;
+  last_login_at: string | null;
 }
 
 export default db;

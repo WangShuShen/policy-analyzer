@@ -49,3 +49,10 @@ data/*.db-wal
 # Insurance contracts (PDFs, potentially large/copyrighted)
 contracts/
 tmp/
+
+# 臨時查詢腳本（scripts/_*.mjs 為一次性 ad-hoc 查詢，不入版控）
+scripts/_*.mjs
+
+# 線上資料表備份（含顧問 id，不入版控）
+backups/
+data/drive_registry.json.bak-3705

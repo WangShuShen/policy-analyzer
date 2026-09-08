@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveCorrection } from "@/lib/policyCache";
+import { requireAdvisor } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdvisor(req);
+  if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json();
     const { productId, fieldPath, oldValue, newValue, note } = body;

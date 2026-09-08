@@ -7,6 +7,7 @@ import { Suspense } from "react";
 
 const ERROR_MESSAGES: Record<string, string> = {
   not_authorized: "您的 Google 帳號尚未開通，請聯繫管理員新增授權。",
+  account_disabled: "此帳號已停用，如有疑問請聯繫我們。",
   oauth_failed: "Google 授權失敗，請再試一次。",
   invalid_state: "登入請求已過期，請重新開始。",
   token_exchange_failed: "Google 驗證失敗，請再試一次。",

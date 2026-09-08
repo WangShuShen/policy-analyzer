@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { searchDriveProducts, getDriveCompanies, getDriveCategories } from "@/lib/driveRegistry";
 import { getDocIds } from "@/lib/driveIndex";
 import db, { ensureInit } from "@/lib/db";
+import { requireIdentity } from "@/lib/auth";
+import { consume } from "@/lib/entitlements";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireIdentity(req);
+  if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = req.nextUrl;
     const action = searchParams.get("action");
@@ -16,8 +20,11 @@ export async function GET(req: NextRequest) {
     }
 
     // planCode 查單筆商品 + 已審核分析（給付明細／限制／注意事項）
+    // 這是「商品查詢」的計次點；瀏覽清單與篩選不扣額度。
     const planCode = searchParams.get("planCode");
     if (planCode) {
+      const quota = await consume(auth, "product.detail");
+      if (!quota.ok) return quota.response;
       await ensureInit();
       const result = await db.execute({
         sql: `SELECT p.id, p.product_name, p.plan_code, p.category, c.name as company

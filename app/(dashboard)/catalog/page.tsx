@@ -127,7 +127,7 @@ export default function CatalogPage() {
         <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>
           商品查詢
         </h2>
-        <p className="text-xs text-stone-400 mt-0.5">搜尋 Google Drive 已審核商品（{3705} 筆南山人壽）</p>
+        <p className="text-xs text-stone-400 mt-0.5">搜尋 Google Drive 已審核商品</p>
       </div>
 
       <div className="w-full px-8 py-6 space-y-5 overflow-auto flex-1">
