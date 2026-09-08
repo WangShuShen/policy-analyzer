@@ -72,12 +72,15 @@ export async function GET(req: NextRequest) {
     }
 
     // 一般（含管理者）：只顯示「指派給我、且尚待審核」的保單
+    // 一張保單可能有多天的指派紀錄，這裡以保單為單位去重（否則清單會出現大量重複列）。
+    // assignment_status 取 MAX()：字典序 'completed' < 'pending'，故只要還有一筆未完成就顯示 pending。
     const assigned = await db.execute({
-      sql: `SELECT p.*, a.status AS assignment_status
+      sql: `SELECT p.*, MAX(a.status) AS assignment_status
             FROM policy_assignments a
             JOIN policies p ON p.uuid = a.policy_uuid
             WHERE a.advisor_id = ? AND p.status = 'uploaded'
-            ORDER BY a.status ASC, p.uploaded_at DESC`,
+            GROUP BY p.uuid
+            ORDER BY assignment_status ASC, p.uploaded_at DESC`,
       args: [payload.advisorId],
     });
 

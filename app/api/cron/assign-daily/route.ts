@@ -18,9 +18,11 @@ export async function POST(req: NextRequest) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  // Get already-assigned policy UUIDs for today
+  // 排除「已經有未完成指派」的保單。
+  // 舊版只排除 assigned_date = today，導致昨天以前指派、顧問還沒審完的保單
+  // 每天 08:00 又被重新指派一次，policy_assignments 因此累積大量重複列。
   const alreadyAssigned = await db.execute({
-    sql: "SELECT policy_uuid FROM policy_assignments WHERE assigned_date = ?",
+    sql: "SELECT DISTINCT policy_uuid FROM policy_assignments WHERE status = 'pending' OR assigned_date = ?",
     args: [today],
   });
   const assignedSet = new Set(alreadyAssigned.rows.map(r => r.policy_uuid as string));

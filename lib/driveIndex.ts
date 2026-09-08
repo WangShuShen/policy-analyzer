@@ -6,6 +6,7 @@ interface DriveIndexEntry {
   rateId?: string;     // 費率 PDF
   specId?: string;     // 說明 PDF（商品說明書）
   productFolder?: string;
+  versionFolder?: string;  // vN — 同一商品的不同版次各有一份條款
 }
 
 export interface DocIds {
