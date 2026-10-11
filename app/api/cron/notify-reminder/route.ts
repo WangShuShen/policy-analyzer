@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit, listAdvisors, type PolicyRow } from "@/lib/db";
+import db, { listAdvisors, type PolicyRow } from "@/lib/db";
+import { policies, policyAssignments } from "@/lib/schema";
+import { and, eq } from "drizzle-orm";
 import { sendReminderEmail, type PolicySummary } from "@/lib/mailer";
 
 function verifySecret(req: NextRequest) {
@@ -11,34 +13,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ensureInit();
-
   const today = new Date().toISOString().slice(0, 10);
 
   // Load policies (uuid → metadata) from Turso for product names
-  const policyRows = await db.execute({ sql: "SELECT * FROM policies", args: [] });
+  const policyRows = await db.select().from(policies);
   const registry: Record<string, PolicyRow> = {};
-  for (const row of policyRows.rows) {
-    const p = row as unknown as PolicyRow;
-    registry[p.uuid] = p;
-  }
+  for (const p of policyRows) registry[p.uuid] = p;
 
   // Find pending (not completed) assignments for today
-  const pending = await db.execute({
-    sql: "SELECT * FROM policy_assignments WHERE assigned_date = ? AND status = 'pending'",
-    args: [today],
-  });
+  const pending = await db.select().from(policyAssignments)
+    .where(and(eq(policyAssignments.assigned_date, today), eq(policyAssignments.status, "pending")));
 
-  if (pending.rows.length === 0) {
+  if (pending.length === 0) {
     return NextResponse.json({ reminded: 0, message: "all done" });
   }
 
   // Group by advisor
   const byAdvisor: Record<string, string[]> = {};
-  for (const row of pending.rows) {
-    const aid = row.advisor_id as string;
+  for (const row of pending) {
+    const aid = row.advisor_id;
     if (!byAdvisor[aid]) byAdvisor[aid] = [];
-    byAdvisor[aid].push(row.policy_uuid as string);
+    byAdvisor[aid].push(row.policy_uuid);
   }
 
   const advisors = await listAdvisors();

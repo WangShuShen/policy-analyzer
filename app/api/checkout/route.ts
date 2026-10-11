@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import db, { ensureInit } from "@/lib/db";
+import db from "@/lib/db";
+import { subscriptions } from "@/lib/schema";
 import { requireIdentity } from "@/lib/auth";
 import { isInternal } from "@/lib/plans";
 import { isPlanId, PLANS } from "@/lib/plans";
@@ -29,11 +30,8 @@ export async function POST(req: NextRequest) {
   const appUrl = process.env.APP_URL || req.nextUrl.origin;
   const tradeNo = newTradeNo();
 
-  await ensureInit();
-  await db.execute({
-    sql: `INSERT INTO subscriptions (id, user_id, plan, status, merchant_trade_no)
-          VALUES (?, ?, ?, 'pending', ?)`,
-    args: [crypto.randomUUID(), auth.advisorId, plan, tradeNo],
+  await db.insert(subscriptions).values({
+    id: crypto.randomUUID(), user_id: auth.advisorId, plan, status: "pending", merchant_trade_no: tradeNo,
   });
 
   const { action, params } = buildSubscriptionForm({ plan, tradeNo, appUrl });

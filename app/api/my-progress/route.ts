@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit } from "@/lib/db";
+import db from "@/lib/db";
+import { policyAssignments } from "@/lib/schema";
+import { and, count, eq } from "drizzle-orm";
 import { verifyJWT } from "@/lib/jwt";
 import { requireAdvisor } from "@/lib/auth";
 
@@ -10,16 +12,15 @@ export async function GET(req: NextRequest) {
   const payload = token ? await verifyJWT(token) : null;
   if (!payload) return NextResponse.json({ total: 0, completed: 0, pending: 0 });
 
-  await ensureInit();
   const today = new Date().toISOString().slice(0, 10);
 
-  const result = await db.execute({
-    sql: "SELECT status, COUNT(*) as cnt FROM policy_assignments WHERE advisor_id = ? AND assigned_date = ? GROUP BY status",
-    args: [payload.advisorId, today],
-  });
+  const result = await db.select({ status: policyAssignments.status, cnt: count() })
+    .from(policyAssignments)
+    .where(and(eq(policyAssignments.advisor_id, payload.advisorId), eq(policyAssignments.assigned_date, today)))
+    .groupBy(policyAssignments.status);
 
   let completed = 0, pending = 0;
-  for (const row of result.rows) {
+  for (const row of result) {
     if (row.status === "completed") completed = Number(row.cnt);
     else pending += Number(row.cnt);
   }

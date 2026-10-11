@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit, listAdvisors } from "@/lib/db";
+import db, { listAdvisors } from "@/lib/db";
+import { advisors } from "@/lib/schema";
+import { eq } from "drizzle-orm";
 import { verifyJWT } from "@/lib/jwt";
 
 async function requireAdmin(req: NextRequest) {
@@ -14,9 +16,7 @@ export async function GET(req: NextRequest) {
   if (!(await requireAdmin(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  await ensureInit();
-  const advisors = await listAdvisors();
-  return NextResponse.json({ advisors });
+  return NextResponse.json({ advisors: await listAdvisors() });
 }
 
 export async function POST(req: NextRequest) {
@@ -31,13 +31,9 @@ export async function POST(req: NextRequest) {
   }
 
   const emailLower = email.toLowerCase().trim();
-  await ensureInit();
 
   const id = crypto.randomUUID();
-  await db.execute({
-    sql: "INSERT INTO advisors (id, email, name, is_admin) VALUES (?, ?, ?, ?)",
-    args: [id, emailLower, name.trim(), is_admin ? 1 : 0],
-  });
+  await db.insert(advisors).values({ id, email: emailLower, name: name.trim(), is_admin: is_admin ? 1 : 0 });
 
   return NextResponse.json({ success: true, id });
 }
@@ -53,24 +49,16 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "id 為必填" }, { status: 400 });
   }
 
-  await ensureInit();
+  const updates: Partial<typeof advisors.$inferInsert> = {};
+  if (is_active !== undefined) updates.is_active = is_active ? 1 : 0;
+  if (is_admin !== undefined) updates.is_admin = is_admin ? 1 : 0;
+  if (name !== undefined) updates.name = name;
 
-  const updates: string[] = [];
-  const args: (string | number)[] = [];
-
-  if (is_active !== undefined) { updates.push("is_active = ?"); args.push(is_active ? 1 : 0); }
-  if (is_admin !== undefined) { updates.push("is_admin = ?"); args.push(is_admin ? 1 : 0); }
-  if (name !== undefined) { updates.push("name = ?"); args.push(name); }
-
-  if (updates.length === 0) {
+  if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "沒有要更新的欄位" }, { status: 400 });
   }
 
-  args.push(id);
-  await db.execute({
-    sql: `UPDATE advisors SET ${updates.join(", ")} WHERE id = ?`,
-    args,
-  });
+  await db.update(advisors).set(updates).where(eq(advisors.id, id));
 
   return NextResponse.json({ success: true });
 }
@@ -83,7 +71,6 @@ export async function DELETE(req: NextRequest) {
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error: "id 為必填" }, { status: 400 });
 
-  await ensureInit();
-  await db.execute({ sql: "DELETE FROM advisors WHERE id = ?", args: [id] });
+  await db.delete(advisors).where(eq(advisors.id, id));
   return NextResponse.json({ success: true });
 }

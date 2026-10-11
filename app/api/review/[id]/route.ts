@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit, type PolicyRow } from "@/lib/db";
+import db, { nowText } from "@/lib/db";
+import { policies, policyAssignments } from "@/lib/schema";
+import { and, eq } from "drizzle-orm";
 import { verifyJWT } from "@/lib/jwt";
 import { requireAdvisor } from "@/lib/auth";
 
@@ -12,12 +14,10 @@ export async function GET(
   if (guard instanceof NextResponse) return guard;
   try {
     const { id } = await params;
-    await ensureInit();
-    const r = await db.execute({ sql: "SELECT * FROM policies WHERE uuid = ?", args: [id] });
-    if (r.rows.length === 0) {
+    const [policy] = await db.select().from(policies).where(eq(policies.uuid, id)).limit(1);
+    if (!policy) {
       return NextResponse.json({ error: "找不到此保單" }, { status: 404 });
     }
-    const policy = r.rows[0] as unknown as PolicyRow;
     if (!policy.analysis_json) {
       return NextResponse.json({ error: "此保單尚未分析" }, { status: 404 });
     }
@@ -37,21 +37,18 @@ export async function PUT(
   try {
     const { id } = await params;
     const { data } = await req.json();
-    await ensureInit();
-
-    const r = await db.execute({ sql: "SELECT analysis_json FROM policies WHERE uuid = ?", args: [id] });
-    if (r.rows.length === 0) {
+    const [row] = await db.select({ analysis_json: policies.analysis_json }).from(policies)
+      .where(eq(policies.uuid, id)).limit(1);
+    if (!row) {
       return NextResponse.json({ error: "找不到此保單" }, { status: 404 });
     }
 
-    const existingRaw = r.rows[0].analysis_json as string | null;
+    const existingRaw = row.analysis_json;
     const existing = existingRaw ? JSON.parse(existingRaw) : {};
     const updated = { ...existing, ...data };
 
-    await db.execute({
-      sql: "UPDATE policies SET analysis_json = ?, updated_at = datetime('now') WHERE uuid = ?",
-      args: [JSON.stringify(updated), id],
-    });
+    await db.update(policies).set({ analysis_json: JSON.stringify(updated), updated_at: nowText })
+      .where(eq(policies.uuid, id));
 
     return NextResponse.json({ success: true });
   } catch (err) {
@@ -68,27 +65,25 @@ export async function PATCH(
   if (guard instanceof NextResponse) return guard;
   try {
     const { id } = await params;
-    await ensureInit();
-
-    const r = await db.execute({ sql: "SELECT uuid FROM policies WHERE uuid = ?", args: [id] });
-    if (r.rows.length === 0) {
+    const [found] = await db.select({ uuid: policies.uuid }).from(policies).where(eq(policies.uuid, id)).limit(1);
+    if (!found) {
       return NextResponse.json({ error: "找不到此保單" }, { status: 404 });
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    await db.execute({
-      sql: "UPDATE policies SET status = 'archived', archived_at = ?, updated_at = datetime('now') WHERE uuid = ?",
-      args: [today, id],
-    });
+    await db.update(policies).set({ status: "archived", archived_at: today, updated_at: nowText })
+      .where(eq(policies.uuid, id));
 
     // Mark today's assignment for the current advisor as completed
     const token = req.cookies.get("auth_token")?.value;
     const payload = token ? await verifyJWT(token) : null;
     if (payload) {
-      await db.execute({
-        sql: "UPDATE policy_assignments SET status = 'completed', completed_at = datetime('now') WHERE policy_uuid = ? AND advisor_id = ? AND assigned_date = ?",
-        args: [id, payload.advisorId, today],
-      });
+      await db.update(policyAssignments).set({ status: "completed", completed_at: nowText })
+        .where(and(
+          eq(policyAssignments.policy_uuid, id),
+          eq(policyAssignments.advisor_id, payload.advisorId),
+          eq(policyAssignments.assigned_date, today),
+        ));
     }
 
     return NextResponse.json({ success: true });

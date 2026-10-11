@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit } from "@/lib/db";
+import db, { nowText } from "@/lib/db";
+import { payments, subscriptions, users } from "@/lib/schema";
+import { eq, sql } from "drizzle-orm";
 import { verifyCheckMacValue } from "@/lib/ecpay";
 import { isPlanId } from "@/lib/plans";
 
@@ -37,40 +39,30 @@ export async function POST(req: NextRequest) {
   const rtnCode = Number(payload.RtnCode ?? 0);
   const amount = Number(payload.TradeAmt ?? payload.PeriodAmount ?? 0);
 
-  await ensureInit();
-
-  const sub = await db.execute({
-    sql: "SELECT id, user_id, plan, status FROM subscriptions WHERE merchant_trade_no = ?",
-    args: [merchantTradeNo],
-  });
-  const row = sub.rows[0];
+  const [row] = await db.select({ id: subscriptions.id, user_id: subscriptions.user_id, plan: subscriptions.plan, status: subscriptions.status })
+    .from(subscriptions).where(eq(subscriptions.merchant_trade_no, merchantTradeNo)).limit(1);
   if (!row) {
     // 查無訂單仍回 OK，避免綠界無止境重送；但記錄下來以便追查。
     console.error("[ecpay] 查無對應訂單", merchantTradeNo);
     return ok();
   }
 
-  const userId = row.user_id as string;
-  const plan = row.plan as string;
+  const userId = row.user_id;
+  const plan = row.plan;
 
   // 冪等：同一筆 (MerchantTradeNo, TradeNo) 只會成功寫入一次。
-  const inserted = await db.execute({
-    sql: `INSERT OR IGNORE INTO payments
-            (merchant_trade_no, trade_no, user_id, plan, amount, rtn_code, rtn_msg, raw)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      merchantTradeNo,
-      tradeNo,
-      userId,
-      plan,
-      amount,
-      rtnCode,
-      payload.RtnMsg ?? "",
-      JSON.stringify(payload),
-    ],
-  });
+  const inserted = await db.insert(payments).values({
+    merchant_trade_no: merchantTradeNo,
+    trade_no: tradeNo,
+    user_id: userId,
+    plan,
+    amount,
+    rtn_code: rtnCode,
+    rtn_msg: payload.RtnMsg ?? "",
+    raw: JSON.stringify(payload),
+  }).onConflictDoNothing().returning({ id: payments.id });
 
-  if (inserted.rowsAffected === 0) {
+  if (inserted.length === 0) {
     // 重送，先前已處理過。
     return ok();
   }
@@ -78,32 +70,20 @@ export async function POST(req: NextRequest) {
   const success = rtnCode === 1;
 
   if (success && isPlanId(plan)) {
-    await db.execute({
-      sql: `UPDATE subscriptions
-            SET status = 'active', gwsr = ?, current_period_end = ?, fail_count = 0,
-                updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [payload.gwsr ?? null, addMonth(), row.id as string],
-    });
-    await db.execute({
-      sql: "UPDATE users SET plan = ?, plan_expires_at = ? WHERE id = ?",
-      args: [plan, addMonth(), userId],
-    });
+    await db.update(subscriptions)
+      .set({ status: "active", gwsr: payload.gwsr ?? null, current_period_end: addMonth(), fail_count: 0, updated_at: nowText })
+      .where(eq(subscriptions.id, row.id));
+    await db.update(users).set({ plan, plan_expires_at: addMonth() }).where(eq(users.id, userId));
   } else if (!success) {
     // 扣款失敗：累計次數。綠界規則為連續失敗 6 次自動終止，
     // 我方在第 3 次先降回免費版，但保留資料不刪。
-    const failed = await db.execute({
-      sql: `UPDATE subscriptions
-            SET fail_count = fail_count + 1, status = 'failed', updated_at = datetime('now')
-            WHERE id = ? RETURNING fail_count`,
-      args: [row.id as string],
-    });
-    const failCount = Number(failed.rows[0]?.fail_count ?? 1);
+    const [failed] = await db.update(subscriptions)
+      .set({ fail_count: sql`${subscriptions.fail_count} + 1`, status: "failed", updated_at: nowText })
+      .where(eq(subscriptions.id, row.id))
+      .returning({ fail_count: subscriptions.fail_count });
+    const failCount = failed?.fail_count ?? 1;
     if (failCount >= 3) {
-      await db.execute({
-        sql: "UPDATE users SET plan = 'free' WHERE id = ?",
-        args: [userId],
-      });
+      await db.update(users).set({ plan: "free" }).where(eq(users.id, userId));
     }
   }
 

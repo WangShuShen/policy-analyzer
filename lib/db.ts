@@ -1,217 +1,59 @@
-import { createClient } from "@libsql/client";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { eq, and, desc, sql, type AnyColumn } from "drizzle-orm";
+import { Pool } from "pg";
+import * as schema from "./schema";
+import { advisors, users, nowText } from "./schema";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || "file:./data/policies.db",
-  authToken: process.env.TURSO_AUTH_TOKEN,
+/*
+ * Postgres（Neon）連線。結構定義在 lib/schema.ts，變更一律走 migrations/（設計準則 §1）。
+ * 連線字串用 Neon 的 pooled URL（-pooler），serverless 每個實例只開少量連線。
+ * 開發模式下快取在 globalThis，避免熱重載時每次都開新的 Pool。
+ */
+type DB = NodePgDatabase<typeof schema>;
+const g = globalThis as unknown as { __radiaPool?: Pool; __radiaDb?: DB };
+
+function connect(): DB {
+  if (g.__radiaDb) return g.__radiaDb;
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("缺少 DATABASE_URL 環境變數");
+  g.__radiaPool = new Pool({ connectionString: url, max: 5 });
+  g.__radiaDb = drizzle(g.__radiaPool, { schema });
+  return g.__radiaDb;
+}
+
+// 延遲到第一次使用才連線：build 階段沒有 DATABASE_URL 也不會失敗
+const db = new Proxy({} as DB, {
+  get: (_t, prop) => {
+    const real = connect();
+    const v = Reflect.get(real, prop);
+    return typeof v === "function" ? v.bind(real) : v;
+  },
 });
+export default db;
+export { nowText };
 
-let initPromise: Promise<void> | null = null;
-
-export async function ensureInit(): Promise<void> {
-  if (initPromise) return initPromise;
-  initPromise = db.batch([
-    `CREATE TABLE IF NOT EXISTS companies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL REFERENCES companies(id),
-      product_name TEXT NOT NULL,
-      plan_code TEXT NOT NULL,
-      plan_type TEXT,
-      year TEXT,
-      version TEXT,
-      category TEXT,
-      coverage_template TEXT NOT NULL,
-      file_path TEXT,
-      verified INTEGER NOT NULL DEFAULT 0,
-      formula_json TEXT,
-      formula_verified INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(company_id, plan_code, plan_type, year, version)
-    )`,
-    `CREATE TABLE IF NOT EXISTS analyses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      insured_amount TEXT NOT NULL,
-      analysis_json TEXT NOT NULL,
-      file_path TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS corrections (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      field_path TEXT NOT NULL,
-      old_value TEXT,
-      new_value TEXT NOT NULL,
-      note TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS advisors (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      is_admin INTEGER NOT NULL DEFAULT 0,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS policy_assignments (
-      id TEXT PRIMARY KEY,
-      policy_uuid TEXT NOT NULL,
-      advisor_id TEXT NOT NULL REFERENCES advisors(id),
-      assigned_date TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      completed_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(policy_uuid, assigned_date)
-    )`,
-    // 客戶帳號（訂閱制使用者）。與內部顧問白名單 advisors 刻意分離：
-    // advisors 是員工，users 是付費客戶，兩者權限與生命週期完全不同。
-    `CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      plan TEXT NOT NULL DEFAULT 'free',
-      plan_expires_at TEXT,
-      quota_used INTEGER NOT NULL DEFAULT 0,
-      quota_reset_at TEXT,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      last_login_at TEXT
-    )`,
-    // 每月用量計數。period 為 YYYY-MM，換月自然產生新列，
-    // 因此「每月重置」是隱含行為，不需要排程去歸零。
-    `CREATE TABLE IF NOT EXISTS usage_counters (
-      user_id TEXT NOT NULL,
-      period TEXT NOT NULL,
-      action TEXT NOT NULL,
-      count INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (user_id, period, action)
-    )`,
-    // 訂閱狀態（一位使用者同時只會有一筆 active）
-    `CREATE TABLE IF NOT EXISTS subscriptions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      plan TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      merchant_trade_no TEXT NOT NULL UNIQUE,
-      gwsr TEXT,
-      current_period_end TEXT,
-      fail_count INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-    // 每次扣款的原始紀錄。(merchant_trade_no, trade_no) 唯一，
-    // 綠界重送 webhook 時據此做冪等，不會重複加值。
-    `CREATE TABLE IF NOT EXISTS payments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      merchant_trade_no TEXT NOT NULL,
-      trade_no TEXT NOT NULL,
-      user_id TEXT,
-      plan TEXT,
-      amount INTEGER,
-      rtn_code INTEGER,
-      rtn_msg TEXT,
-      raw TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(merchant_trade_no, trade_no)
-    )`,
-    // 審核流程的唯一真實來源（取代本機 uuid_registry.json + analyzed/*.json）
-    `CREATE TABLE IF NOT EXISTS policies (
-      uuid TEXT PRIMARY KEY,
-      plan_code TEXT NOT NULL,
-      company TEXT,
-      product_name TEXT,
-      pdf_drive_id TEXT,
-      rate_drive_id TEXT,
-      filename TEXT,
-      category TEXT,
-      status TEXT NOT NULL DEFAULT 'uploaded',
-      analysis_json TEXT,
-      uploaded_at TEXT,
-      archived_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
-  ], "write")
-    // CREATE TABLE IF NOT EXISTS 不會替既有資料表補欄位，故追加欄位遷移。
-    .then(() => ensureColumn("analyses", "user_id", "user_id TEXT"))
-    // rate_drive_id 早已寫在建表語句裡，但先前建立的資料表沒有這個欄位，
-    // 導致 cron 讀到 undefined、費率表被靜默略過（不會報錯，所以一直沒被發現）。
-    .then(() => ensureColumn("policies", "rate_drive_id", "rate_drive_id TEXT"))
-    .then(() => undefined);
-  return initPromise;
-}
-
-/** 補欄位用的簡易遷移：欄位已存在就跳過。 */
-async function ensureColumn(table: string, column: string, ddl: string): Promise<void> {
-  const info = await db.execute(`PRAGMA table_info(${table})`);
-  const exists = info.rows.some(r => (r.name as string) === column);
-  if (!exists) {
-    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
-  }
-}
+/*
+ * 空值排序與舊 SQLite 一致：SQLite 把 NULL 當最小（ASC 在前、DESC 在後），
+ * Postgres 預設相反。可為空的欄位排序一律用這兩個，否則清單順序會悄悄改變。
+ */
+export const ascNullsFirst = (c: AnyColumn) => sql`${c} ASC NULLS FIRST`;
+export const descNullsLast = (c: AnyColumn) => sql`${c} DESC NULLS LAST`;
 
 export async function getAdvisorByEmail(email: string): Promise<AdvisorRow | null> {
-  await ensureInit();
-  const result = await db.execute({
-    sql: "SELECT * FROM advisors WHERE email = ? AND is_active = 1",
-    args: [email],
-  });
-  if (result.rows.length === 0) return null;
-  const r = result.rows[0];
-  return {
-    id: r.id as string,
-    email: r.email as string,
-    name: r.name as string,
-    is_admin: r.is_admin as number,
-    is_active: r.is_active as number,
-    created_at: r.created_at as string,
-  };
+  const rows = await db.select().from(advisors)
+    .where(and(eq(advisors.email, email), eq(advisors.is_active, 1))).limit(1);
+  return rows[0] ?? null;
 }
 
 export async function listAdvisors(): Promise<AdvisorRow[]> {
-  await ensureInit();
-  const result = await db.execute("SELECT * FROM advisors ORDER BY created_at DESC");
-  return result.rows.map(r => ({
-    id: r.id as string,
-    email: r.email as string,
-    name: r.name as string,
-    is_admin: r.is_admin as number,
-    is_active: r.is_active as number,
-    created_at: r.created_at as string,
-  }));
+  return db.select().from(advisors).orderBy(desc(advisors.created_at));
 }
 
 // ── 客戶帳號（訂閱制） ──────────────────────────────────────────────
 
-function mapUser(r: Record<string, unknown>): UserRow {
-  return {
-    id: r.id as string,
-    email: r.email as string,
-    name: r.name as string,
-    plan: r.plan as string,
-    plan_expires_at: (r.plan_expires_at as string) ?? null,
-    quota_used: Number(r.quota_used ?? 0),
-    quota_reset_at: (r.quota_reset_at as string) ?? null,
-    is_active: Number(r.is_active ?? 1),
-    created_at: r.created_at as string,
-    last_login_at: (r.last_login_at as string) ?? null,
-  };
-}
-
 export async function getUserByEmail(email: string): Promise<UserRow | null> {
-  await ensureInit();
-  const result = await db.execute({
-    sql: "SELECT * FROM users WHERE email = ?",
-    args: [email],
-  });
-  if (result.rows.length === 0) return null;
-  return mapUser(result.rows[0] as unknown as Record<string, unknown>);
+  const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return rows[0] ?? null;
 }
 
 /**
@@ -224,40 +66,25 @@ export async function upsertUserOnLogin(
 ): Promise<{ user: UserRow; justCreated: boolean }> {
   const existing = await getUserByEmail(email);
   if (existing) {
-    await db.execute({
-      sql: "UPDATE users SET last_login_at = datetime('now'), name = ? WHERE id = ?",
-      args: [name, existing.id],
-    });
+    await db.update(users).set({ last_login_at: nowText, name }).where(eq(users.id, existing.id));
     return { user: { ...existing, name, last_login_at: new Date().toISOString() }, justCreated: false };
   }
 
-  const id = crypto.randomUUID();
-  await db.execute({
-    sql: `INSERT INTO users (id, email, name, plan, last_login_at)
-          VALUES (?, ?, ?, 'free', datetime('now'))`,
-    args: [id, email, name],
-  });
-  const created = await getUserByEmail(email);
+  const [created] = await db.insert(users)
+    .values({ id: crypto.randomUUID(), email, name, plan: "free", last_login_at: nowText })
+    .returning();
   if (!created) throw new Error("建立使用者後查詢失敗");
   return { user: created, justCreated: true };
 }
 
-export interface UserRow {
-  id: string;
-  email: string;
-  name: string;
-  plan: string;
-  plan_expires_at: string | null;
-  quota_used: number;
-  quota_reset_at: string | null;
-  is_active: number;
-  created_at: string;
-  last_login_at: string | null;
-}
+export type UserRow = typeof users.$inferSelect;
+export type AdvisorRow = typeof advisors.$inferSelect;
+export type ProductRow = typeof schema.products.$inferSelect;
+export type AnalysisRow = typeof schema.analyses.$inferSelect;
+export type CorrectionRow = typeof schema.corrections.$inferSelect;
+export type PolicyRow = typeof schema.policies.$inferSelect;
 
-export default db;
-
-// ── Types ──────────────────────────────────────────────────────────
+// ── 給付公式型別（審核頁與試算共用）──────────────────────────────
 
 // 金額來源（位階由高到低）：計劃 > 附表/單位別 > 保額計算 > 定額
 // 有計劃別就帶計劃撈值、有附表就查表、否則用保額算、再否則定額
@@ -303,67 +130,4 @@ export interface FormulaJson {
   items: FormulaItem[];
   filled_by: string;
   filled_at: string;
-}
-
-export interface ProductRow {
-  id: number;
-  company_id: number;
-  product_name: string;
-  plan_code: string;
-  plan_type: string | null;
-  year: string | null;
-  version: string | null;
-  category: string | null;
-  coverage_template: string;
-  file_path: string | null;
-  verified: number;
-  formula_json: string | null;
-  formula_verified: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AnalysisRow {
-  id: number;
-  product_id: number;
-  insured_amount: string;
-  analysis_json: string;
-  file_path: string | null;
-  created_at: string;
-}
-
-export interface CorrectionRow {
-  id: number;
-  product_id: number;
-  field_path: string;
-  old_value: string | null;
-  new_value: string;
-  note: string | null;
-  created_at: string;
-}
-
-export interface AdvisorRow {
-  id: string;
-  email: string;
-  name: string;
-  is_admin: number;
-  is_active: number;
-  created_at: string;
-}
-
-export interface PolicyRow {
-  uuid: string;
-  plan_code: string;
-  company: string | null;
-  product_name: string | null;
-  pdf_drive_id: string | null;
-  rate_drive_id: string | null;
-  filename: string | null;
-  category: string | null;
-  status: string; // uploaded | archived | failed
-  analysis_json: string | null;
-  uploaded_at: string | null;
-  archived_at: string | null;
-  created_at: string;
-  updated_at: string;
 }

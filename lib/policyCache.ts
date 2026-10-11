@@ -1,14 +1,22 @@
-import db, { ensureInit } from "./db";
+import db, { nowText, descNullsLast } from "./db";
 import type { ProductRow, AnalysisRow } from "./db";
+import { companies, products, analyses, corrections } from "./schema";
+import { and, asc, desc, eq, ilike, isNotNull, isNull, notLike, like, or, sql, type SQL } from "drizzle-orm";
 import fs from "fs";
+
+/** 可為 NULL 的欄位比對：值為空時比 IS NULL（SQL 的 = NULL 永遠不成立） */
+const eqOrNull = (col: Parameters<typeof eq>[0], v: string | undefined) =>
+  v == null ? isNull(col) : eq(col, v);
 
 // ── Company ─────────────────────────────────────────────────────────
 
 async function upsertCompany(name: string): Promise<number> {
-  const existing = await db.execute({ sql: "SELECT id FROM companies WHERE name = ?", args: [name] });
-  if (existing.rows[0]) return Number(existing.rows[0]["id"]);
-  const result = await db.execute({ sql: "INSERT INTO companies (name) VALUES (?)", args: [name] });
-  return Number(result.lastInsertRowid);
+  const existing = await db.select({ id: companies.id }).from(companies).where(eq(companies.name, name)).limit(1);
+  if (existing[0]) return existing[0].id;
+  const [row] = await db.insert(companies).values({ name })
+    .onConflictDoUpdate({ target: companies.name, set: { name } })   // 併發時另一個請求剛建好也拿得到 id
+    .returning({ id: companies.id });
+  return row.id;
 }
 
 // ── Product lookup ───────────────────────────────────────────────────
@@ -22,45 +30,30 @@ export interface LookupKey {
 }
 
 export async function findProduct(key: LookupKey): Promise<ProductRow | undefined> {
-  await ensureInit();
-  const companyResult = await db.execute({
-    sql: "SELECT id FROM companies WHERE name = ?",
-    args: [key.company],
-  });
-  if (!companyResult.rows[0]) return undefined;
-  const companyId = Number(companyResult.rows[0]["id"]);
+  const company = await db.select({ id: companies.id }).from(companies).where(eq(companies.name, key.company)).limit(1);
+  if (!company[0]) return undefined;
 
-  const result = await db.execute({
-    sql: `SELECT * FROM products
-          WHERE company_id = ?
-            AND plan_code = ?
-            AND (plan_type = ? OR (plan_type IS NULL AND ? IS NULL))
-            AND (year = ? OR (year IS NULL AND ? IS NULL))
-            AND (version = ? OR (version IS NULL AND ? IS NULL))
-          ORDER BY verified DESC, updated_at DESC
-          LIMIT 1`,
-    args: [
-      companyId,
-      key.planCode,
-      key.planType ?? null, key.planType ?? null,
-      key.year ?? null, key.year ?? null,
-      key.version ?? null, key.version ?? null,
-    ],
-  });
-  return result.rows[0] ? (result.rows[0] as unknown as ProductRow) : undefined;
+  const rows = await db.select().from(products)
+    .where(and(
+      eq(products.company_id, company[0].id),
+      eq(products.plan_code, key.planCode),
+      eqOrNull(products.plan_type, key.planType),
+      eqOrNull(products.year, key.year),
+      eqOrNull(products.version, key.version),
+    ))
+    .orderBy(desc(products.verified), desc(products.updated_at))
+    .limit(1);
+  return rows[0];
 }
 
 // ── Apply corrections to a coverage template ────────────────────────
 
 export async function applyCorrections(productId: number, data: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const result = await db.execute({
-    sql: "SELECT field_path, new_value FROM corrections WHERE product_id = ? ORDER BY created_at ASC",
-    args: [productId],
-  });
+  const rows = await db.select({ field_path: corrections.field_path, new_value: corrections.new_value })
+    .from(corrections).where(eq(corrections.product_id, productId)).orderBy(asc(corrections.created_at), asc(corrections.id));
 
-  const corrections = result.rows as unknown as { field_path: string; new_value: string }[];
   const output = JSON.parse(JSON.stringify(data));
-  for (const c of corrections) {
+  for (const c of rows) {
     setNestedValue(output, c.field_path, c.new_value);
   }
   return output;
@@ -95,7 +88,6 @@ export interface StoreParams {
 }
 
 export async function storeAnalysis(params: StoreParams): Promise<{ productId: number; analysisId: number }> {
-  await ensureInit();
   const companyId = await upsertCompany(params.company);
 
   const existing = await findProduct({
@@ -108,53 +100,38 @@ export async function storeAnalysis(params: StoreParams): Promise<{ productId: n
 
   let productId: number;
   if (existing) {
-    await db.execute({
-      sql: `UPDATE products SET
-              product_name = ?, category = ?, coverage_template = ?,
-              file_path = COALESCE(?, file_path), updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [
-        params.productName,
-        params.category ?? null,
-        JSON.stringify(params.coverageTemplate),
-        params.filePath ?? null,
-        existing.id,
-      ],
-    });
+    await db.update(products).set({
+      product_name: params.productName,
+      category: params.category ?? null,
+      coverage_template: JSON.stringify(params.coverageTemplate),
+      file_path: sql`COALESCE(${params.filePath ?? null}, ${products.file_path})`,
+      updated_at: nowText,
+    }).where(eq(products.id, existing.id));
     productId = existing.id;
   } else {
-    const result = await db.execute({
-      sql: `INSERT INTO products
-              (company_id, product_name, plan_code, plan_type, year, version, category, coverage_template, file_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        companyId,
-        params.productName,
-        params.planCode,
-        params.planType ?? null,
-        params.year ?? null,
-        params.version ?? null,
-        params.category ?? null,
-        JSON.stringify(params.coverageTemplate),
-        params.filePath ?? null,
-      ],
-    });
-    productId = Number(result.lastInsertRowid);
+    const [row] = await db.insert(products).values({
+      company_id: companyId,
+      product_name: params.productName,
+      plan_code: params.planCode,
+      plan_type: params.planType ?? null,
+      year: params.year ?? null,
+      version: params.version ?? null,
+      category: params.category ?? null,
+      coverage_template: JSON.stringify(params.coverageTemplate),
+      file_path: params.filePath ?? null,
+    }).returning({ id: products.id });
+    productId = row.id;
   }
 
-  const analysisResult = await db.execute({
-    sql: `INSERT INTO analyses (product_id, insured_amount, analysis_json, file_path, user_id)
-          VALUES (?, ?, ?, ?, ?)`,
-    args: [
-      productId,
-      params.insuredAmount,
-      JSON.stringify(params.analysisJson),
-      params.filePath ?? null,
-      params.userId ?? null,
-    ],
-  });
+  const [analysis] = await db.insert(analyses).values({
+    product_id: productId,
+    insured_amount: params.insuredAmount,
+    analysis_json: JSON.stringify(params.analysisJson),
+    file_path: params.filePath ?? null,
+    user_id: params.userId ?? null,
+  }).returning({ id: analyses.id });
 
-  return { productId, analysisId: Number(analysisResult.lastInsertRowid) };
+  return { productId, analysisId: analysis.id };
 }
 
 // ── Save correction ──────────────────────────────────────────────────
@@ -166,29 +143,20 @@ export async function saveCorrection(params: {
   newValue: string;
   note?: string;
 }): Promise<void> {
-  await ensureInit();
-  await db.execute({
-    sql: `INSERT INTO corrections (product_id, field_path, old_value, new_value, note)
-          VALUES (?, ?, ?, ?, ?)`,
-    args: [
-      params.productId,
-      params.fieldPath,
-      params.oldValue ?? null,
-      params.newValue,
-      params.note ?? null,
-    ],
+  await db.insert(corrections).values({
+    product_id: params.productId,
+    field_path: params.fieldPath,
+    old_value: params.oldValue ?? null,
+    new_value: params.newValue,
+    note: params.note ?? null,
   });
 
-  const productResult = await db.execute({
-    sql: "SELECT coverage_template FROM products WHERE id = ?",
-    args: [params.productId],
-  });
-  const product = productResult.rows[0] as unknown as { coverage_template: string };
+  const [product] = await db.select({ coverage_template: products.coverage_template })
+    .from(products).where(eq(products.id, params.productId)).limit(1);
   const updated = await applyCorrections(params.productId, JSON.parse(product.coverage_template));
-  await db.execute({
-    sql: "UPDATE products SET coverage_template = ?, updated_at = datetime('now'), verified = 1 WHERE id = ?",
-    args: [JSON.stringify(updated), params.productId],
-  });
+  await db.update(products)
+    .set({ coverage_template: JSON.stringify(updated), updated_at: nowText, verified: 1 })
+    .where(eq(products.id, params.productId));
 }
 
 // ── Product search ────────────────────────────────────────────────────
@@ -205,74 +173,51 @@ export async function searchProducts(params: {
   activeOnly?: boolean;
   limit?: number;
 }): Promise<ProductSearchResult[]> {
-  await ensureInit();
   const { company, keyword, category, activeOnly, limit = 500 } = params;
 
-  const conditions: string[] = [];
-  const args: (string | number)[] = [];
-
-  if (company) {
-    conditions.push("c.name = ?");
-    args.push(company);
-  }
-  if (keyword) {
-    conditions.push("(p.product_name LIKE ? OR p.plan_code LIKE ?)");
-    args.push(`%${keyword}%`, `%${keyword}%`);
-  }
-  if (category) {
-    conditions.push("p.category = ?");
-    args.push(category);
-  }
+  const conds: SQL[] = [];
+  if (company) conds.push(eq(companies.name, company));
+  // SQLite 的 LIKE 不分大小寫，Postgres 要用 ILIKE 才維持原本行為（例如 plan_code 英文字母）
+  if (keyword) conds.push(or(ilike(products.product_name, `%${keyword}%`), ilike(products.plan_code, `%${keyword}%`))!);
+  if (category) conds.push(eq(products.category, category));
   if (activeOnly) {
-    conditions.push(
-      `(p.coverage_template NOT LIKE '%"_source":"tii_catalog"%' OR p.coverage_template LIKE '%"_active":true%')`
-    );
+    conds.push(or(
+      notLike(products.coverage_template, '%"_source":"tii_catalog"%'),
+      like(products.coverage_template, '%"_active":true%'),
+    )!);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const result = await db.execute({
-    sql: `SELECT p.*, c.name AS company,
-            (SELECT a.analysis_json FROM analyses a WHERE a.product_id = p.id ORDER BY a.created_at DESC LIMIT 1) AS latest_analysis
-          FROM products p
-          JOIN companies c ON p.company_id = c.id
-          ${where}
-          ORDER BY c.name ASC, p.product_name ASC, p.year DESC
-          LIMIT ?`,
-    args: [...args, limit],
-  });
-  return result.rows as unknown as ProductSearchResult[];
+  const latest = sql<string | null>`(SELECT a.analysis_json FROM analyses a WHERE a.product_id = ${products.id} ORDER BY a.created_at DESC LIMIT 1)`;
+  const rows = await db.select({ product: products, company: companies.name, latest_analysis: latest })
+    .from(products)
+    .innerJoin(companies, eq(products.company_id, companies.id))
+    .where(conds.length ? and(...conds) : undefined)
+    .orderBy(asc(companies.name), asc(products.product_name), descNullsLast(products.year))
+    .limit(limit);
+  return rows.map(r => ({ ...r.product, company: r.company, latest_analysis: r.latest_analysis ?? undefined }));
 }
 
 export async function getCompanies(): Promise<string[]> {
-  await ensureInit();
-  const result = await db.execute({ sql: "SELECT name FROM companies ORDER BY name ASC", args: [] });
-  return result.rows.map(r => r["name"] as string);
+  const rows = await db.select({ name: companies.name }).from(companies).orderBy(asc(companies.name));
+  return rows.map(r => r.name);
 }
 
 export async function getCategories(): Promise<string[]> {
-  await ensureInit();
-  const result = await db.execute({
-    sql: "SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category ASC",
-    args: [],
-  });
-  return result.rows.map(r => r["category"] as string);
+  const rows = await db.selectDistinct({ category: products.category }).from(products)
+    .where(isNotNull(products.category)).orderBy(asc(products.category));
+  return rows.map(r => r.category as string);
 }
 
 // ── Recent analyses (for history UI) ─────────────────────────────────
 
 export async function recentAnalyses(limit = 20): Promise<(AnalysisRow & { company: string; product_name: string; plan_code: string })[]> {
-  await ensureInit();
-  const result = await db.execute({
-    sql: `SELECT a.*, c.name AS company, p.product_name, p.plan_code
-          FROM analyses a
-          JOIN products p ON a.product_id = p.id
-          JOIN companies c ON p.company_id = c.id
-          ORDER BY a.created_at DESC
-          LIMIT ?`,
-    args: [limit],
-  });
-  return result.rows as unknown as (AnalysisRow & { company: string; product_name: string; plan_code: string })[];
+  const rows = await db.select({ a: analyses, company: companies.name, product_name: products.product_name, plan_code: products.plan_code })
+    .from(analyses)
+    .innerJoin(products, eq(analyses.product_id, products.id))
+    .innerJoin(companies, eq(products.company_id, companies.id))
+    .orderBy(desc(analyses.created_at))
+    .limit(limit);
+  return rows.map(r => ({ ...r.a, company: r.company, product_name: r.product_name, plan_code: r.plan_code }));
 }
 
 // ── Catalog seed from TII JSON ────────────────────────────────────────
@@ -289,7 +234,6 @@ export interface CatalogEntry {
 }
 
 export async function seedFromCatalog(catalogPath: string): Promise<{ inserted: number; skipped: number }> {
-  await ensureInit();
   const raw = fs.readFileSync(catalogPath, "utf8");
   const entries: CatalogEntry[] = JSON.parse(raw);
 
@@ -315,20 +259,15 @@ export async function seedFromCatalog(catalogPath: string): Promise<{ inserted: 
         _active: e.active,
       });
       try {
-        const res = await db.execute({
-          sql: `INSERT OR IGNORE INTO products
-                  (company_id, product_name, plan_code, category, year, coverage_template)
-                VALUES (?, ?, ?, ?, ?, ?)`,
-          args: [
-            companyIds[e.company],
-            e.productName,
-            e.planCode,
-            e.category || null,
-            e.year || null,
-            template,
-          ],
-        });
-        if (Number(res.rowsAffected) > 0) inserted++;
+        const res = await db.insert(products).values({
+          company_id: companyIds[e.company],
+          product_name: e.productName,
+          plan_code: e.planCode,
+          category: e.category || null,
+          year: e.year || null,
+          coverage_template: template,
+        }).onConflictDoNothing().returning({ id: products.id });
+        if (res.length > 0) inserted++;
         else skipped++;
       } catch {
         skipped++;

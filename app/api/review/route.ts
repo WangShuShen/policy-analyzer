@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit, type PolicyRow } from "@/lib/db";
+import db, { descNullsLast, type PolicyRow } from "@/lib/db";
+import { policies, policyAssignments } from "@/lib/schema";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { verifyJWT } from "@/lib/jwt";
 import { requireAdvisor } from "@/lib/auth";
 import { getDocIds } from "@/lib/driveIndex";
@@ -46,14 +48,12 @@ export async function GET(req: NextRequest) {
   const guard = await requireAdvisor(req);
   if (guard instanceof NextResponse) return guard;
   try {
-    await ensureInit();
-
     // Single item lookup
     const id = req.nextUrl.searchParams.get("id");
     if (id) {
-      const r = await db.execute({ sql: "SELECT * FROM policies WHERE uuid = ?", args: [id] });
-      if (r.rows.length === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
-      return NextResponse.json(toProduct(r.rows[0] as unknown as PolicyRow));
+      const [row] = await db.select().from(policies).where(eq(policies.uuid, id)).limit(1);
+      if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+      return NextResponse.json(toProduct(row));
     }
 
     // Identify caller
@@ -63,30 +63,25 @@ export async function GET(req: NextRequest) {
     // 只有「未登入(dev)」或「管理者明確要求 ?all=1」才看全部待審
     const wantAll = req.nextUrl.searchParams.get("all") === "1";
     if (!payload || (wantAll && payload.isAdmin)) {
-      const r = await db.execute({
-        sql: "SELECT * FROM policies WHERE status = 'uploaded' ORDER BY uploaded_at DESC, created_at DESC",
-        args: [],
-      });
-      const products = r.rows.map(row => toProduct(row as unknown as PolicyRow));
+      const rows = await db.select().from(policies).where(eq(policies.status, "uploaded"))
+        .orderBy(descNullsLast(policies.uploaded_at), desc(policies.created_at), asc(policies.uuid));
+      const products = rows.map(row => toProduct(row));
       return NextResponse.json({ products, count: products.length, scope: "all" });
     }
 
     // 一般（含管理者）：只顯示「指派給我、且尚待審核」的保單
     // 一張保單可能有多天的指派紀錄，這裡以保單為單位去重（否則清單會出現大量重複列）。
     // assignment_status 取 MAX()：字典序 'completed' < 'pending'，故只要還有一筆未完成就顯示 pending。
-    const assigned = await db.execute({
-      sql: `SELECT p.*, MAX(a.status) AS assignment_status
-            FROM policy_assignments a
-            JOIN policies p ON p.uuid = a.policy_uuid
-            WHERE a.advisor_id = ? AND p.status = 'uploaded'
-            GROUP BY p.uuid
-            ORDER BY assignment_status ASC, p.uploaded_at DESC`,
-      args: [payload.advisorId],
-    });
+    const maxStatus = sql<string>`max(${policyAssignments.status})`;
+    const assigned = await db.select({ p: policies, assignment_status: maxStatus })
+      .from(policyAssignments)
+      .innerJoin(policies, eq(policies.uuid, policyAssignments.policy_uuid))
+      .where(and(eq(policyAssignments.advisor_id, payload.advisorId), eq(policies.status, "uploaded")))
+      .groupBy(policies.uuid)   // 以主鍵分組，Postgres 允許選取 policies 的其他欄位
+      // 同一天上傳的保單常有上百張並列，加上代號當次排序，清單每次載入順序才固定
+      .orderBy(sql`${maxStatus} ASC`, descNullsLast(policies.uploaded_at), asc(policies.uuid));
 
-    const products = assigned.rows.map(row =>
-      toProduct(row as unknown as PolicyRow, row.assignment_status as string)
-    );
+    const products = assigned.map(row => toProduct(row.p, row.assignment_status));
 
     return NextResponse.json({ products, count: products.length });
   } catch (err) {

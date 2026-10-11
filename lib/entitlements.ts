@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import db, { ensureInit } from "@/lib/db";
+import db, { nowText } from "@/lib/db";
+import { usageCounters } from "@/lib/schema";
+import { and, eq, gt, sql } from "drizzle-orm";
 import type { JWTPayload } from "@/lib/jwt";
 import { ACTION_LABELS, isInternal, limitFor, planOf, type Action, type PlanId } from "@/lib/plans";
 
@@ -9,15 +11,11 @@ export function currentPeriod(now = new Date()): string {
 }
 
 export async function getUsage(userId: string, period = currentPeriod()): Promise<Record<string, number>> {
-  await ensureInit();
-  const result = await db.execute({
-    sql: "SELECT action, count FROM usage_counters WHERE user_id = ? AND period = ?",
-    args: [userId, period],
-  });
+  const rows = await db.select({ action: usageCounters.action, count: usageCounters.count })
+    .from(usageCounters)
+    .where(and(eq(usageCounters.user_id, userId), eq(usageCounters.period, period)));
   const usage: Record<string, number> = {};
-  for (const row of result.rows) {
-    usage[row.action as string] = Number(row.count ?? 0);
-  }
+  for (const row of rows) usage[row.action] = row.count;
   return usage;
 }
 
@@ -69,24 +67,19 @@ export async function consume(session: JWTPayload, action: Action): Promise<Quot
     return denied(action, plan, 0, usage[action] ?? 0);
   }
 
-  await ensureInit();
-  const result = await db.execute({
-    sql: `INSERT INTO usage_counters (user_id, period, action, count)
-          VALUES (?, ?, ?, 1)
-          ON CONFLICT(user_id, period, action)
-          DO UPDATE SET count = count + 1, updated_at = datetime('now')
-          RETURNING count`,
-    args: [userId, period, action],
-  });
+  const key = and(eq(usageCounters.user_id, userId), eq(usageCounters.period, period), eq(usageCounters.action, action));
+  const [row] = await db.insert(usageCounters)
+    .values({ user_id: userId, period, action, count: 1 })
+    .onConflictDoUpdate({
+      target: [usageCounters.user_id, usageCounters.period, usageCounters.action],
+      set: { count: sql`${usageCounters.count} + 1`, updated_at: nowText },
+    })
+    .returning({ count: usageCounters.count });
 
-  const used = Number(result.rows[0]?.count ?? 1);
+  const used = row?.count ?? 1;
   if (used > limit) {
     // 超出額度：把剛才多加的一次退回，避免計數無止境累積。
-    await db.execute({
-      sql: `UPDATE usage_counters SET count = count - 1
-            WHERE user_id = ? AND period = ? AND action = ?`,
-      args: [userId, period, action],
-    });
+    await db.update(usageCounters).set({ count: sql`${usageCounters.count} - 1` }).where(key);
     return denied(action, plan, limit, limit);
   }
 
@@ -101,12 +94,14 @@ export async function refund(session: JWTPayload, action: Action): Promise<void>
   if (isInternal(session)) return;
   if (limitFor(planOf(session), action) === null) return;
 
-  await ensureInit();
-  await db.execute({
-    sql: `UPDATE usage_counters SET count = count - 1, updated_at = datetime('now')
-          WHERE user_id = ? AND period = ? AND action = ? AND count > 0`,
-    args: [session.advisorId, currentPeriod(), action],
-  });
+  await db.update(usageCounters)
+    .set({ count: sql`${usageCounters.count} - 1`, updated_at: nowText })
+    .where(and(
+      eq(usageCounters.user_id, session.advisorId),
+      eq(usageCounters.period, currentPeriod()),
+      eq(usageCounters.action, action),
+      gt(usageCounters.count, 0),
+    ));
 }
 
 /** 只檢查功能是否開放、不扣抵（例如頁面初次載入時判斷要不要顯示鎖頭）。 */

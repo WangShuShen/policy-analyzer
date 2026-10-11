@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyJWT } from "@/lib/jwt";
 import { consume } from "@/lib/entitlements";
-import db, { ensureInit, type FormulaItem } from "@/lib/db";
+import db, { descNullsLast, type FormulaItem } from "@/lib/db";
+import { policies } from "@/lib/schema";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -143,7 +145,6 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const { id } = await params;
   const planCode = decodeURIComponent(id);
-  await ensureInit();
 
   const body = await req.json() as { insured_amount: number; unit: string; plan?: string };
   if (!body.insured_amount || body.insured_amount <= 0) {
@@ -151,17 +152,15 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   // 試算讀「已審核歸檔」的分析（analysis_json），不再依賴 products.formula_json
-  const result = await db.execute({
-    sql: `SELECT analysis_json FROM policies
-          WHERE plan_code = ? AND status = 'archived' AND analysis_json IS NOT NULL
-          ORDER BY archived_at DESC LIMIT 1`,
-    args: [planCode],
-  });
-  if (result.rows.length === 0) {
+  const [row] = await db.select({ analysis_json: policies.analysis_json }).from(policies)
+    .where(and(eq(policies.plan_code, planCode), eq(policies.status, "archived"), isNotNull(policies.analysis_json)))
+    .orderBy(descNullsLast(policies.archived_at))
+    .limit(1);
+  if (!row?.analysis_json) {
     return NextResponse.json({ error: "此商品尚無已審核的給付公式" }, { status: 422 });
   }
 
-  const analysis = JSON.parse(result.rows[0].analysis_json as string) as {
+  const analysis = JSON.parse(row.analysis_json) as {
     company?: string; productName?: string; baseUnit?: string; plans?: string[]; items?: AnalysisJsonItem[];
   };
   const baseUnit = body.unit ?? analysis.baseUnit ?? "元";

@@ -1,16 +1,12 @@
 // node scripts/dedupe-assignments.mjs [--apply]
 // policy_assignments 每張保單只保留一列：優先保留 completed，否則保留最早一列。
 // 起因：assign-daily 舊版只排除「今日已指派」，導致同一張保單每天被重複指派。
-import { createClient } from "@libsql/client";
-import { readFileSync } from "fs";
+import { connect } from "./lib/pg.mjs";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || readFileSync("/tmp/turso_url.txt", "utf8").trim(),
-  authToken: process.env.TURSO_AUTH_TOKEN || readFileSync("/tmp/turso_token.txt", "utf8").trim(),
-});
+const db = await connect();
 const APPLY = process.argv.includes("--apply");
 
-const rows = (await db.execute(
+const rows = (await db.query(
   "SELECT id, policy_uuid, advisor_id, assigned_date, status, completed_at FROM policy_assignments ORDER BY policy_uuid, assigned_date ASC"
 )).rows;
 
@@ -39,13 +35,13 @@ console.log("保留 status 分布:", keepBy);
 console.log("刪除 status 分布:", dropBy);
 console.log("保留 completed 的保單數:", keep.filter(r => r.status === "completed").length);
 
-if (!APPLY) { console.log("\n[dry-run] 未寫入。確認無誤後加 --apply 執行。"); process.exit(0); }
+if (!APPLY) { console.log("\n[dry-run] 未寫入。確認無誤後加 --apply 執行。"); await db.end(); process.exit(0); }
 
 for (let i = 0; i < drop.length; i += 100) {
   const batch = drop.slice(i, i + 100);
-  await db.batch(batch.map(r => ({ sql: "DELETE FROM policy_assignments WHERE id = ?", args: [r.id] })), "write");
+  await db.query("DELETE FROM policy_assignments WHERE id = ANY($1)", [batch.map(r => r.id)]);
   console.log(`  已刪 ${Math.min(i + 100, drop.length)}/${drop.length}`);
 }
-const after = await db.execute("SELECT status, COUNT(*) n FROM policy_assignments GROUP BY status");
+const after = await db.query("SELECT status, COUNT(*) n FROM policy_assignments GROUP BY status");
 console.log("完成。現況:", after.rows.map(r => `${r.status}=${r.n}`).join(", "));
-process.exit(0);
+await db.end();

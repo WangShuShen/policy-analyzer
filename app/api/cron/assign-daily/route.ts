@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit, listAdvisors, type PolicyRow } from "@/lib/db";
+import db, { listAdvisors, ascNullsFirst } from "@/lib/db";
+import { policies, policyAssignments } from "@/lib/schema";
+import { asc, eq, or } from "drizzle-orm";
 import { sendDailyAssignment, type PolicySummary } from "@/lib/mailer";
 
 const DAILY_LIMIT = 20;
@@ -14,26 +16,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ensureInit();
-
   const today = new Date().toISOString().slice(0, 10);
 
   // 排除「已經有未完成指派」的保單。
   // 舊版只排除 assigned_date = today，導致昨天以前指派、顧問還沒審完的保單
   // 每天 08:00 又被重新指派一次，policy_assignments 因此累積大量重複列。
-  const alreadyAssigned = await db.execute({
-    sql: "SELECT DISTINCT policy_uuid FROM policy_assignments WHERE status = 'pending' OR assigned_date = ?",
-    args: [today],
-  });
-  const assignedSet = new Set(alreadyAssigned.rows.map(r => r.policy_uuid as string));
+  const alreadyAssigned = await db.selectDistinct({ policy_uuid: policyAssignments.policy_uuid })
+    .from(policyAssignments)
+    .where(or(eq(policyAssignments.status, "pending"), eq(policyAssignments.assigned_date, today)));
+  const assignedSet = new Set(alreadyAssigned.map(r => r.policy_uuid));
 
   // Collect unassigned policies awaiting review (status='uploaded') from Turso
-  const uploaded = await db.execute({
-    sql: "SELECT * FROM policies WHERE status = 'uploaded' ORDER BY uploaded_at ASC, created_at ASC",
-    args: [],
-  });
-  const pending: PolicySummary[] = uploaded.rows
-    .map(r => r as unknown as PolicyRow)
+  const uploaded = await db.select().from(policies).where(eq(policies.status, "uploaded"))
+    .orderBy(ascNullsFirst(policies.uploaded_at), asc(policies.created_at));
+  const pending: PolicySummary[] = uploaded
     .filter(p => !assignedSet.has(p.uuid))
     .map(p => ({
       uuid: p.uuid,
@@ -79,10 +75,9 @@ export async function POST(req: NextRequest) {
 
   // Write assignments to DB
   for (const a of assignments) {
-    await db.execute({
-      sql: "INSERT OR IGNORE INTO policy_assignments (id, policy_uuid, advisor_id, assigned_date, status) VALUES (?, ?, ?, ?, 'pending')",
-      args: [crypto.randomUUID(), a.policyUuid, a.advisorId, today],
-    });
+    await db.insert(policyAssignments).values({
+      id: crypto.randomUUID(), policy_uuid: a.policyUuid, advisor_id: a.advisorId, assigned_date: today, status: "pending",
+    }).onConflictDoNothing();
   }
 
   // Send email to each advisor with their list

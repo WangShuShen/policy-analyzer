@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit, type PolicyRow } from "@/lib/db";
+import db, { nowText } from "@/lib/db";
+import { policies } from "@/lib/schema";
+import { and, asc, eq, isNotNull, ne } from "drizzle-orm";
 import { analyzePolicyPdf } from "@/lib/analyzeEngine";
 import { downloadDriveFile, hasDriveCredentials } from "@/lib/googleDrive";
 
@@ -19,20 +21,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "缺少 GOOGLE_SERVICE_ACCOUNT_JSON 環境變數" }, { status: 500 });
   }
 
-  await ensureInit();
-
   const limit = Number(process.env.DAILY_ANALYZE_LIMIT) || DEFAULT_LIMIT;
   const today = new Date().toISOString().slice(0, 10);
 
   // 挑出待分析、且有 Drive file ID 的保單
-  const rows = await db.execute({
-    sql: `SELECT * FROM policies
-          WHERE status = 'pending_analysis' AND pdf_drive_id IS NOT NULL AND pdf_drive_id != ''
-          ORDER BY created_at ASC
-          LIMIT ?`,
-    args: [limit],
-  });
-  const pending = rows.rows.map(r => r as unknown as PolicyRow);
+  const pending = await db.select().from(policies)
+    .where(and(eq(policies.status, "pending_analysis"), isNotNull(policies.pdf_drive_id), ne(policies.pdf_drive_id, "")))
+    .orderBy(asc(policies.created_at))
+    .limit(limit);
 
   if (pending.length === 0) {
     return NextResponse.json({ analyzed: 0, message: "no pending policies" });
@@ -56,18 +52,14 @@ export async function POST(req: NextRequest) {
       const { data, category } = await analyzePolicyPdf(pdf.toString("base64"), undefined, ratePdfB64);
       const enriched = { ...data, _analyzedAt: today, _detectedCategory: category };
 
-      await db.execute({
-        sql: `UPDATE policies SET analysis_json = ?, status = 'uploaded', uploaded_at = ?, updated_at = datetime('now') WHERE uuid = ?`,
-        args: [JSON.stringify(enriched), today, p.uuid],
-      });
+      await db.update(policies)
+        .set({ analysis_json: JSON.stringify(enriched), status: "uploaded", uploaded_at: today, updated_at: nowText })
+        .where(eq(policies.uuid, p.uuid));
       analyzed++;
     } catch (err) {
       failed++;
       errors.push(`${p.plan_code}: ${String(err)}`);
-      await db.execute({
-        sql: `UPDATE policies SET status = 'failed', updated_at = datetime('now') WHERE uuid = ?`,
-        args: [p.uuid],
-      });
+      await db.update(policies).set({ status: "failed", updated_at: nowText }).where(eq(policies.uuid, p.uuid));
     }
   }
 

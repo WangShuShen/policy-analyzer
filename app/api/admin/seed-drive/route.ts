@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit } from "@/lib/db";
+import db from "@/lib/db";
+import { companies, products } from "@/lib/schema";
+import { eq } from "drizzle-orm";
 
 interface DriveEntry {
   company: string;
@@ -16,10 +18,12 @@ interface DriveEntry {
 }
 
 async function upsertCompany(name: string): Promise<number> {
-  const { rows } = await db.execute({ sql: "SELECT id FROM companies WHERE name=?", args: [name] });
-  if (rows[0]) return Number(rows[0].id);
-  const r = await db.execute({ sql: "INSERT INTO companies (name) VALUES (?)", args: [name] });
-  return Number(r.lastInsertRowid);
+  const rows = await db.select({ id: companies.id }).from(companies).where(eq(companies.name, name)).limit(1);
+  if (rows[0]) return rows[0].id;
+  const [r] = await db.insert(companies).values({ name })
+    .onConflictDoUpdate({ target: companies.name, set: { name } })
+    .returning({ id: companies.id });
+  return r.id;
 }
 
 export async function POST(req: NextRequest) {
@@ -27,8 +31,6 @@ export async function POST(req: NextRequest) {
   if (secret !== process.env.SEED_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  await ensureInit();
 
   const body = await req.json() as { entries: DriveEntry[] };
   const entries = body.entries ?? [];
@@ -54,11 +56,11 @@ export async function POST(req: NextRequest) {
       _docTypes: e.docTypes ?? [],
     });
     try {
-      const res = await db.execute({
-        sql: `INSERT OR IGNORE INTO products (company_id, product_name, plan_code, category, coverage_template) VALUES (?, ?, ?, ?, ?)`,
-        args: [companyCache[e.company], e.productName, e.planCode, e.productType ?? null, template],
-      });
-      if (Number(res.rowsAffected) > 0) inserted++;
+      const res = await db.insert(products).values({
+        company_id: companyCache[e.company], product_name: e.productName, plan_code: e.planCode,
+        category: e.productType ?? null, coverage_template: template,
+      }).onConflictDoNothing().returning({ id: products.id });
+      if (res.length > 0) inserted++;
       else skipped++;
     } catch { skipped++; }
   }

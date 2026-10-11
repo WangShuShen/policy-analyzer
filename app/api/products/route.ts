@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchDriveProducts, getDriveCompanies, getDriveCategories } from "@/lib/driveRegistry";
 import { getDocIds } from "@/lib/driveIndex";
-import db, { ensureInit } from "@/lib/db";
+import db, { descNullsLast } from "@/lib/db";
+import { companies, products as productsTable, policies } from "@/lib/schema";
+import { and, desc, eq } from "drizzle-orm";
 import { requireIdentity } from "@/lib/auth";
 import { consume } from "@/lib/entitlements";
 
@@ -25,33 +27,32 @@ export async function GET(req: NextRequest) {
     if (planCode) {
       const quota = await consume(auth, "product.detail");
       if (!quota.ok) return quota.response;
-      await ensureInit();
-      const result = await db.execute({
-        sql: `SELECT p.id, p.product_name, p.plan_code, p.category, c.name as company
-              FROM products p JOIN companies c ON c.id = p.company_id
-              WHERE p.plan_code = ?
-              ORDER BY p.verified DESC, p.updated_at DESC LIMIT 1`,
-        args: [planCode],
-      });
+      const result = await db.select({
+          id: productsTable.id, product_name: productsTable.product_name, plan_code: productsTable.plan_code,
+          category: productsTable.category, company: companies.name,
+        })
+        .from(productsTable).innerJoin(companies, eq(companies.id, productsTable.company_id))
+        .where(eq(productsTable.plan_code, planCode))
+        .orderBy(desc(productsTable.verified), desc(productsTable.updated_at))
+        .limit(1);
       // 已審核分析內容（給付明細／限制／注意事項）+ Drive PDF 來源
-      const pol = await db.execute({
-        sql: "SELECT analysis_json, status, pdf_drive_id FROM policies WHERE plan_code = ? AND status = 'archived' ORDER BY archived_at DESC LIMIT 1",
-        args: [planCode],
-      });
-      const analysis = pol.rows[0]?.analysis_json
-        ? JSON.parse(pol.rows[0].analysis_json as string)
-        : null;
+      const pol = await db.select({ analysis_json: policies.analysis_json, status: policies.status, pdf_drive_id: policies.pdf_drive_id })
+        .from(policies)
+        .where(and(eq(policies.plan_code, planCode), eq(policies.status, "archived")))
+        .orderBy(descNullsLast(policies.archived_at))
+        .limit(1);
+      const analysis = pol[0]?.analysis_json ? JSON.parse(pol[0].analysis_json) : null;
       // 三種文件 Drive ID：條款優先用 policies.pdf_drive_id，否則退回索引 clauseId
       const docIds = getDocIds(planCode);
-      const pdfDriveId = (pol.rows[0]?.pdf_drive_id as string | null) ?? docIds.clauseId;
+      const pdfDriveId = pol[0]?.pdf_drive_id ?? docIds.clauseId;
       const rateDriveId = docIds.rateId;
       const specDriveId = docIds.specId;
 
-      if (result.rows.length === 0) {
+      if (result.length === 0) {
         // products 表沒有，但 policies 可能有已審核分析
         return NextResponse.json({ product: null, analysis, pdfDriveId, rateDriveId, specDriveId });
       }
-      const r = result.rows[0];
+      const r = result[0];
       return NextResponse.json({
         product: {
           id: r.id,
@@ -74,20 +75,17 @@ export async function GET(req: NextRequest) {
     const activeOnly = searchParams.get("activeOnly") === "1";
 
     // 商品查詢只露出「已審核歸檔」的商品（未審核的無意義，不顯示）
-    await ensureInit();
-    const archived = await db.execute({
-      sql: "SELECT plan_code, analysis_json FROM policies WHERE status = 'archived' ORDER BY archived_at DESC",
-      args: [],
-    });
+    const archived = await db.select({ plan_code: policies.plan_code, analysis_json: policies.analysis_json })
+      .from(policies).where(eq(policies.status, "archived")).orderBy(descNullsLast(policies.archived_at));
     const archivedSet = new Set<string>();
     const typeMap = new Map<string, string[]>();   // plan_code → 險種（取最新一筆）
     const codeMap = new Map<string, string>();     // plan_code → 商品代號（顧問填的 displayCode）
-    for (const r of archived.rows) {
-      const pc = r.plan_code as string;
+    for (const r of archived) {
+      const pc = r.plan_code;
       archivedSet.add(pc);
       if (!typeMap.has(pc) && r.analysis_json) {
         try {
-          const a = JSON.parse(r.analysis_json as string) as { insuranceType?: string[] | string; displayCode?: string };
+          const a = JSON.parse(r.analysis_json) as { insuranceType?: string[] | string; displayCode?: string };
           const t = Array.isArray(a.insuranceType) ? a.insuranceType : a.insuranceType ? [a.insuranceType] : [];
           if (t.length) typeMap.set(pc, t);
           if (a.displayCode) codeMap.set(pc, a.displayCode);

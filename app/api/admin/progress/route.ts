@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import db, { ensureInit, listAdvisors } from "@/lib/db";
+import db, { listAdvisors } from "@/lib/db";
+import { policyAssignments } from "@/lib/schema";
+import { count, eq } from "drizzle-orm";
 import { verifyJWT } from "@/lib/jwt";
 
 export async function GET(req: NextRequest) {
@@ -9,22 +11,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await ensureInit();
-
   const date = req.nextUrl.searchParams.get("date") ?? new Date().toISOString().slice(0, 10);
 
   const [advisors, assignments] = await Promise.all([
     listAdvisors(),
-    db.execute({
-      sql: "SELECT advisor_id, status, COUNT(*) as cnt FROM policy_assignments WHERE assigned_date = ? GROUP BY advisor_id, status",
-      args: [date],
-    }),
+    db.select({ advisor_id: policyAssignments.advisor_id, status: policyAssignments.status, cnt: count() })
+      .from(policyAssignments)
+      .where(eq(policyAssignments.assigned_date, date))
+      .groupBy(policyAssignments.advisor_id, policyAssignments.status),
   ]);
 
   // Build stats map
   const statsMap: Record<string, { pending: number; completed: number }> = {};
-  for (const row of assignments.rows) {
-    const aid = row.advisor_id as string;
+  for (const row of assignments) {
+    const aid = row.advisor_id;
     if (!statsMap[aid]) statsMap[aid] = { pending: 0, completed: 0 };
     if (row.status === "completed") statsMap[aid].completed = Number(row.cnt);
     else statsMap[aid].pending += Number(row.cnt);

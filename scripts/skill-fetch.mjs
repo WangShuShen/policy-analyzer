@@ -1,21 +1,12 @@
 // node scripts/skill-fetch.mjs [N]
 // Agent Skill 批次分析步驟 1：取 N 筆 pending 保單，用服務帳號下載條款 PDF 到 tmp/skill-pdfs/，
 // 並印出 manifest（uuid / planCode / 商品名 / 本機 PDF 路徑）供 Claude Code 逐筆讀取分析。
-import { createClient } from "@libsql/client";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
 import crypto from "crypto";
+import { connect, ROOT } from "./lib/pg.mjs";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-for (const line of readFileSync(join(ROOT, ".env"), "utf8").split("\n")) {
-  const m = line.match(/^(\w+)="?([^"]*?)"?$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-}
-// Turso 憑證（/tmp 或 env）
-const url = process.env.TURSO_DATABASE_URL || readFileSync("/tmp/turso_url.txt", "utf8").trim();
-const token = process.env.TURSO_AUTH_TOKEN || readFileSync("/tmp/turso_token.txt", "utf8").trim();
-const db = createClient({ url, authToken: token });
+const db = await connect();
 
 // 服務帳號（下載私有 Drive PDF）
 const sa = JSON.parse(readFileSync(join(ROOT, "..", "000_Agent/service_account.json"), "utf8"));
@@ -41,12 +32,12 @@ mkdirSync(outDir, { recursive: true });
 let driveIndex = {};
 try { driveIndex = JSON.parse(readFileSync(join(ROOT, "data", "drive_index.json"), "utf8")); } catch {}
 
-const rows = await db.execute({
-  sql: `SELECT uuid, plan_code, company, product_name, pdf_drive_id FROM policies
-        WHERE status='pending_analysis' AND pdf_drive_id IS NOT NULL AND pdf_drive_id!=''
-        ORDER BY created_at ASC LIMIT ?`,
-  args: [N],
-});
+const rows = await db.query(
+  `SELECT uuid, plan_code, company, product_name, pdf_drive_id FROM policies
+   WHERE status='pending_analysis' AND pdf_drive_id IS NOT NULL AND pdf_drive_id!=''
+   ORDER BY created_at ASC LIMIT $1`,
+  [N],
+);
 const at = await token2();
 const manifest = [];
 for (const r of rows.rows) {
@@ -61,4 +52,4 @@ writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 console.log(`已下載 ${manifest.length} 筆條款 PDF → ${outDir}`);
 console.log("manifest:", join(outDir, "manifest.json"));
 manifest.forEach(m => console.log(`  ${m.planCode} | ${m.productName} | ${m.pdfPath}`));
-process.exit(0);
+await db.end();
