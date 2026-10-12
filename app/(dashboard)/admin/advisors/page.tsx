@@ -9,6 +9,7 @@ interface Advisor {
   name: string;
   is_admin: number;
   is_active: number;
+  license_no: string | null;
   created_at: string;
 }
 
@@ -53,6 +54,11 @@ export default function AdvisorsPage() {
     setAdding(false);
   }
 
+  async function saveLicense(id: string, value: string) {
+    await fetch("/api/admin/advisors", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, license_no: value }) });
+    load();
+  }
+
   async function toggle(id: string, field: "is_active" | "is_admin", currentVal: number) {
     await fetch("/api/admin/advisors", {
       method: "PATCH",
@@ -73,23 +79,22 @@ export default function AdvisorsPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-stone-800">顧問名單管理</h1>
-          <p className="text-sm text-stone-400 mt-0.5">僅名單內的 Google 帳號才可登入系統</p>
+          <p className="text-sm text-stone-400">僅名單內的 Google 帳號才可登入系統；登錄字號設好，客戶端才會列出這位顧問</p>
         </div>
         <button
           onClick={() => setShowAdd(v => !v)}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white shadow-sm"
-          style={{ background: "linear-gradient(135deg, #C8956C, #A0714F)" }}
+          style={{ background: "#2F7A6B" }}
         >
           <Plus className="h-4 w-4" />新增顧問
         </button>
       </div>
 
       {showAdd && (
-        <form onSubmit={addAdvisor} className="bg-white border border-[#EDE0CE] rounded-2xl p-5 space-y-4 shadow-sm">
+        <form onSubmit={addAdvisor} className="bg-white border border-[#DFE4E1] rounded-2xl p-5 space-y-4 shadow-sm">
           <h2 className="text-sm font-semibold text-stone-700">新增顧問</h2>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -100,7 +105,7 @@ export default function AdvisorsPage() {
                 value={newEmail}
                 onChange={e => setNewEmail(e.target.value)}
                 placeholder="advisor@gmail.com"
-                className="w-full bg-[#FEF9F2] border border-[#E8D5B7] rounded-xl px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-[#C8956C]"
+                className="w-full bg-[#F6F8F6] border border-[#CDD6D2] rounded-xl px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-[#2F7A6B]"
               />
             </div>
             <div className="space-y-1.5">
@@ -111,7 +116,7 @@ export default function AdvisorsPage() {
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 placeholder="王小明"
-                className="w-full bg-[#FEF9F2] border border-[#E8D5B7] rounded-xl px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-[#C8956C]"
+                className="w-full bg-[#F6F8F6] border border-[#CDD6D2] rounded-xl px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-[#2F7A6B]"
               />
             </div>
           </div>
@@ -137,7 +142,7 @@ export default function AdvisorsPage() {
               type="submit"
               disabled={adding}
               className="px-4 py-2 text-sm font-medium text-white rounded-xl disabled:opacity-50"
-              style={{ background: "linear-gradient(135deg, #C8956C, #A0714F)" }}
+              style={{ background: "#2F7A6B" }}
             >
               {adding ? "新增中…" : "新增"}
             </button>
@@ -145,7 +150,7 @@ export default function AdvisorsPage() {
         </form>
       )}
 
-      <div className="bg-white border border-[#EDE0CE] rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-white border border-[#DFE4E1] rounded-2xl shadow-sm overflow-hidden">
         {loading ? (
           <p className="p-6 text-sm text-stone-400 text-center">載入中…</p>
         ) : advisors.length === 0 ? (
@@ -155,9 +160,10 @@ export default function AdvisorsPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[#EDE0CE] bg-[#FBF0E3]/50">
+              <tr className="border-b border-[#DFE4E1] bg-[#E2EFEB]/50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">姓名</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">Google 信箱</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">登錄字號</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-stone-500">管理者</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-stone-500">狀態</th>
                 <th className="px-4 py-3"></th>
@@ -167,10 +173,19 @@ export default function AdvisorsPage() {
               {advisors.map((a, i) => (
                 <tr
                   key={a.id}
-                  className={`border-b border-[#EDE0CE]/60 last:border-0 ${a.is_active === 0 ? "opacity-50" : ""}`}
+                  className={`border-b border-[#DFE4E1]/60 last:border-0 ${a.is_active === 0 ? "opacity-50" : ""}`}
                 >
                   <td className="px-4 py-3 font-medium text-stone-800">{a.name}</td>
                   <td className="px-4 py-3 text-stone-500 font-mono text-xs">{a.email}</td>
+                  <td className="px-4 py-3">
+                    <input
+                      defaultValue={a.license_no ?? ""}
+                      placeholder="未設定（客戶端不會列出）"
+                      aria-label={`${a.name} 的登錄字號`}
+                      onBlur={e => { if (e.target.value.trim() !== (a.license_no ?? "")) saveLicense(a.id, e.target.value); }}
+                      className="w-44 px-2 py-1 text-xs rounded-lg border border-[#DFE4E1] focus:outline-none focus:border-[#2F7A6B] placeholder:text-stone-300"
+                    />
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <button
                       onClick={() => toggle(a.id, "is_admin", a.is_admin)}

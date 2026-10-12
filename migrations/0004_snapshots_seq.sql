@@ -1,0 +1,2 @@
+ALTER TABLE "analysis_snapshots" ADD COLUMN "seq" bigint NOT NULL GENERATED ALWAYS AS IDENTITY (sequence name "analysis_snapshots_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1);--> statement-breakpoint
+CREATE INDEX "analysis_snapshots_conv" ON "analysis_snapshots" USING btree ("conversation_id","seq");

@@ -46,20 +46,17 @@ export default function ReviewPage() {
   return (
     <>
       {/* Header */}
-      <div className="bg-white border-b border-[#EDE0CE] px-8 py-4 shadow-sm shrink-0">
+      <div className="pb-3">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>
-              保單審核
-            </h2>
-            <p className="text-xs text-stone-400 mt-0.5">
+            <p className="text-xs text-stone-400">
               {isAdmin ? "管理者模式 — 顯示全部待審核保單" : "逐一審核 AI 分析結果，確認後歸檔"}
             </p>
           </div>
           {isAdmin && (
             <button
               onClick={() => router.push("/admin/progress")}
-              className="text-xs text-[#C8956C] border border-[#EDE0CE] px-3 py-1.5 rounded-lg hover:bg-[#FBF0E3] transition-colors"
+              className="text-xs text-[#2F7A6B] border border-[#DFE4E1] px-3 py-1.5 rounded-lg hover:bg-[#E2EFEB] transition-colors"
             >
               查看全員進度 →
             </button>
@@ -67,7 +64,7 @@ export default function ReviewPage() {
         </div>
       </div>
 
-      <div className="w-full px-8 py-6 space-y-4 overflow-auto flex-1">
+      <div className="w-full space-y-4">
         {loading ? (
           <div className="flex items-center justify-center py-20 gap-2 text-stone-400">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -77,28 +74,28 @@ export default function ReviewPage() {
           <>
             {/* Progress card — only for non-admin with assignments */}
             {!isAdmin && progress && progress.total > 0 && (
-              <div className="bg-white border border-[#EDE0CE] rounded-2xl p-5 shadow-sm">
+              <div className="bg-white border border-[#DFE4E1] rounded-2xl p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-sm font-semibold text-stone-700">今日審核進度</p>
                     <p className="text-xs text-stone-400 mt-0.5">{progress.date}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-bold" style={{ color: pct === 100 ? "#10B981" : "#C8956C" }}>
+                    <p className="text-2xl font-bold" style={{ color: pct === 100 ? "#10B981" : "#2F7A6B" }}>
                       {progress.completed}
                       <span className="text-base font-normal text-stone-400"> / {progress.total}</span>
                     </p>
                     <p className="text-xs text-stone-400">份完成</p>
                   </div>
                 </div>
-                <div className="h-2 bg-[#F5EDE0] rounded-full overflow-hidden">
+                <div className="h-2 bg-[#F6F8F6] rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
                       width: `${pct}%`,
                       background: pct === 100
                         ? "linear-gradient(90deg,#34D399,#10B981)"
-                        : "linear-gradient(90deg,#C8956C,#A0714F)",
+                        : "#2F7A6B",
                     }}
                   />
                 </div>
@@ -113,7 +110,7 @@ export default function ReviewPage() {
 
             {/* Queue header */}
             <div className="flex items-center gap-2">
-              <ClipboardCheck className="h-4 w-4 text-[#C8956C]" />
+              <ClipboardCheck className="h-4 w-4 text-[#2F7A6B]" />
               <span className="text-sm font-medium text-stone-600">
                 {isAdmin ? `待審核：${products.length} 筆（全部）` : `今日待審核：${products.length} 份`}
               </span>

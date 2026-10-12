@@ -1,0 +1,52 @@
+/*
+ * 原型裡沒有、但真實產品需要的狀態（錯誤訊息、載入中、帳號選單）。
+ * 只用原型的色票與尺寸，不自創風格；能用原型既有 class 的就不要寫在這裡。
+ */
+.rd .rd-err{background:var(--must-soft);color:var(--must);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.65;margin:12px 0}
+.rd .rd-loading{color:var(--muted);font-size:14px;padding:24px 0}
+.rd .rd-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,.08);padding:6px;z-index:20;min-width:120px}
+.rd .rd-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:8px;padding:8px 12px;font-size:13.5px;color:var(--ink-2)}
+.rd .rd-menu button:hover{background:var(--sunk);color:var(--ink)}
+.rd a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box}
+.rd a.cnb{display:inline-flex;align-items:center}
+.rd .csb ol{list-style:decimal;padding-left:1.4em;margin:0 0 9px}   /* Tailwind preflight 會清掉清單編號 */
+
+/* ── 原型的高度是替「預覽裝置框」算的（框上方還有工具列）；真實網站整頁高，要自己算 ── */
+/* 對話頁：整頁固定在一個畫面內，對話區自動填滿剩下的高度，選項與輸入框永遠看得到（訊息在對話區裡捲動） */
+/* 桌機：整頁固定在一個畫面內，對話區填滿剩下的高度，選項與輸入框永遠看得到。
+   手機：螢幕太矮，標題區會把對話擠扁 → 維持整頁捲動，對話區給固定高度 */
+.rd .dmo .dchat{max-height:min(58dvh,520px);min-height:220px}
+@container vp (min-width:960px){
+  .rd .body:has(.dmo){overflow:hidden}
+  .rd .pad:has(> .dmo){min-height:0;flex:1;padding-bottom:16px}   /* 不用 height:100%，才留得下頁尾 */
+  .rd .dmo{display:flex;flex-direction:column;flex:1;min-height:0}
+  .rd .dmo .dsplit{flex:1;min-height:0}
+  .rd .dmo .dleft:not(.dhide){display:flex;flex-direction:column;min-height:0;height:100%}
+  .rd .dmo .dchat{flex:1;max-height:none;min-height:120px}
+  .rd .dmo .dsplit.has.open{align-items:stretch;height:100%}
+  .rd .dmo .dright{position:static;max-height:100%;min-height:0;overflow-y:auto}
+}
+/* 底部動作列：有按鈕才出現，而且要有明確的邊界，內容才不會看起來被切掉 */
+.rd .foot:has(#rd-foot:empty){display:none}
+.rd .foot{border-top:1px solid var(--line);background:var(--ground)}
+@container vp (min-width:960px){ .rd .foot{background:var(--ground);padding-top:14px} .rd .foot .inner{padding-bottom:18px} }
+.rd .an-pk[aria-pressed="true"]{border-color:var(--brand);background:var(--brand-soft)}   /* 原型沒寫選中狀態，比照 .adv 選中 */
+/* 給付值是條款計算方式（長文字）時改成上下排，避免標籤被擠成直排 */
+.rd .fxr.txt{display:block}
+.rd .fxr.txt b{display:block;white-space:normal;font-weight:500;font-size:12px;line-height:1.6;color:var(--ink-2);margin-top:2px}
+/* 手機上商品列：名稱占滿一行，標籤與按鈕換到下一行 */
+@container vp (max-width:560px){ .rd .acrr{flex-wrap:wrap} .rd .acrr .acrn{flex-basis:calc(100% - 40px)} .rd .acrr .tagx:first-of-type{margin-left:auto} }
+/* 頁尾（設計準則 2026-10-11）：每頁都有，跟著內容捲到最後；字小、顏色淡、上方一條線當邊界 */
+.rd .rd-sitefoot{flex:none;border-top:1px solid var(--line);font-size:12px;line-height:1.8;color:var(--muted)}
+.rd .rd-sitefoot .inner{max-width:1040px;margin:0 auto;padding:14px 20px 18px;display:flex;flex-wrap:wrap;gap:2px 18px}
+.rd .rd-sitefoot b{color:var(--ink-2);font-weight:700;letter-spacing:.02em}
+.rd .rd-sitefoot a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+@container vp (min-width:960px){ .rd .rd-sitefoot .inner{padding:14px 40px 18px} }
+/* 商品條款頁的文件區（原型沒有）：分頁列＋PDF 檢視框，用原型的卡片邊框與色票 */
+.rd .rd-docbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:22px 0 10px}
+.rd .rd-docview{height:min(78dvh,900px);min-height:420px;background:var(--sunk);border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative}
+.rd .rd-docview iframe{width:100%;height:100%;border:0;display:block}
+.rd .rd-docmsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13.5px;padding:20px;text-align:center}
+.rd .rd-docview.empty{height:auto;min-height:0}
+.rd .rd-docview.empty .rd-docmsg{position:static;padding:28px 20px}

@@ -51,24 +51,24 @@
 :root {
   --font-sans: var(--font-sans-tc), system-ui, sans-serif;
   --font-serif: var(--font-serif-tc), Georgia, serif;
-  --background: oklch(0.985 0.012 75);
-  --foreground: oklch(0.22 0.02 55);
+  --background: #f6f8f6;            /* RADIA page */
+  --foreground: #151a19;
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.02 60);
+  --card-foreground: #151a19;
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.02 60);
-  --primary: oklch(0.52 0.13 55);
+  --popover-foreground: #151a19;
+  --primary: #2f7a6b;               /* RADIA brand */
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.018 80);
-  --secondary-foreground: oklch(0.22 0.02 60);
-  --muted: oklch(0.96 0.018 80);
-  --muted-foreground: oklch(0.52 0.02 60);
-  --accent: oklch(0.96 0.018 80);
-  --accent-foreground: oklch(0.22 0.02 60);
+  --secondary: #eef1ee;
+  --secondary-foreground: #151a19;
+  --muted: #eef1ee;
+  --muted-foreground: #838c89;
+  --accent: #e2efeb;
+  --accent-foreground: #1f5a4e;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.91 0.025 80);
-  --input: oklch(0.91 0.025 80);
-  --ring: oklch(0.52 0.13 55);
+  --border: #dfe4e1;
+  --input: #dfe4e1;
+  --ring: #2f7a6b;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);

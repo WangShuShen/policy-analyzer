@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdvisorByEmail, upsertUserOnLogin } from "@/lib/db";
+import { CONSENT_VERSION, hasRequiredConsent, recordConsent } from "@/lib/consents";
 import { signJWT } from "@/lib/jwt";
 
 export async function GET(req: NextRequest) {
@@ -8,8 +9,13 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state");
   const oauthError = searchParams.get("error");
 
+  // 從同意書頁出發的客戶流程（見 /api/auth/google），錯誤要回到同意書頁而不是顧問登入頁
+  let flow: { flow: string; cv: string; mk: boolean } | null = null;
+  try { flow = JSON.parse(req.cookies.get("oauth_flow")?.value || "null"); } catch { flow = null; }
+  const consult = flow?.flow === "consult";
+
   const loginUrl = (error: string, hint?: string) => {
-    const u = new URL(`/login?error=${error}`, req.url);
+    const u = new URL(consult ? `/welcome/consent?error=${error}` : `/login?error=${error}`, req.url);
     if (hint) u.searchParams.set("hint", hint);
     return u;
   };
@@ -68,6 +74,11 @@ export async function GET(req: NextRequest) {
   let jwt: string;
   let landing = "/";
 
+  if (advisor && consult) {
+    // 顧問帳號走客戶流程（多半是在測試）：不要悄悄登進顧問後台，明講要換帳號
+    return NextResponse.redirect(loginUrl("advisor_account", email));
+  }
+
   if (advisor) {
     jwt = await signJWT({
       advisorId: advisor.id,
@@ -89,7 +100,13 @@ export async function GET(req: NextRequest) {
       role: "customer",
       plan: user.plan,
     });
-    landing = "/catalog";
+    if (consult) {
+      // 同意與建帳號在同一步完成，之後才進諮詢（N4：同意先於蒐集）
+      if (flow!.cv !== CONSENT_VERSION) return NextResponse.redirect(loginUrl("consent_outdated"));
+      await recordConsent(user.id, { marketing: flow!.mk });
+    }
+    // 沒有同意目前版本的（例如從顧問登入頁進來、或同意書改版了）先去看同意書
+    landing = (await hasRequiredConsent(user.id)) ? "/consult" : "/welcome/consent";
   }
 
   const res = NextResponse.redirect(new URL(landing, req.url));
@@ -103,6 +120,7 @@ export async function GET(req: NextRequest) {
   });
 
   res.cookies.set("oauth_state", "", { maxAge: 0, path: "/" });
+  res.cookies.set("oauth_flow", "", { maxAge: 0, path: "/" });
 
   return res;
 }

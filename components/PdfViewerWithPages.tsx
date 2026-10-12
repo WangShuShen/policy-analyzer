@@ -47,7 +47,7 @@ export default function PdfViewerWithPages({ pdfUrl, currentPage = 1, onTotalPag
       <div className="flex flex-col items-center justify-center h-full gap-3 text-stone-400">
         <FileText className="h-10 w-10 text-stone-300" />
         <p className="text-sm text-red-500">無法載入 PDF</p>
-        <a href={pdfUrl} target="_blank" rel="noreferrer" className="text-xs text-[#C8956C] hover:underline">
+        <a href={pdfUrl} target="_blank" rel="noreferrer" className="text-xs text-[#2F7A6B] hover:underline">
           在新視窗開啟
         </a>
       </div>

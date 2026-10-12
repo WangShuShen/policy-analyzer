@@ -1,24 +1,11 @@
-"use client";
+import { cookies } from "next/headers";
+import { verifyJWT, roleOf } from "@/lib/jwt";
+import { ProductView } from "@/components/advisor/ProductView";
 
-import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-import ProductDetail from "@/components/ProductDetail";
-
-export default function ProductPage() {
-  const params = useParams();
-  const router = useRouter();
-  const raw = params?.planCode;
-  const planCode = decodeURIComponent(Array.isArray(raw) ? raw[0] : (raw ?? ""));
-
-  return (
-    <div className="h-full overflow-y-auto">
-      <div className="sticky top-0 z-10 bg-[#FDFAF6]/90 backdrop-blur border-b border-[#EDE0CE] px-4 sm:px-6 py-3">
-        <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-stone-500 hover:text-[#8B5E3C] transition-colors">
-          <ArrowLeft className="h-4 w-4" />
-          返回商品查詢
-        </button>
-      </div>
-      <ProductDetail planCode={planCode} />
-    </div>
-  );
+// 商品條款頁（原型沒有這個畫面，用原型 advanalyze／advcatalog 的元件組成）。舊版備份在 backups/legacy-brand/product-page.old.tsx
+export default async function ProductPage({ params }: { params: Promise<{ planCode: string }> }) {
+  const { planCode } = await params;
+  const token = (await cookies()).get("auth_token")?.value;
+  const s = token ? await verifyJWT(token) : null;
+  return <ProductView planCode={decodeURIComponent(planCode)} isAdmin={!!s?.isAdmin && roleOf(s) === "advisor"} />;
 }

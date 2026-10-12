@@ -1,0 +1,74 @@
+import Anthropic from "@anthropic-ai/sdk";
+import * as z from "zod/v4";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+
+/*
+ * 存摺讀清單（實作設計 P1 ①）：只讀「事實」——每張保單的公司、商品名、保額／單位／計劃、生效日、契約狀態。
+ * 不讀條款、不判斷保障夠不夠（那是 coverage.ts 和顧問的事）。
+ *
+ * 模型：Claude Sonnet 5.5。存摺一頁常有十幾列表格，抽取要準（讀錯保額，後面全錯）；一份存摺只呼叫一次，成本不是重點。
+ * 輸入：瀏覽器解鎖後送上來的文字（PDF 有文字層）或圖片（截圖、掃描檔）。身分證字號從來不會送到這裡。
+ */
+const MODEL = "claude-sonnet-5-5";
+
+export const PassbookPolicy = z.object({
+  company: z.string().describe("保險公司名稱，照存摺寫的"),
+  product_name: z.string().describe("商品名稱，完整照抄，不要簡化"),
+  plan_code: z.string().nullable().describe("存摺上的險種代號（若有）"),
+  is_rider: z.boolean().nullable().describe("附約為 true、主約為 false、看不出來為 null"),
+  amount: z.number().nullable().describe("保額數字（不含單位）。例：100 萬 → 100、unit 填「萬」；計劃別保單填 null"),
+  amount_unit: z.string().nullable().describe("保額單位：萬、元、美元、單位…"),
+  plan: z.string().nullable().describe("計劃別（例：計劃 3、B 型）；沒有填 null"),
+  effective_date: z.string().nullable().describe("契約生效日，換成西元 YYYY-MM-DD（民國年 +1911）"),
+  status: z.string().nullable().describe("契約狀態，照存摺寫（有效、停效、繳清、展期、終止…）"),
+  insured_is_owner: z.boolean().nullable().describe("被保險人是不是這本存摺的主人（本人）；被保險人是別人（子女、配偶）為 false"),
+  insured_label: z.string().nullable().describe("被保險人是別人時，寫關係或稱呼（例：子女、配偶）；不要寫姓名與身分證字號"),
+  annual_premium: z.number().nullable().describe("年繳保費（元），存摺有列才填"),
+});
+export type PassbookPolicy = z.infer<typeof PassbookPolicy>;
+
+const ReadSchema = z.object({
+  is_passbook: z.boolean().describe("這是不是保險存摺或保單清單"),
+  policies: z.array(PassbookPolicy),
+  unreadable_note: z.string().nullable().describe("有看不清楚、被截斷的地方就寫在這裡"),
+});
+export type ReadResult = z.infer<typeof ReadSchema>;
+
+const SYSTEM = `你負責把台灣「保險存摺」（壽險公會保單存摺）或保單清單，逐張轉成結構化資料。
+
+規則：
+- 每一張保單（主約、附約各算一張）一筆，不要合併、不要漏
+- 只抄事實，不推論、不補資料。看不到的欄位填 null
+- 金額與日期照實轉換：「100萬元」→ amount 100、amount_unit「萬」；「民國 105 年 3 月 2 日」→ 2016-03-02
+- 已終止、已解約、已滿期的也要列出來，status 照寫——要不要算進來，客戶自己確認
+- 絕對不要輸出任何人的姓名、身分證字號、電話、地址；被保險人不是本人時，insured_label 只寫關係
+- 不是保險存摺或保單清單（例如傳錯檔案）→ is_passbook=false、policies 空陣列`;
+
+export type PassbookContent =
+  | { kind: "text"; pages: string[] }
+  | { kind: "images"; images: { mime: "image/png" | "image/jpeg" | "image/webp"; data: string }[] };
+
+export interface ReadUsage { model: string; tokensIn: number; tokensOut: number; costMicroUsd: number }
+
+let _client: Anthropic | null = null;
+const client = () => (_client ??= new Anthropic());
+
+export async function readPassbook(c: PassbookContent): Promise<{ result: ReadResult; usage: ReadUsage }> {
+  const content: Anthropic.ContentBlockParam[] = c.kind === "text"
+    ? [{ type: "text", text: c.pages.map((p, i) => `【第 ${i + 1} 頁】\n${p}`).join("\n\n") }]
+    : c.images.map(img => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mime, data: img.data } }));
+  content.push({ type: "text", text: "請把這份存摺裡的每一張保單整理出來。" });
+
+  const res = await client().messages.parse({
+    model: MODEL,
+    max_tokens: 16000,
+    thinking: { type: "between_tools" } as unknown as Anthropic.ThinkingConfigParam,   // Sonnet 5.5 關掉思考的寫法
+    output_config: { effort: "medium", format: zodOutputFormat(ReadSchema) },
+    system: SYSTEM,
+    messages: [{ role: "user", content }],
+  });
+  const u = res.usage;
+  const usage = { model: MODEL, tokensIn: u.input_tokens, tokensOut: u.output_tokens, costMicroUsd: Math.ceil(u.input_tokens * 2 + u.output_tokens * 10) };
+  if (res.stop_reason === "refusal" || !res.parsed_output) throw new Error("讀不出這份存摺的內容");
+  return { result: res.parsed_output, usage };
+}

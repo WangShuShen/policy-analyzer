@@ -26,7 +26,7 @@ export default function ReviewDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-stone-400">
         <p className="text-sm text-red-500">{error}</p>
-        <button onClick={() => router.push("/review")} className="text-xs text-[#C8956C] hover:underline">
+        <button onClick={() => router.push("/review")} className="text-xs text-[#2F7A6B] hover:underline">
           返回審核清單
         </button>
       </div>

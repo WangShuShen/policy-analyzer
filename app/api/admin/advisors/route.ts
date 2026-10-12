@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id, is_active, is_admin, name } = await req.json();
+  const { id, is_active, is_admin, name, license_no } = await req.json();
 
   if (!id) {
     return NextResponse.json({ error: "id 為必填" }, { status: 400 });
@@ -53,6 +53,8 @@ export async function PATCH(req: NextRequest) {
   if (is_active !== undefined) updates.is_active = is_active ? 1 : 0;
   if (is_admin !== undefined) updates.is_admin = is_admin ? 1 : 0;
   if (name !== undefined) updates.name = name;
+  // 登錄字號（N20）：由管理者設定，顧問不能自己改；沒有登錄字號的顧問不會出現在客戶端的顧問列表
+  if (license_no !== undefined) updates.license_no = String(license_no).trim() || null;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "沒有要更新的欄位" }, { status: 400 });

@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "source": "請填寫：保險公司 + 商品名稱",
+    "amount": "請填寫：測試時使用的保額，如 200萬",
+    "lastUpdated": "請填寫：YYYY-MM-DD",
+    "notes": "請填寫：這份保單有哪些特別的地方"
+  },
+  "company": "TODO: 如 富邦人壽",
+  "policyName": "TODO: 如 個人傷害保險附約",
+  "planCode": "",
+  "planType": "",
+  "policyType": "TODO: 如 定期至70歲",
+  "status": "繳費中",
+  "year": "TODO: 如 108",
+  "category": "意外險",
+  "accident": {
+    "type": "TODO",
+    "grade": "TODO: 如 1~2職等",
+    "publicAccident": "TODO: 如 大眾交通工具加倍給付 或 空字串",
+    "deathDisability": "TODO: 如 200萬｜依等級比例（1級=100%）",
+    "disabilityAssist": "TODO: 如有失能扶助才填，否則空字串",
+    "burnAmount": "TODO: 如有重大燒燙傷才填",
+    "outpatientReimbursement": "TODO: 如有意外門診實支才填",
+    "hospitalDaily": "TODO: 如 500元/日｜最高180日",
+    "icu": "TODO: 如 1,000元/日｜最高30日",
+    "burn": "",
+    "outpatientSurgery": "TODO: 如有門診手術才填",
+    "fracture": "TODO: 如 最高175,000｜依部位比例，大腿完全骨折為最高",
+    "dislocation": "TODO: 如有才填",
+    "annualLimit": "",
+    "extras": []
+  },
+  "life": null,
+  "fixedMedical": null,
+  "medicalReimbursement": null,
+  "cancer": null,
+  "criticalIllnessCard": null,
+  "majorDisease": null,
+  "longTermCare": null,
+  "disability": null,
+  "gaps": [],
+  "exclusions": []
+}

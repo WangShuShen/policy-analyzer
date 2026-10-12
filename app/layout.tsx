@@ -17,8 +17,8 @@ const notoSerifTC = Noto_Serif_TC({
 });
 
 export const metadata: Metadata = {
-  title: "傳家知保 · 保單分析",
-  description: "傳家知保 — 專業保單分析工具，上傳條款自動填入全險圖",
+  title: "RADIA 顧問工作台",
+  description: "RADIA 顧問工作台：保單分析、商品查詢、客戶預約與諮詢紀錄",
 };
 
 export default function RootLayout({

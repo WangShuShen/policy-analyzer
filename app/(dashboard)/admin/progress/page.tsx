@@ -41,20 +41,17 @@ export default function AdminProgressPage() {
 
   return (
     <>
-      <div className="bg-white border-b border-[#EDE0CE] px-8 py-4 shadow-sm shrink-0">
+      <div className="pb-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-stone-800" style={{ fontFamily: "var(--font-serif-tc), serif" }}>
-              今日審核進度
-            </h2>
-            <p className="text-xs text-stone-400 mt-0.5">
+            <p className="text-xs text-stone-400">
               {data?.date ?? "—"} · 全員審核狀況總覽
             </p>
           </div>
           <button
             onClick={() => load(true)}
             disabled={refreshing}
-            className="flex items-center gap-1.5 text-xs text-[#C8956C] border border-[#EDE0CE] px-3 py-1.5 rounded-lg hover:bg-[#FBF0E3] transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs text-[#2F7A6B] border border-[#DFE4E1] px-3 py-1.5 rounded-lg hover:bg-[#E2EFEB] transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
             重新整理
@@ -62,7 +59,7 @@ export default function AdminProgressPage() {
         </div>
       </div>
 
-      <div className="w-full px-8 py-6 space-y-5 overflow-auto flex-1">
+      <div className="w-full space-y-5">
         {loading ? (
           <div className="flex items-center justify-center py-20 gap-2 text-stone-400">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -73,23 +70,23 @@ export default function AdminProgressPage() {
         ) : (
           <>
             {/* Overall summary card */}
-            <div className="bg-white border border-[#EDE0CE] rounded-2xl p-5 shadow-sm">
+            <div className="bg-white border border-[#DFE4E1] rounded-2xl p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-3">
-                <TrendingUp className="h-4 w-4 text-[#C8956C]" />
+                <TrendingUp className="h-4 w-4 text-[#2F7A6B]" />
                 <span className="text-sm font-semibold text-stone-700">整體進度</span>
-                <span className="ml-auto text-2xl font-bold" style={{ color: overallPct === 100 ? "#10B981" : "#C8956C" }}>
+                <span className="ml-auto text-2xl font-bold" style={{ color: overallPct === 100 ? "#10B981" : "#2F7A6B" }}>
                   {overallDone}
                   <span className="text-base font-normal text-stone-400"> / {overallTotal}</span>
                 </span>
               </div>
-              <div className="h-2.5 bg-[#F5EDE0] rounded-full overflow-hidden">
+              <div className="h-2.5 bg-[#F6F8F6] rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-700"
                   style={{
                     width: `${overallPct}%`,
                     background: overallPct === 100
                       ? "linear-gradient(90deg,#34D399,#10B981)"
-                      : "linear-gradient(90deg,#C8956C,#A0714F)",
+                      : "#2F7A6B",
                   }}
                 />
               </div>
@@ -97,12 +94,12 @@ export default function AdminProgressPage() {
             </div>
 
             {/* Per-advisor table */}
-            <div className="bg-white border border-[#EDE0CE] rounded-2xl overflow-hidden shadow-sm">
-              <div className="px-5 py-3 border-b border-[#EDE0CE] bg-[#FBF0E3]/50">
+            <div className="bg-white border border-[#DFE4E1] rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-5 py-3 border-b border-[#DFE4E1] bg-[#E2EFEB]/50">
                 <span className="text-sm font-semibold text-stone-600">顧問個人進度</span>
                 <span className="text-xs text-stone-400 ml-2">{data.advisors.length} 位顧問</span>
               </div>
-              <div className="divide-y divide-[#F5EDE0]">
+              <div className="divide-y divide-[#F6F8F6]">
                 {data.advisors.length === 0 ? (
                   <p className="text-sm text-stone-400 text-center py-10">今日尚無分配</p>
                 ) : (
@@ -116,7 +113,7 @@ export default function AdminProgressPage() {
                           <p className="text-sm font-semibold text-stone-800 truncate">{a.name}</p>
                           <p className="text-xs text-stone-400 truncate">{a.email}</p>
                           {a.is_admin === 1 && (
-                            <span className="text-[10px] font-bold text-[#C8956C] bg-[#FBF0E3] px-1.5 py-0.5 rounded-full">
+                            <span className="text-[10px] font-bold text-[#2F7A6B] bg-[#E2EFEB] px-1.5 py-0.5 rounded-full">
                               管理員
                             </span>
                           )}
@@ -128,14 +125,14 @@ export default function AdminProgressPage() {
                             <p className="text-xs text-stone-300">今日無分配</p>
                           ) : (
                             <>
-                              <div className="h-2 bg-[#F5EDE0] rounded-full overflow-hidden">
+                              <div className="h-2 bg-[#F6F8F6] rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full transition-all duration-500"
                                   style={{
                                     width: `${pct}%`,
                                     background: done
                                       ? "linear-gradient(90deg,#34D399,#10B981)"
-                                      : "linear-gradient(90deg,#C8956C,#A0714F)",
+                                      : "#2F7A6B",
                                   }}
                                 />
                               </div>
@@ -154,7 +151,7 @@ export default function AdminProgressPage() {
                             </span>
                           ) : (
                             <>
-                              <p className="text-base font-bold text-[#C8956C]">
+                              <p className="text-base font-bold text-[#2F7A6B]">
                                 {a.completed}
                                 <span className="text-sm font-normal text-stone-400"> / {a.total}</span>
                               </p>

@@ -8,6 +8,41 @@
       "when": 1791691476898,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791696871425,
+      "tag": "0001_w1a_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791696871992,
+      "tag": "0002_backfill_sale_dates",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791701800874,
+      "tag": "0003_messages_seq",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791713078625,
+      "tag": "0004_snapshots_seq",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791715018308,
+      "tag": "0005_gap_overrides",
+      "breakpoints": true
     }
   ]
 }

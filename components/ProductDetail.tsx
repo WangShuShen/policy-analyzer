@@ -88,41 +88,41 @@ function TrialPanel({ planCode, analysis }: { planCode: string; analysis: Analys
   };
 
   return (
-    <div className="bg-[#FEF9F2] border border-[#EDE0CE] rounded-xl p-4 sm:p-5">
+    <div className="bg-[#F6F8F6] border border-[#DFE4E1] rounded-xl p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {isPlanEnum ? (
           <select value={plan} onChange={e => setPlan(e.target.value)}
-            className="flex-1 min-w-[8rem] text-sm border border-[#E8D5B7] rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#C8956C]/20">
+            className="flex-1 min-w-[8rem] text-sm border border-[#CDD6D2] rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#2F7A6B]/20">
             {plans.map(p => <option key={p} value={p}>計劃 {p}</option>)}
           </select>
         ) : (
           <input type="number" min={0} value={amount} onChange={e => setAmount(e.target.value)}
             onKeyDown={e => e.key === "Enter" && run()} placeholder={inputLabel}
-            className="flex-1 min-w-[8rem] text-sm border border-[#E8D5B7] rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#C8956C]/20 focus:border-[#C8956C]" />
+            className="flex-1 min-w-[8rem] text-sm border border-[#CDD6D2] rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#2F7A6B]/20 focus:border-[#2F7A6B]" />
         )}
         <button onClick={run} disabled={loading}
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all whitespace-nowrap"
-          style={{ background: "linear-gradient(135deg, #C8956C, #A0714F)" }}>
+          style={{ background: "#2F7A6B" }}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
           試算
         </button>
       </div>
       {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
       {results.length > 0 && (
-        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-x-auto">
+        <div className="bg-white border border-[#DFE4E1] rounded-xl overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="bg-[#FBF0E3] border-b border-[#EDE0CE]">
-                <th className="text-left px-3 py-2 text-[#8B5E3C] font-semibold">給付項目</th>
-                <th className="text-right px-3 py-2 text-[#8B5E3C] font-semibold">試算金額</th>
-                <th className="text-left px-3 py-2 text-[#8B5E3C] font-semibold hidden sm:table-cell">說明</th>
+              <tr className="bg-[#E2EFEB] border-b border-[#DFE4E1]">
+                <th className="text-left px-3 py-2 text-[#2F7A6B] font-semibold">給付項目</th>
+                <th className="text-right px-3 py-2 text-[#2F7A6B] font-semibold">試算金額</th>
+                <th className="text-left px-3 py-2 text-[#2F7A6B] font-semibold hidden sm:table-cell">說明</th>
               </tr>
             </thead>
             <tbody>
               {results.map((r, i) => (
-                <tr key={i} className="border-b border-[#F5EDE0] last:border-0">
+                <tr key={i} className="border-b border-[#F6F8F6] last:border-0">
                   <td className="px-3 py-2 text-stone-700 font-medium">{r.label}</td>
-                  <td className="px-3 py-2 text-right font-bold text-[#8B5E3C] whitespace-nowrap">{r.display}</td>
+                  <td className="px-3 py-2 text-right font-bold text-[#2F7A6B] whitespace-nowrap">{r.display}</td>
                   <td className="px-3 py-2 text-stone-400 hidden sm:table-cell">
                     {r.limit && <span className="mr-2">{r.limit}</span>}
                     {r.note && <span className="italic">{r.note}</span>}
@@ -142,12 +142,12 @@ function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
   return (
     <div className="space-y-4">
       {data.items && data.items.length > 0 && (
-        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-[#FBF0E3] border-b border-[#EDE0CE]"><span className="text-sm font-semibold text-[#8B5E3C]">📋 給付明細</span></div>
+        <div className="bg-white border border-[#DFE4E1] rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-[#E2EFEB] border-b border-[#DFE4E1]"><span className="text-sm font-semibold text-[#2F7A6B]">📋 給付明細</span></div>
           <table className="w-full text-xs">
             <tbody>
               {data.items.map((it, i) => (
-                <tr key={i} className="border-b border-[#F5EDE0] last:border-0">
+                <tr key={i} className="border-b border-[#F6F8F6] last:border-0">
                   <td className="px-3 py-2.5 text-stone-700 font-medium align-top w-36">{it.name}</td>
                   <td className="px-3 py-2.5 align-top">
                     <span className="text-stone-700 font-medium">{benefitDisplay(it)}</span>
@@ -160,7 +160,7 @@ function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
         </div>
       )}
       {(data.annualLimit?.formula || data.waitingPeriod?.note) && (
-        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-hidden">
+        <div className="bg-white border border-[#DFE4E1] rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100"><span className="text-sm font-semibold text-stone-600">📊 給付限制</span></div>
           <div className="px-4 py-3 space-y-2 text-xs">
             {data.annualLimit?.formula && <div><span className="text-stone-400">年度上限：</span><span className="text-stone-700">{data.annualLimit.formula}</span></div>}
@@ -169,7 +169,7 @@ function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
         </div>
       )}
       {((data.exclusions?.length ?? 0) > 0 || (data.specialRestrictions?.length ?? 0) > 0) && (
-        <div className="bg-white border border-[#EDE0CE] rounded-xl overflow-hidden">
+        <div className="bg-white border border-[#DFE4E1] rounded-xl overflow-hidden">
           <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100"><span className="text-sm font-semibold text-stone-600">⚠️ 注意事項</span></div>
           <div className="px-4 py-3 space-y-1.5">
             {(data.exclusions ?? []).map((e, i) => <p key={`e${i}`} className="text-xs text-red-600">❌ {e}</p>)}
@@ -186,8 +186,8 @@ function AnalysisInfoPanel({ data }: { data: AnalysisData }) {
 function SectionTitle({ icon: Icon, children }: { icon: typeof Calculator; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 mb-3">
-      <Icon className="h-4 w-4 text-[#C8956C]" />
-      <h2 className="text-sm font-semibold text-[#8B5E3C]">{children}</h2>
+      <Icon className="h-4 w-4 text-[#2F7A6B]" />
+      <h2 className="text-sm font-semibold text-[#2F7A6B]">{children}</h2>
     </div>
   );
 }
@@ -268,12 +268,12 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
           <h1 className="text-lg sm:text-xl font-bold text-stone-800">{analysis?.productName ?? meta?.product_name ?? planCode}</h1>
           <p className="text-sm text-stone-500 mt-0.5">
             {analysis?.company ?? meta?.company ?? ""}
-            <span className="font-mono text-xs text-[#8B5E3C] ml-1">代號 {analysis?.displayCode || planCode}</span>
+            <span className="font-mono text-xs text-[#2F7A6B] ml-1">代號 {analysis?.displayCode || planCode}</span>
             {analysis?.displayCode && <span className="font-mono text-[10px] text-stone-300 ml-1">系統碼 {planCode}</span>}
           </p>
         </div>
         <button onClick={() => setConfirmReopen(true)} disabled={reopening}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-[#8B5E3C] border border-[#E8D5B7] bg-white hover:bg-[#FBF0E3] disabled:opacity-50 transition-colors whitespace-nowrap shrink-0">
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-[#2F7A6B] border border-[#CDD6D2] bg-white hover:bg-[#E2EFEB] disabled:opacity-50 transition-colors whitespace-nowrap shrink-0">
           {reopening ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
           重新審核
         </button>
@@ -309,15 +309,15 @@ export default function ProductDetail({ planCode }: { planCode: string }) {
         <section className="lg:sticky lg:top-4">
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-[#C8956C]" />
-              <h2 className="text-sm font-semibold text-[#8B5E3C]">文件</h2>
+              <FileText className="h-4 w-4 text-[#2F7A6B]" />
+              <h2 className="text-sm font-semibold text-[#2F7A6B]">文件</h2>
             </div>
-            <div className="inline-flex rounded-lg overflow-hidden border border-[#E8D5B7] text-xs">
+            <div className="inline-flex rounded-lg overflow-hidden border border-[#CDD6D2] text-xs">
               {([["clause", "條款"], ["rate", "費率"], ["spec", "說明"]] as ["clause" | "rate" | "spec", string][]).map(([t, label], i) => {
                 const has = !!docIds[t];
                 return (
                   <button key={t} type="button" onClick={() => setDocTab(t)}
-                    className={`px-3 py-1 ${i > 0 ? "border-l border-[#E8D5B7]" : ""} ${docTab === t ? "bg-[#C8956C] text-white font-medium" : has ? "bg-white text-stone-600 hover:bg-[#FBF0E3]" : "bg-white text-stone-300"}`}>
+                    className={`px-3 py-1 ${i > 0 ? "border-l border-[#CDD6D2]" : ""} ${docTab === t ? "bg-[#2F7A6B] text-white font-medium" : has ? "bg-white text-stone-600 hover:bg-[#E2EFEB]" : "bg-white text-stone-300"}`}>
                     {label}{!has && " ·無"}
                   </button>
                 );

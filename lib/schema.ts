@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, primaryKey, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, primaryKey, unique, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 /*
  * 資料庫結構的唯一真實來源。改這裡 → `npm run db:generate` 產生 migration → `npm run db:migrate`。
@@ -32,6 +32,10 @@ export const products = pgTable("products", {
   verified: integer("verified").notNull().default(0),
   formula_json: text("formula_json"),
   formula_verified: integer("formula_verified").notNull().default(0),
+  // R2：銷售起訖（YYYY-MM-DD）。存摺對版本靠「生效日落在哪一版的銷售期間」（實作設計 P1）。
+  // sale_end_date 為 NULL ＝ 仍在售。
+  sale_start_date: text("sale_start_date"),
+  sale_end_date: text("sale_end_date"),
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [unique("products_identity").on(t.company_id, t.plan_code, t.plan_type, t.year, t.version)]);
@@ -63,6 +67,13 @@ export const advisors = pgTable("advisors", {
   name: text("name").notNull(),
   is_admin: integer("is_admin").notNull().default(0),
   is_active: integer("is_active").notNull().default(1),
+  // 顧問頁（4-a／B4）：客戶選顧問時看到的內容
+  specialties: text("specialties"),          // JSON 陣列，最多 2 個
+  style: text("style"),
+  intro: text("intro"),                      // 一句自我介紹，40 字內
+  meeting_link: text("meeting_link"),        // 固定的線上面談連結（Meet／Zoom／LINE）
+  onsite_location: text("onsite_location"),  // 面對面地點
+  license_no: text("license_no"),            // 登錄字號（N2／N20），由管理者設定
   created_at: createdAt(),
 });
 
@@ -146,3 +157,219 @@ export const policies = pgTable("policies", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 });
+
+/* ══════════════════════════════════════════════════════════════════
+ * W1：AI 諮詢服務（實作設計 D1）
+ *
+ * 個資規則（設計準則 §1、N4–N6）：
+ *   ・特種個資欄位一律應用層加密，欄位名 _enc（lib/fieldCrypto.ts）
+ *   ・每筆個資必有 expires_at，寫入時就要填（未成交準客戶＝最後互動後 1 年，D3）
+ *   ・刪除用硬刪除：刪 conversation 時訊息、需求點、攔截紀錄一併刪（ON DELETE CASCADE）
+ *   ・查客戶資料的函式一律強制帶 advisorId（應用層隔離，不用 RLS）
+ * ══════════════════════════════════════════════════════════════════ */
+
+// 同意紀錄（N4、4-z）：必要與行銷分開記，撤回填 withdrawn_at
+export const consents = pgTable("consents", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  doc_version: text("doc_version").notNull(),       // 同意書版本，例如 "2026-10-08"
+  scope: text("scope").notNull(),                   // required | marketing
+  granted_at: text("granted_at").notNull().default(nowText),
+  withdrawn_at: text("withdrawn_at"),
+  created_at: createdAt(),
+}, t => [index("consents_user").on(t.user_id)]);
+
+// 一段諮詢對話（4-x、4-y）。衛教模式（沒同意）一個字都不記，所以不會有列。
+export const conversations = pgTable("conversations", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  branch: text("branch"),                           // health | finance
+  sub_route: text("sub_route"),                     // ret | tax | edu（財務子路線）
+  status: text("status").notNull().default("active"),  // active | paused | done
+  flow_cursor: text("flow_cursor"),                 // 目前停在哪個欄位，接續時從這裡往下
+  title: text("title"),                             // 對話紀錄清單顯示用（不含個資的摘要）
+  last_active_at: text("last_active_at").notNull().default(nowText),
+  expires_at: text("expires_at").notNull(),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("conversations_user").on(t.user_id)]);
+
+export const messages = pgTable("messages", {
+  id: text("id").primaryKey(),
+  // 寫入順序。created_at 只到秒，同一秒內好幾則（AI 回一句＋腳本接著問）會排錯，要靠這個
+  seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
+  conversation_id: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),                     // user | assistant | system
+  content_enc: text("content_enc").notNull(),
+  quick_replies: text("quick_replies"),             // JSON 陣列；系統產的選項，不含使用者輸入
+  // 這則訊息用到的內容版本（問法／趨勢卡／案例）。舊對話不會因內容改版而變了意思（I3）
+  content_version_id: text("content_version_id"),
+  model: text("model"),
+  tokens_in: integer("tokens_in"),
+  tokens_out: integer("tokens_out"),
+  cost_micro_usd: integer("cost_micro_usd"),        // 觀察期用量紀錄（I6）
+  compliance_rewritten: integer("compliance_rewritten").notNull().default(0),
+  created_at: createdAt(),
+}, t => [index("messages_conversation").on(t.conversation_id, t.seq)]);
+
+// 需求點（I1、I5）：同一段對話同一個欄位只有一筆，修改就覆寫
+export const facts = pgTable("facts", {
+  id: text("id").primaryKey(),
+  conversation_id: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),                       // 例：age、risk、food、loan
+  value_enc: text("value_enc").notNull(),
+  // 不含個資的粗略級距，給統計用（D2）。健康類一律不存（is_health=1 時必為 NULL）
+  bucket: text("bucket"),
+  is_health: integer("is_health").notNull().default(0),
+  confidence: text("confidence").notNull(),         // clear | estimated | confirmed
+  source_message_id: text("source_message_id").references(() => messages.id, { onDelete: "set null" }),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [
+  unique("facts_conversation_key").on(t.conversation_id, t.key),
+  index("facts_user").on(t.user_id),
+]);
+
+// 被合規檢查攔下的 AI 回覆（I4）：調規則用，也是稽核證據
+export const complianceBlocks = pgTable("compliance_blocks", {
+  id: text("id").primaryKey(),
+  conversation_id: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  layer: text("layer").notNull(),                   // rule | ai
+  reason: text("reason").notNull(),
+  original_enc: text("original_enc").notNull(),     // AI 原句可能帶到使用者講過的事，所以加密
+  replacement_enc: text("replacement_enc"),
+  attempt: integer("attempt").notNull().default(1),
+  created_at: createdAt(),
+});
+
+// 計算結果快照（4-ag、E1、E5）：AI 版與顧問版並存，差異說明由兩份快照的輸入自動比出
+export const analysisSnapshots = pgTable("analysis_snapshots", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conversation_id: text("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+  source: text("source").notNull(),                 // ai | advisor
+  advisor_id: text("advisor_id"),
+  inputs_enc: text("inputs_enc").notNull(),         // 算這份時用的需求點
+  results_enc: text("results_enc").notNull(),
+  assumptions_version: text("assumptions_version").notNull(),  // 用哪一版假設參數（E4）
+  expires_at: text("expires_at").notNull(),
+  // created_at 只到秒，同一秒內的多份分不出先後；跟 messages 一樣用自增序號排
+  seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
+  created_at: createdAt(),
+}, t => [index("analysis_snapshots_user").on(t.user_id, t.created_at), index("analysis_snapshots_conv").on(t.conversation_id, t.seq)]);
+
+// 對話內容（問法、醫療趨勢卡、案例）：由管理後台維護（I3、I7），W1a 先用種子
+export const contentItems = pgTable("content_items", {
+  id: text("id").primaryKey(),                      // 例：q.age、trend.t1、case.cancer
+  kind: text("kind").notNull(),                     // question | trend | case
+  branch: text("branch"),
+  live_version_id: text("live_version_id"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+});
+
+export const contentVersions = pgTable("content_versions", {
+  id: text("id").primaryKey(),
+  item_id: text("item_id").notNull().references(() => contentItems.id),
+  body: text("body").notNull(),                     // JSON
+  source: text("source"),                           // 出處（N17：統計要標出處與年份）
+  source_year: text("source_year"),
+  status: text("status").notNull().default("draft"),  // draft | pending | live | retired
+  author_id: text("author_id"),
+  reviewer_id: text("reviewer_id"),
+  reviewed_at: text("reviewed_at"),
+  created_at: createdAt(),
+}, t => [index("content_versions_item").on(t.item_id)]);
+
+// 上傳的保險存摺（4-w、P1、N19）。檔案本身放私有儲存，這裡只記位置與解析狀態
+export const passbookUploads = pgTable("passbook_uploads", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conversation_id: text("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+  file_ref_enc: text("file_ref_enc").notNull(),
+  mime: text("mime").notNull(),
+  // queued → reading → confirming（等客戶確認清單）→ matching → done | failed
+  status: text("status").notNull().default("queued"),
+  error: text("error"),
+  expires_at: text("expires_at").notNull(),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("passbook_uploads_status").on(t.status)]);
+
+// 從存摺讀出的每一張保單（P1–P4）
+export const clientPolicies = pgTable("client_policies", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  upload_id: text("upload_id").references(() => passbookUploads.id, { onDelete: "set null" }),
+  raw_enc: text("raw_enc").notNull(),               // 讀出的原始欄位（公司、商品名、保額、生效日…）
+  product_id: integer("product_id").references(() => products.id),
+  // matched（公式已審）| ai_read（AI 初步讀取、未審）| pending（待補）| removed（客戶說已解約）
+  match_status: text("match_status").notNull(),
+  confirmed_by_user: integer("confirmed_by_user").notNull().default(0),
+  expires_at: text("expires_at").notNull(),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("client_policies_user").on(t.user_id)]);
+
+// 顧問可約時段（B2）：kind=weekly 每週固定時段；kind=block 封鎖某一天
+export const advisorSlots = pgTable("advisor_slots", {
+  id: text("id").primaryKey(),
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),                     // weekly | block
+  weekday: integer("weekday"),                      // 0（日）～6（六），weekly 用
+  start_time: text("start_time"),                   // HH:MM（台灣時間）
+  end_time: text("end_time"),
+  block_date: text("block_date"),                   // YYYY-MM-DD，block 用
+  created_at: createdAt(),
+}, t => [index("advisor_slots_advisor").on(t.advisor_id)]);
+
+// 預約與面談結果（4-ah、B1）。「已解鎖」不另存：存在一筆 status=met 的預約即解鎖（D1）
+export const bookings = pgTable("bookings", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id),
+  conversation_id: text("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+  starts_at: text("starts_at").notNull(),           // ISO 8601（UTC）
+  ends_at: text("ends_at").notNull(),
+  mode: text("mode").notNull(),                     // online | onsite
+  // booked → met | no_show | rescheduled | cancelled_by_client | cancelled_by_advisor
+  status: text("status").notNull().default("booked"),
+  status_by: text("status_by"),
+  status_at: text("status_at"),
+  cancel_reason: text("cancel_reason"),
+  rescheduled_to: text("rescheduled_to"),           // 改期後的新預約 id
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [
+  // 同一顧問同一時段只能有一筆有效預約，兩人同時搶同一格時由資料庫擋（B2）
+  uniqueIndex("bookings_slot_active").on(t.advisor_id, t.starts_at).where(sql`${t.status} = 'booked'`),
+  index("bookings_user").on(t.user_id),
+]);
+
+// 顧問改缺口分級（實作設計 G1）：只新增不覆蓋，每一筆都是一次改動；每格以最新一筆為準。
+// 留著系統原判與理由，之後看得出哪條規則常被推翻，回頭修規則。
+export const gapOverrides = pgTable("gap_overrides", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id),
+  gap_key: text("gap_key").notNull(),               // life | disability | card …（lib/calc/gaps.ts GapKey）
+  level: text("level").notNull(),                   // must | boost | ok | later
+  system_level: text("system_level").notNull(),     // 改的當下系統判的是什麼
+  reason_enc: text("reason_enc").notNull(),         // 顧問寫的理由（可能含病史等個資，加密）
+  expires_at: text("expires_at").notNull(),
+  seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
+  created_at: createdAt(),
+}, t => [index("gap_overrides_user").on(t.user_id, t.seq)]);
+
+// 誰在何時讀了誰的個案資料（N12）。只記存取事實，不存個資內容
+export const auditLogs = pgTable("audit_logs", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+  actor_id: text("actor_id").notNull(),
+  actor_role: text("actor_role").notNull(),         // advisor | admin | system
+  action: text("action").notNull(),                 // 例：view_conversation、view_analysis
+  target_user_id: text("target_user_id"),
+  target_type: text("target_type"),
+  target_id: text("target_id"),
+  created_at: createdAt(),
+}, t => [index("audit_logs_target").on(t.target_user_id, t.created_at)]);
