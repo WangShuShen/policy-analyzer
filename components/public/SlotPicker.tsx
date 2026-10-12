@@ -12,7 +12,7 @@ import type { Slot } from "@/lib/booking/slots";
  */
 const WD = ["日", "一", "二", "三", "四", "五", "六"];
 
-export function SlotPicker({ advisor, slots }: { advisor: AdvisorCard; slots: Slot[] }) {
+export function SlotPicker({ advisor, slots, reschedule }: { advisor: AdvisorCard; slots: Slot[]; reschedule?: { id: string; startsAt: string } }) {
   const router = useRouter();
   const days = useMemo(() => {
     const m = new Map<string, Slot[]>();
@@ -33,9 +33,11 @@ export function SlotPicker({ advisor, slots }: { advisor: AdvisorCard; slots: Sl
   const submit = async () => {
     if (!pick) return;
     setBusy(true); setError("");
-    const r = await fetch("/api/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advisorId: advisor.id, startsAt: pick.startsAt, mode }) });
+    const r = reschedule
+      ? await fetch(`/api/bookings/${reschedule.id}/reschedule`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ startsAt: pick.startsAt, mode }) })
+      : await fetch("/api/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advisorId: advisor.id, startsAt: pick.startsAt, mode }) });
     const j = await r.json().catch(() => ({}));
-    if (r.ok) { router.push("/me?booked=1"); return; }
+    if (r.ok) { router.push(reschedule ? "/me?rescheduled=1" : "/me?booked=1"); return; }
     setBusy(false); setError(j.error ?? "沒約成功，請再試一次");
     if (j.code === "slot_taken") { setPick(null); router.refresh(); }
     if (j.code === "already_booked") router.push("/me");
@@ -45,7 +47,7 @@ export function SlotPicker({ advisor, slots }: { advisor: AdvisorCard; slots: Sl
     <div className="cols"><div className="main">
       <div className="titlerow"><svg className="ill i34" viewBox="0 0 48 48" aria-hidden="true"><use href="#i-cal" /></svg>
         <div><h2 className="t" style={{ marginBottom: 4 }}>什麼時候方便？</h2>
-          <p className="sub">{advisor.name} 顧問 · 一次大約 40 分鐘</p></div></div>
+          <p className="sub">{advisor.name} 顧問 · 一次大約 40 分鐘{reschedule && <><br />改時間：原本約在 <b>{new Date(reschedule.startsAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })}</b>，挑一個新的</>}</p></div></div>
 
       {days.length === 0 ? (
         <div className="anzempty" style={{ marginTop: 16 }}><div className="aet">{advisor.name} 顧問接下來兩週都約滿了</div>
@@ -88,8 +90,8 @@ export function SlotPicker({ advisor, slots }: { advisor: AdvisorCard; slots: Sl
         </div>
       )}
       <Foot>
-        <button className="btn" disabled={!pick || busy} onClick={submit}>{busy ? "預約中…" : pick ? `確認預約 ${pick.localDate.slice(5).replace("-", "/")} ${pick.localTime}` : "確認預約"}</button>
-        <a className="btn ghost" href="/advisors">換一位顧問</a>
+        <button className="btn" disabled={!pick || busy} onClick={submit}>{busy ? (reschedule ? "改期中…" : "預約中…") : pick ? `${reschedule ? "改到" : "確認預約"} ${pick.localDate.slice(5).replace("-", "/")} ${pick.localTime}` : reschedule ? "改時間" : "確認預約"}</button>
+        {reschedule ? <a className="btn ghost" href="/me">不改了</a> : <a className="btn ghost" href="/advisors">換一位顧問</a>}
       </Foot>
     </div></div>
   );

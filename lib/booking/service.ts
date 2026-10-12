@@ -5,7 +5,7 @@ import { availableSlots, SESSION_MINUTES, validRule, type Slot, type WeeklyRule 
 
 /*
  * 預約（實作設計 B1–B5、4-y）。W1a：顧問頁、時段、預約、確認信＋.ics、會議連結。
- * 提醒、自助改期取消、顧問取消在 W1b。
+ * 提醒、自助改期取消、顧問取消、站內通知在 lib/booking/lifecycle.ts（W1b）。
  *
  * 客戶看得到的顧問：啟用中、有登錄字號（N20：讓客戶可查證身分）、寫了自我介紹、
  * 設了至少一個每週時段、而且有線上連結或面對面地點——少一樣就約不成，不如不列。
@@ -112,17 +112,24 @@ export async function book(userId: string, input: { advisorId: string; startsAt:
 
 /** 預約明細（給確認頁、確認信）；只能看自己的 */
 export async function bookingDetail(userId: string, id: string) {
+  const d = await bookingDetailById(id);
+  return d && d.client.id === userId ? d : null;
+}
+
+/** 不檢查身分的明細——只給伺服器端內部用（通知、提醒、顧問端已驗過權限的地方） */
+export async function bookingDetailById(id: string) {
   const [r] = await db.select({ b: bookings, a: advisors, u: users }).from(bookings)
     .innerJoin(advisors, eq(advisors.id, bookings.advisor_id)).innerJoin(users, eq(users.id, bookings.user_id))
-    .where(and(eq(bookings.id, id), eq(bookings.user_id, userId))).limit(1);
+    .where(eq(bookings.id, id)).limit(1);
   if (!r) return null;
   return {
     id: r.b.id, startsAt: r.b.starts_at, endsAt: r.b.ends_at, mode: r.b.mode as "online" | "onsite", status: r.b.status, conversationId: r.b.conversation_id,
+    rescheduleCount: r.b.reschedule_count, cancelReason: r.b.cancel_reason,
     advisor: { id: r.a.id, name: r.a.name, email: r.a.email, licenseNo: r.a.license_no, meetingLink: r.a.meeting_link, onsiteLocation: r.a.onsite_location, specialties: parseSpecs(r.a.specialties) },
     client: { id: r.u.id, name: r.u.name, email: r.u.email },
   };
 }
-export type BookingDetail = NonNullable<Awaited<ReturnType<typeof bookingDetail>>>;
+export type BookingDetail = NonNullable<Awaited<ReturnType<typeof bookingDetailById>>>;
 
 // ── 顧問端：我的顧問頁（B4、B8）────────────────────────────────────
 

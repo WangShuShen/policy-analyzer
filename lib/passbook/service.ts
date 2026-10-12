@@ -1,9 +1,7 @@
 import db, { nowText } from "@/lib/db";
 import { passbookUploads, clientPolicies, policies } from "@/lib/schema";
-import { and, asc, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { encryptJson, decryptJson } from "@/lib/fieldCrypto";
-import { analyzePolicyPdf } from "@/lib/analyzeEngine";
-import { downloadDriveFile, hasDriveCredentials } from "@/lib/googleDrive";
 import { readPassbook, type PassbookContent, type PassbookPolicy, type ReadUsage } from "./read";
 import { matchPolicy, MATCH_REASON } from "./catalog";
 import { BUCKETS, bucketGuess, bucketOf, evaluateItem, fmtValue, type AnalysisJson, type BucketKey, type ItemValue } from "./coverage";
@@ -113,33 +111,14 @@ export async function confirm(userId: string, uploadId: string, items: ConfirmIt
 
 // ── ③ 對版本＋找公式 ──────────────────────────────────────────────
 
-/** 讀條款（約 40 秒）。跟每日排程同一套（app/api/cron/analyze-daily），結果寫回審核產線等顧問審（P4 回寫） */
-async function analyzeOnDemand(planCode: string): Promise<boolean> {
-  if (!hasDriveCredentials()) return false;
-  const [p] = await db.select().from(policies)
-    .where(and(eq(policies.plan_code, planCode), eq(policies.status, "pending_analysis"), isNotNull(policies.pdf_drive_id), ne(policies.pdf_drive_id, "")))
-    .limit(1);
-  if (!p) return false;
-  try {
-    const pdf = await downloadDriveFile(p.pdf_drive_id!);
-    if (!pdf || pdf.subarray(0, 4).toString("latin1") !== "%PDF") return false;
-    let rate: string | undefined;
-    if (p.rate_drive_id) {
-      const r = await downloadDriveFile(p.rate_drive_id);
-      if (r && r.subarray(0, 4).toString("latin1") === "%PDF") rate = r.toString("base64");
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    const { data, category } = await analyzePolicyPdf(pdf.toString("base64"), undefined, rate);
-    if (!Array.isArray((data as { items?: unknown }).items)) return false;
-    // 排程可能同時分析了同一張：只在還是 pending_analysis 時寫入
-    await db.update(policies)
-      .set({ analysis_json: JSON.stringify({ ...data, _analyzedAt: today, _detectedCategory: category, _trigger: "passbook" }), status: "uploaded", uploaded_at: today, updated_at: nowText })
-      .where(and(eq(policies.uuid, p.uuid), eq(policies.status, "pending_analysis")));
-    return true;
-  } catch (e) {
-    console.error("[passbook] analyze failed", planCode, e);
-    return false;
-  }
+/**
+ * 命中目錄但條款還沒分析：不在現場呼叫 API，排進 skill 批次分析佇列（訂閱額度，2026-10-12 顧問決定）。
+ * scripts/skill-fetch.mjs 會先拿 requested_at 有值的；分析完寫回 policies，view() 下次讀到就自動變「初步」。
+ */
+async function requestAnalysis(planCode: string): Promise<void> {
+  await db.update(policies)
+    .set({ requested_at: sql`coalesce(${policies.requested_at}, ${nowText})`, request_count: sql`${policies.request_count} + 1`, updated_at: nowText })
+    .where(and(eq(policies.plan_code, planCode), eq(policies.status, "pending_analysis")));
 }
 
 async function formulaStatus(planCode: string): Promise<"matched" | "ai_read" | "none"> {
@@ -154,7 +133,6 @@ export async function processMatch(uploadId: string): Promise<void> {
   if (!u || u.status !== "matching") return;
   const rows = await db.select().from(clientPolicies)
     .where(and(eq(clientPolicies.upload_id, uploadId), eq(clientPolicies.match_status, "unconfirmed")));
-  const needAnalysis: { rowId: string; planCode: string }[] = [];
 
   for (const r of rows) {
     const sp = decryptJson<StoredPolicy>(r.raw_enc);
@@ -164,21 +142,16 @@ export async function processMatch(uploadId: string): Promise<void> {
       sp.match = { planCode: m.product.planCode, productName: m.product.productName, productType: m.product.productType, how: m.how, dateCheck: m.dateCheck };
       const f = await formulaStatus(m.product.planCode);
       if (f !== "none") status = f;
-      else needAnalysis.push({ rowId: r.id, planCode: m.product.planCode });
+      else await requestAnalysis(m.product.planCode);
     } else {
       sp.match = { reason: MATCH_REASON[m.reason], detail: m.candidates?.join("、") };
     }
     await db.update(clientPolicies).set({ raw_enc: encryptJson(sp), match_status: status, updated_at: nowText }).where(eq(clientPolicies.id, r.id));
   }
 
-  // 命中但公式還沒有：讀條款（同時最多 3 張，避免撞到函式時間上限）
-  for (let i = 0; i < needAnalysis.length; i += 3) {
-    await Promise.all(needAnalysis.slice(i, i + 3).map(async n => {
-      const ok = await analyzeOnDemand(n.planCode);
-      if (ok) await db.update(clientPolicies).set({ match_status: "ai_read", updated_at: nowText }).where(eq(clientPolicies.id, n.rowId));
-    }));
-  }
   await setStatus(uploadId, "done");
+  // 有約好的顧問 → 通知他客戶的存摺好了（動態載入，避免跟預約模組互相引用）
+  await import("@/lib/booking/lifecycle").then(m => m.notifyPassbookReady(u.user_id)).catch(e => console.error("[passbook] notify advisor failed", e));
 }
 
 // ── 狀態與全險圖 ──────────────────────────────────────────────────
@@ -227,6 +200,14 @@ export async function view(userId: string): Promise<PassbookView & { stuck: { id
     for (const f of fr.sort((a, b) => (a.status === "archived" ? 1 : 0) - (b.status === "archived" ? 1 : 0))) {
       try { formulas.set(f.plan_code, JSON.parse(f.analysis_json!)); } catch { /* 壞掉的分析當作沒有 */ }
     }
+    // 排隊的條款分析好了（skill 批次寫回）→ 這張從「排隊中」變成有結果，順手寫回
+    const reviewed = new Set(fr.filter(f => f.status === "archived").map(f => f.plan_code));
+    for (const { r, sp } of parsed) {
+      const code = sp.match && "planCode" in sp.match ? sp.match.planCode : null;
+      if (r.match_status !== "pending" || !code || !formulas.has(code)) continue;
+      r.match_status = reviewed.has(code) ? "matched" : "ai_read";
+      await db.update(clientPolicies).set({ match_status: r.match_status, updated_at: nowText }).where(eq(clientPolicies.id, r.id));
+    }
   }
 
   const sums = new Map<BucketKey, { lo: number; hi: number; preliminary: boolean }>();
@@ -244,7 +225,7 @@ export async function view(userId: string): Promise<PassbookView & { stuck: { id
     else if (forOther) counts.others++;
 
     if (m && "reason" in m) matchNote = m.reason;
-    else if (r.match_status === "pending") matchNote = "條款還在分析";
+    else if (r.match_status === "pending") matchNote = "條款排隊分析中，好了會自動更新";
 
     const f = m && "planCode" in m ? formulas.get(m.planCode) : undefined;
     const counted = r.match_status !== "removed" && !forOther && (r.match_status === "matched" || r.match_status === "ai_read") && f;

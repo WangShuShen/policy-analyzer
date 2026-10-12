@@ -1,6 +1,8 @@
 // node scripts/skill-fetch.mjs [N]
-// Agent Skill 批次分析步驟 1：取 N 筆 pending 保單，用服務帳號下載條款 PDF 到 tmp/skill-pdfs/，
+// Agent Skill 批次分析步驟 1：取 N 筆待分析條款，下載到 tmp/skill-pdfs/，
 // 並印出 manifest（uuid / planCode / 商品名 / 本機 PDF 路徑）供 Claude Code 逐筆讀取分析。
+// 取件順序（2026-10-12）：①顧問「資料庫沒有這張」送來的（analysis_requests，uuid 寫成 req:<id>）
+//   ②客戶存摺要用的 ③現售 ④其餘
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import crypto from "crypto";
@@ -32,14 +34,27 @@ mkdirSync(outDir, { recursive: true });
 let driveIndex = {};
 try { driveIndex = JSON.parse(readFileSync(join(ROOT, "data", "drive_index.json"), "utf8")); } catch {}
 
+// ① 顧問送來的：PDF 直接存在資料庫
+const reqs = await db.query(
+  `SELECT id, filename, pdf FROM analysis_requests WHERE status='queued' AND pdf IS NOT NULL ORDER BY created_at ASC LIMIT $1`, [N]);
+const manifest = [];
+for (const r of reqs.rows) {
+  const path = join(outDir, `req-${r.id}.pdf`);
+  writeFileSync(path, r.pdf);
+  manifest.push({ uuid: `req:${r.id}`, kind: "request", planCode: null, company: null, productName: r.filename.replace(/\.pdf$/i, ""), pdfPath: path });
+}
+
 const rows = await db.query(
   `SELECT uuid, plan_code, company, product_name, pdf_drive_id FROM policies
    WHERE status='pending_analysis' AND pdf_drive_id IS NOT NULL AND pdf_drive_id!=''
-   ORDER BY created_at ASC LIMIT $1`,
-  [N],
+   -- 順序：①客戶存摺要用的（被要越多次越前面）②現售商品 ③其餘照建立順序（2026-10-12）
+   ORDER BY (requested_at IS NULL), request_count DESC, requested_at ASC,
+            NOT EXISTS (SELECT 1 FROM products pr WHERE pr.plan_code = policies.plan_code AND pr.sale_end_date IS NULL),
+            created_at ASC
+   LIMIT $1`,
+  [Math.max(0, N - manifest.length)],
 );
-const at = await token2();
-const manifest = [];
+const at = rows.rows.length ? await token2() : null;
 for (const r of rows.rows) {
   const driveId = driveIndex[r.plan_code]?.clauseId || r.pdf_drive_id;
   const pdf = await download(driveId, at);

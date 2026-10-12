@@ -1,5 +1,5 @@
-import nodemailer from "nodemailer";
 import { bookingIcs } from "./ics";
+import { sendNow, type OutMail } from "@/lib/notify/outbox";
 import { fmtTaipei } from "./slots";
 import type { BookingDetail } from "./service";
 
@@ -8,17 +8,13 @@ import type { BookingDetail } from "./service";
  *   客戶：確認信＋.ics＋會議連結或地點；還沒傳存摺的提醒一句
  *   顧問：新預約通知＋.ics＋客戶需求點摘要的連結
  * 信件不放任何需求點內容與保單資料——信會被轉寄、會留在信箱裡（N8：可查不可匯出）。
- * 寄失敗不影響預約本身；W1b 走佇列＋重試（T7）。
+ * 寄信一律走佇列（lib/notify/outbox.ts）：當下試寄，失敗由排程重試（W1b，T7）。寄失敗不影響預約本身。
  */
 
-const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-const appUrl = () => (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+export const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+export const appUrl = () => (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
-function transport() {
-  return nodemailer.createTransport({ service: "gmail", auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD } });
-}
-
-const layout = (title: string, rows: [string, string][], body: string) => `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+export const layout = (title: string, rows: [string, string][], body: string) => `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f6f8f6;font-family:'Helvetica Neue',Arial,'PingFang TC','Noto Sans TC',sans-serif;color:#151a19">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f6f8f6"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%">
@@ -33,7 +29,7 @@ ${rows.map(([k, v]) => `<tr><td width="72" valign="top" style="padding:6px 0;col
 <tr><td style="padding:14px 4px;font-size:11.5px;color:#838c89;line-height:1.6">附件是日曆邀請（.ics），點開就能加入 Google／Apple／Outlook 日曆。</td></tr>
 </table></td></tr></table></body></html>`;
 
-function whereText(b: BookingDetail): { label: string; html: string; plain: string | null } {
+export function whereText(b: BookingDetail): { label: string; html: string; plain: string | null } {
   if (b.mode === "online") {
     const link = b.advisor.meetingLink;
     return { label: "線上視訊", html: link ? `線上視訊　<a href="${esc(link)}" style="color:#1f5a4e">${esc(link)}</a>` : "線上視訊（連結顧問會另外提供）", plain: link };
@@ -41,14 +37,18 @@ function whereText(b: BookingDetail): { label: string; html: string; plain: stri
   return { label: "面對面", html: `面對面　${esc(b.advisor.onsiteLocation ?? "")}`, plain: b.advisor.onsiteLocation };
 }
 
-type Mail = { from: string; to: string; replyTo: string; subject: string; html: string; attachments: { filename: string; content: string; contentType: string }[] };
+export type Mail = { from: string; to: string; replyTo: string; subject: string; html: string; attachments: { filename: string; content: string; contentType: string }[] };
 
-export async function sendBookingEmails(b: BookingDetail, opts: { hasPassbook: boolean }): Promise<{ client: boolean; advisor: boolean }> {
-  const [toClient, toAdvisor] = buildBookingEmails(b, opts);
-  const result = { client: false, advisor: false };
-  try { await transport().sendMail(toClient); result.client = true; } catch (e) { console.error("[booking] client mail failed", b.id, e); }
-  try { await transport().sendMail(toAdvisor); result.advisor = true; } catch (e) { console.error("[booking] advisor mail failed", b.id, e); }
-  return result;
+/** 預約成立的兩封信：排進寄信佇列並馬上試寄 */
+export async function sendBookingEmails(b: BookingDetail, opts: { hasPassbook: boolean }): Promise<void> {
+  const [c, a] = buildBookingEmails(b, opts);
+  await sendNow([toOut(c, "new_booking", b.id), toOut(a, "new_booking", b.id)]);
+}
+
+/** 舊格式（含 attachments）轉成佇列格式 */
+export function toOut(m: Mail, kind: string, bookingId: string): OutMail {
+  return { to: m.to, replyTo: m.replyTo, subject: m.subject, html: m.html, kind, bookingId,
+    ics: m.attachments.map(x => ({ filename: x.filename, content: x.content, method: "PUBLISH" as const })) };
 }
 
 /** 組出兩封信（不寄）。測試與預覽用同一份 */
@@ -74,8 +74,8 @@ export function buildBookingEmails(b: BookingDetail, opts: { hasPassbook: boolea
         ? `你的保險存摺已經整理好了，${esc(b.advisor.name)} 顧問面談前會先看過，<b>不用再傳一次</b>。`
         : `面談前<b>上傳保險存摺</b>，顧問才做得出專屬你的分析（現在有多少、還差多少）。<a href="${appUrl()}/consult" style="color:#1f5a4e">回到 RADIA 上傳</a>`}
         <br><br>你在對話裡講過的狀況會一起帶給顧問，<b>不用重講一次</b>。<br>
-        要改時間或取消，直接回覆這封信就會寄到 ${esc(b.advisor.name)} 顧問那裡。不想談了也沒關係，不會有人一直打給你。`),
-      attachments: [ics(`RADIA 面談：${b.advisor.name} 顧問`, `${when}｜${where.label}${where.plain ? `｜${where.plain}` : ""}\n要改時間或取消，回覆確認信即可。`)],
+        要改時間或取消，到 <a href="${appUrl()}/me" style="color:#1f5a4e">RADIA 我的頁面</a> 自己改就好（面談前 2 小時以前都可以）；2 小時內臨時有事，直接回覆這封信就會寄到 ${esc(b.advisor.name)} 顧問那裡。不想談了也沒關係，不會有人一直打給你。`),
+      attachments: [ics(`RADIA 面談：${b.advisor.name} 顧問`, `${when}｜${where.label}${where.plain ? `｜${where.plain}` : ""}\n要改時間或取消：RADIA 我的頁面（面談前 2 小時以前）。`)],
   };
 
   // 給顧問（不放需求點內容，只給連結；登入後才看得到，查閱留稽核）

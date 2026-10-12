@@ -6,6 +6,7 @@ import { requireConsultPage } from "@/lib/consult/pageGate";
 import { getFacts } from "@/lib/consult/store";
 import { view as passbookView } from "@/lib/passbook/service";
 import { fmtTaipei } from "@/lib/booking/slots";
+import { MeBookingActions } from "@/components/public/MeBookingActions";
 
 /*
  * 我的頁面（原型 SCREENS.me）：客戶端唯一的家。四個分頁：預約與進度｜我的規劃｜我的保單｜我的顧問。
@@ -14,13 +15,14 @@ import { fmtTaipei } from "@/lib/booking/slots";
 const METABS = [["book", "預約與進度"], ["plan", "我的規劃"], ["pol", "我的保單"], ["adv", "我的顧問"]] as const;
 const parseSpecs = (s: string | null) => { try { const a = JSON.parse(s ?? "[]"); return Array.isArray(a) ? a as string[] : []; } catch { return []; } };
 
-export default async function MePage({ searchParams }: { searchParams: Promise<{ tab?: string; booked?: string }> }) {
+export default async function MePage({ searchParams }: { searchParams: Promise<{ tab?: string; booked?: string; rescheduled?: string; cancelled?: string }> }) {
   const { userId, name } = await requireConsultPage();
-  const { tab = "book", booked } = await searchParams;
+  const { tab = "book", booked, rescheduled, cancelled } = await searchParams;
 
   const [bRow] = await db.select({ b: bookings, a: advisors }).from(bookings).innerJoin(advisors, eq(advisors.id, bookings.advisor_id))
     .where(eq(bookings.user_id, userId)).orderBy(desc(bookings.created_at)).limit(1);
   const b = bRow && ["booked", "met"].includes(bRow.b.status) ? bRow : null;
+  const advCancelled = bRow?.b.status === "cancelled_by_advisor" ? bRow : null;   // 顧問取消：告訴客戶原因
   const adv = b?.a ?? null;
   const advSp = adv ? parseSpecs(adv.specialties).join("、") : "";
   const [conv] = await db.select().from(conversations).where(eq(conversations.user_id, userId)).orderBy(desc(conversations.last_active_at)).limit(1);
@@ -48,14 +50,16 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
 
       {tab === "book" && (
         <div className="ccg">
-          {booked && b && !met && <div className="ccc wide" style={{ background: "var(--brand-soft)", borderColor: "transparent" }}><div className="ccb">約好了</div><div className="ccd">確認信寄到你的信箱了，附件可以加入行事曆。{adv!.name} 顧問會在時間前跟你確認。</div></div>}
+          {(booked || rescheduled) && b && !met && <div className="ccc wide" style={{ background: "var(--brand-soft)", borderColor: "transparent" }}><div className="ccb">{rescheduled ? "時間改好了" : "約好了"}</div><div className="ccd">{rescheduled ? `新的確認信寄到你的信箱了，附件會更新你的行事曆。已經通知 ${adv!.name} 顧問。` : `確認信寄到你的信箱了，附件可以加入行事曆。${adv!.name} 顧問會在時間前跟你確認。`}</div></div>}
+          {cancelled && !b && <div className="ccc wide" style={{ background: "var(--sunk)", borderColor: "transparent" }}><div className="ccb">已經取消了</div><div className="ccd">也通知顧問了。你的資料都還在，之後想談再約就好。</div></div>}
+          {advCancelled && !b && <div className="ccc wide" style={{ background: "var(--must-soft)", borderColor: "transparent" }}><div className="ccb">{advCancelled.a.name} 顧問取消了 {fmtTaipei(advCancelled.b.starts_at)} 的面談</div><div className="ccd">原因：{advCancelled.b.cancel_reason}<br />很抱歉臨時取消。重新挑一個時間或另一位顧問，前面講過的狀況會一起帶過去。</div></div>}
           {b ? (
             <div className="ccc wide lead">
               <div className="cct">{met ? "已面談" : "下一步"}</div>
               <div className="ccb">{when}　{b.b.mode === "online" ? "線上視訊" : "面對面"}</div>
               <div className="ccd">{adv!.name} 顧問{advSp && ` · 擅長${advSp}`}<br />{met ? "談完的內容已經解鎖在「我的分析」，之後隨時回來看。" : <>約 40 分鐘，他會在前一天跟你確認。{b.b.mode === "online" && adv!.meeting_link && <><br />會議連結：<a href={adv!.meeting_link} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand-ink)" }}>{adv!.meeting_link}</a></>}{b.b.mode === "onsite" && adv!.onsite_location && <><br />地點：{adv!.onsite_location}</>}</>}</div>
               {!met && <div className="ccacts"><a className="ccbtn" href={`/api/bookings/${b.b.id}/ics`}>加入行事曆</a></div>}
-              {!met && <div className="ccd" style={{ fontSize: 12 }}>要改時間或取消，直接回覆確認信就會寄到顧問那裡。</div>}
+              {!met && <MeBookingActions bookingId={b.b.id} advisorId={adv!.id} startsAt={b.b.starts_at} advisorName={adv!.name} />}
             </div>
           ) : (
             <div className="ccc wide lead">

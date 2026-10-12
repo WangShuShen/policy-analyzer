@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, bigint, primaryKey, unique, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, primaryKey, unique, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
 
 /*
  * 資料庫結構的唯一真實來源。改這裡 → `npm run db:generate` 產生 migration → `npm run db:migrate`。
@@ -154,6 +154,9 @@ export const policies = pgTable("policies", {
   analysis_json: text("analysis_json"),
   uploaded_at: text("uploaded_at"),
   archived_at: text("archived_at"),
+  // 客戶存摺出現、但還沒分析的商品：排進 skill 批次分析佇列（優先處理，2026-10-12 顧問決定不在現場花 API）
+  requested_at: text("requested_at"),
+  request_count: integer("request_count").notNull().default(0),
   created_at: createdAt(),
   updated_at: updatedAt(),
 });
@@ -339,6 +342,10 @@ export const bookings = pgTable("bookings", {
   status_at: text("status_at"),
   cancel_reason: text("cancel_reason"),
   rescheduled_to: text("rescheduled_to"),           // 改期後的新預約 id
+  rescheduled_from: text("rescheduled_from"),       // 這筆是從哪一筆改期來的（W1b）
+  reschedule_count: integer("reschedule_count").notNull().default(0),   // 累計第幾次改期；第 3 次起通知顧問（B5）
+  reminded_24h_at: text("reminded_24h_at"),         // 面談前一天提醒寄出時間（B3；有值就不再寄）
+  reminded_1h_at: text("reminded_1h_at"),           // 面談前 1 小時提醒
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [
@@ -373,3 +380,58 @@ export const auditLogs = pgTable("audit_logs", {
   target_id: text("target_id"),
   created_at: createdAt(),
 }, t => [index("audit_logs_target").on(t.target_user_id, t.created_at)]);
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+// 顧問「保單分析 → 資料庫沒有這張」上傳的條款：不現場花 API，排進 skill 批次分析（2026-10-12 顧問決定）。
+// 條款是公開文件、不是個資；分析完 pdf 清掉只留結果。同一份 PDF（sha256）分析過就直接沿用。
+export const analysisRequests = pgTable("analysis_requests", {
+  id: text("id").primaryKey(),
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id),
+  filename: text("filename").notNull(),
+  pdf: bytea("pdf"),                                // 分析完設成 null
+  pdf_sha256: text("pdf_sha256").notNull(),
+  held: text("held"),                               // 顧問填的保額／單位／計劃（JSON）
+  status: text("status").notNull().default("queued"),   // queued | done | failed
+  company: text("company"),
+  product_name: text("product_name"),
+  category: text("category"),
+  result_json: text("result_json"),                 // 跟 policies.analysis_json 同格式
+  note: text("note"),                               // 失敗原因等
+  created_at: createdAt(),
+  done_at: text("done_at"),
+}, t => [index("analysis_requests_status").on(t.status, t.created_at), index("analysis_requests_sha").on(t.pdf_sha256)]);
+
+// 站內通知（W1b）：顧問右上角的鈴鐺、客戶「我的頁面」。只放短標題與連結，不放需求點或保單內容（N8）
+export const notifications = pgTable("notifications", {
+  id: text("id").primaryKey(),
+  recipient_type: text("recipient_type").notNull(),   // advisor | user
+  recipient_id: text("recipient_id").notNull(),
+  kind: text("kind").notNull(),                       // new_booking | rescheduled | reschedule_often | cancelled_by_client | cancelled_by_advisor | reminder | passbook_ready
+  title: text("title").notNull(),
+  body: text("body"),
+  link: text("link"),
+  booking_id: text("booking_id"),
+  read_at: text("read_at"),
+  seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),   // 同一秒內多則通知也排得出先後
+  created_at: createdAt(),
+}, t => [index("notifications_recipient").on(t.recipient_id, t.created_at)]);
+
+// 寄信佇列（B3／T7）：先寫進來再寄，寄失敗由排程重試（最多 5 次，間隔拉長），寄不出去的看得到
+export const emailOutbox = pgTable("email_outbox", {
+  id: text("id").primaryKey(),
+  to_addr: text("to_addr").notNull(),
+  reply_to: text("reply_to"),
+  subject: text("subject").notNull(),
+  html: text("html").notNull(),
+  ics: text("ics"),                                   // 日曆附件內容（有就附）
+  ics_method: text("ics_method"),                     // PUBLISH | CANCEL
+  kind: text("kind").notNull(),                       // 跟通知同一組 kind
+  booking_id: text("booking_id"),
+  status: text("status").notNull().default("queued"), // queued | sent | failed（重試用完）
+  attempts: integer("attempts").notNull().default(0),
+  last_error: text("last_error"),
+  next_try_at: text("next_try_at"),
+  sent_at: text("sent_at"),
+  created_at: createdAt(),
+}, t => [index("email_outbox_status").on(t.status, t.next_try_at)]);

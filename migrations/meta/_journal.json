@@ -43,6 +43,34 @@
       "when": 1791715018308,
       "tag": "0005_gap_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791783118338,
+      "tag": "0006_policies_analysis_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791783316681,
+      "tag": "0007_analysis_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791811059750,
+      "tag": "0008_booking_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791811406403,
+      "tag": "0009_notifications_seq",
+      "breakpoints": true
     }
   ]
 }

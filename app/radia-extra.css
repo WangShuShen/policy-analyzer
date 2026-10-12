@@ -14,16 +14,15 @@
 
 /* ── 原型的高度是替「預覽裝置框」算的（框上方還有工具列）；真實網站整頁高，要自己算 ── */
 /* 對話頁：整頁固定在一個畫面內，對話區自動填滿剩下的高度，選項與輸入框永遠看得到（訊息在對話區裡捲動） */
-/* 桌機：整頁固定在一個畫面內，對話區填滿剩下的高度，選項與輸入框永遠看得到。
+/* 桌機：螢幕夠高時對話區填滿剩下的高度、頁尾在畫面最下面；螢幕太矮就整頁捲動（對話區至少 260px），頁尾不會疊到輸入框。
    手機：螢幕太矮，標題區會把對話擠扁 → 維持整頁捲動，對話區給固定高度 */
 .rd .dmo .dchat{max-height:min(58dvh,520px);min-height:220px}
 @container vp (min-width:960px){
-  .rd .body:has(.dmo){overflow:hidden}
-  .rd .pad:has(> .dmo){min-height:0;flex:1;padding-bottom:16px}   /* 不用 height:100%，才留得下頁尾 */
-  .rd .dmo{display:flex;flex-direction:column;flex:1;min-height:0}
+  .rd .pad:has(> .dmo){flex:1 0 auto;padding-bottom:16px}   /* 螢幕夠高：撐滿一個畫面；不夠高：整頁捲動，頁尾接在後面不重疊（2026-10-12） */
+  .rd .dmo{display:flex;flex-direction:column;height:calc(100dvh - 190px);min-height:min-content}   /* 螢幕可用高度（扣頂部列、頁尾、留白）；放不下時以內容為準、整頁捲動 */
   .rd .dmo .dsplit{flex:1;min-height:0}
   .rd .dmo .dleft:not(.dhide){display:flex;flex-direction:column;min-height:0;height:100%}
-  .rd .dmo .dchat{flex:1;max-height:none;min-height:120px}
+  .rd .dmo .dchat{flex:1 1 0;height:0;max-height:none;min-height:240px}   /* height:0 讓訊息多寡不影響版面高度，訊息在對話框裡捲 */
   .rd .dmo .dsplit.has.open{align-items:stretch;height:100%}
   .rd .dmo .dright{position:static;max-height:100%;min-height:0;overflow-y:auto}
 }
@@ -50,3 +49,18 @@
 .rd .rd-docmsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13.5px;padding:20px;text-align:center}
 .rd .rd-docview.empty{height:auto;min-height:0}
 .rd .rd-docview.empty .rd-docmsg{position:static;padding:28px 20px}
+/* 矮螢幕（桌機高度 ≤ 860px）：收起聊天頁的開場說明，讓輸入框一進來就看得到（2026-10-12 顧問要求） */
+@media (max-height:860px){ .rd .dmo > .eyebrow,.rd .dmo > .sub{display:none} .rd .dmo > h2.t{margin-bottom:12px!important} }
+/* 顧問通知鈴鐺（W1b；原型沒有，用 cacc／rd-menu 的樣式與色票） */
+.rd .rd-bell{position:relative;padding:8px 10px;margin-right:8px}
+.rd .rd-badge{position:absolute;top:2px;right:2px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--must);color:#fff;font-size:10.5px;font-weight:700;line-height:17px;text-align:center}
+.rd .rd-notices{width:min(360px,calc(100vw - 32px));max-height:min(480px,70dvh);overflow-y:auto;padding:0}
+.rd .rd-nhd{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+.rd .rd-nhd b{font-size:14px}
+.rd .rd-nhd button{width:auto;padding:2px 6px;font-size:12px;color:var(--brand-ink)}
+.rd .rd-nitem{display:flex!important;flex-direction:column;gap:2px;border-radius:0!important;border-bottom:1px solid var(--line)!important;padding:10px 14px!important;white-space:normal}
+.rd .rd-nitem.unread{background:var(--brand-soft)}
+.rd .rd-nt{font-size:13.5px;font-weight:650;color:var(--ink);line-height:1.45}
+.rd .rd-nb{font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.rd .rd-nd{font-size:11.5px;color:var(--muted)}
+.rd .rd-nempty{padding:18px 14px;font-size:13px;color:var(--muted);line-height:1.6}

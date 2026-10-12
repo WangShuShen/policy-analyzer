@@ -25,7 +25,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const d = await clientDetail(advisorId, userId);
   if (!d) notFound();
   const now = Date.now();
-  const active = d.bookings[0];
+  const active = d.bookings.find(b => b.status !== "rescheduled") ?? d.bookings[0];   // 改期過的舊預約跳過，看新的那筆
   const pb = d.passbook;
   const n = pb.counts.total - pb.counts.removed - pb.counts.others;
   const convId = conv && d.conversations.some(c => c.id === conv) ? conv : d.conversations[0]?.id;

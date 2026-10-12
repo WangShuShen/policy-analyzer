@@ -27,7 +27,7 @@ export interface ClientRow {
 const UNMARKED_AFTER_MS = 12 * 3600_000;      // B1：面談結束 12 小時還沒標記 → 待辦
 
 /** 這位顧問看過哪些客戶的諮詢紀錄（未讀＝待辦，B3） */
-async function viewedSet(advisorId: string, userIds: string[]): Promise<Set<string>> {
+export async function viewedSet(advisorId: string, userIds: string[]): Promise<Set<string>> {
   if (!userIds.length) return new Set();
   const rows = await db.select({ u: auditLogs.target_user_id }).from(auditLogs)
     .where(and(eq(auditLogs.actor_id, advisorId), eq(auditLogs.action, "view_conversation"), inArray(auditLogs.target_user_id, userIds)));
@@ -40,14 +40,14 @@ export async function listClients(advisorId: string, now = Date.now()): Promise<
     .where(eq(bookings.advisor_id, advisorId)).orderBy(desc(bookings.starts_at));
   // 每位客戶只看最近一筆預約
   const latest = new Map<string, (typeof rows)[number]>();
-  for (const r of rows) if (!latest.has(r.b.user_id)) latest.set(r.b.user_id, r);
+  for (const r of rows) if (r.b.status !== "rescheduled" && !latest.has(r.b.user_id)) latest.set(r.b.user_id, r);   // 改期的舊預約不算，看新的那筆
   const viewed = await viewedSet(advisorId, [...latest.keys()]);
   const out: ClientRow[] = [];
   for (const [userId, r] of latest) {
     const b = r.b, start = Date.parse(b.starts_at), end = Date.parse(b.ends_at);
     let group: ClientGroup, status: string;
     if (b.status === "met") { group = "met"; status = "已面談・客戶端已解鎖"; }
-    else if (b.status !== "booked") { group = "closed"; status = b.status === "no_show" ? "客戶沒出現" : "已取消"; }
+    else if (b.status !== "booked") { group = "closed"; status = b.status === "no_show" ? "客戶沒出現" : b.status === "cancelled_by_client" ? "客戶取消了" : b.status === "cancelled_by_advisor" ? "你取消了" : "已取消"; }
     else if (now > end + UNMARKED_AFTER_MS) { group = "todo"; status = "面談完結果還沒記錄"; }
     else if (now > end) { group = "todo"; status = "面談結束了，記得標記結果"; }
     else if (!viewed.has(userId)) { group = "todo"; status = "還沒看諮詢紀錄"; }
