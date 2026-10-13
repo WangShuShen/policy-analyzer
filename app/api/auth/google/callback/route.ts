@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdvisorByEmail, upsertUserOnLogin } from "@/lib/db";
 import { CONSENT_VERSION, hasRequiredConsent, recordConsent } from "@/lib/consents";
 import { signJWT } from "@/lib/jwt";
+import { recordLogin, type LoginWho } from "@/lib/admin/logins";
 import { APPLICANT_COOKIE, applicantCookieOptions, applicantToken } from "@/lib/advisorApply";
 
 export async function GET(req: NextRequest) {
@@ -91,7 +92,9 @@ export async function GET(req: NextRequest) {
   }
 
   // 已經是顧問（包含從申請頁進來、其實已核准的）：照常登入顧問工作台
+  let who: LoginWho;
   if (advisor) {
+    who = { id: advisor.id, role: "advisor", email: advisor.email, method: "google" };
     jwt = await signJWT({
       advisorId: advisor.id,
       email: advisor.email,
@@ -104,6 +107,7 @@ export async function GET(req: NextRequest) {
     if (user.is_active !== 1) {
       return NextResponse.redirect(loginUrl("account_disabled", email));
     }
+    who = { id: user.id, role: "customer", email: user.email, method: "google" };
     jwt = await signJWT({
       advisorId: user.id,
       email: user.email,
@@ -121,7 +125,7 @@ export async function GET(req: NextRequest) {
     landing = (await hasRequiredConsent(user.id)) ? "/consult" : "/welcome/consent";
   }
 
-  // TODO(卡C w1b-04)：lib/admin/logins.ts 合進來後在這裡 recordLogin(...)，記下誰在什麼時候登入
+  await recordLogin(who, req);   // 登入紀錄（w1b-04）；寫不進去也照常登入
   const res = NextResponse.redirect(new URL(landing, req.url));
 
   res.cookies.set("auth_token", jwt, {

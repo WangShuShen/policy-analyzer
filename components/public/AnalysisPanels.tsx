@@ -1,6 +1,7 @@
 import { safeHtml } from "@/lib/consult/safeHtml";
 import type { AnalysisView, PanelData } from "@/lib/consult/analysis";
 import { PassbookConfirm, PassbookPoller, PassbookRetry } from "./PassbookParts";
+import { Evidence } from "./GapEvidence";
 
 /*
  * 計算區塊：結構、class、文字一律照原型 v38 的 SEC.*（dPanelSetup）。樣式在 app/radia.css（自動搬自原型）。
@@ -243,6 +244,7 @@ function GapsPanel({ rows }: { rows: Extract<PanelData, { key: "gaps"; rows: unk
           <div className="gpvs">現在 {r.current}{r.preliminary && "（初步）"}{r.standard && <><span>→</span><b>{r.standard}</b></>}</div>
           <div className="gpwy">{r.reason}{r.adjusted && "（顧問調整）"}</div>
           {r.pendingNote && <div className="gprn" style={{ marginTop: 4 }}>{r.pendingNote}</div>}
+          <Evidence k={r.key} />
         </div>
       ))}
       {rest.length > 0 && (
