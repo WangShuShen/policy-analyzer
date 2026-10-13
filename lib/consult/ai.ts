@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as z from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { checkCompliance, checkTurn, SAFE_REPLY } from "./compliance";
+import { reviewText, reviewTurn, SAFE_REPLY } from "./compliance";
 import { HEALTH_SLOTS, DECLINED, knownLine, type Slot, type Values } from "./needs";
 import type { AskStep } from "./engine";
 
@@ -330,9 +330,10 @@ export async function needTurn(m: NeedTurnInput): Promise<NeedTurnResult> {
     if (!out?.reply.trim()) { blocked.push({ reason: "模型拒答", original: "", attempt }); continue; }
     const reply = out.reply.trim();
     const chips = m.askNow || m.intent === "book" || m.intent === "emotion" ? out.chips.map(c => c.trim()).filter(Boolean) : [];
-    const c = checkTurn(reply, chips);
+    const c = await reviewTurn(reply, chips);
+    if (c.usage) usages.push(c.usage);
     if (c.ok) return { html: reply, chips, usages, blocked, rewritten: attempt > 1 };
-    blocked.push({ reason: c.reason!, original: `${reply}｜選項：${chips.join("／")}`, attempt });
+    blocked.push({ reason: c.reason!, original: `${reply}｜選項：${chips.join("／")}`, attempt, layer: c.layer });
   }
   return { html: SAFE_REPLY, chips: m.askNow?.backup ?? [], usages, blocked, rewritten: true };
 }
@@ -340,7 +341,7 @@ export async function needTurn(m: NeedTurnInput): Promise<NeedTurnResult> {
 export interface ReplyResult {
   html: string;
   usages: Usage[];
-  blocked: { reason: string; original: string; attempt: number }[];   // 被合規層攔下的原句（寫進 compliance_blocks）
+  blocked: { reason: string; original: string; attempt: number; layer?: "rule" | "ai" }[];   // 被合規層攔下的原句（寫進 compliance_blocks）
   rewritten: boolean;
 }
 
@@ -356,9 +357,10 @@ export async function reply(mode: ReplyMode): Promise<ReplyResult> {
     const { text, usage } = await callChat(content, extra);
     usages.push(usage);
     if (!text) { blocked.push({ reason: "模型拒答", original: "", attempt }); continue; }
-    const c = checkCompliance(text);
+    const c = await reviewText(text);
+    if (c.usage) usages.push(c.usage);
     if (c.ok) return { html: text, usages, blocked, rewritten: attempt > 1 };
-    blocked.push({ reason: c.reason!, original: text, attempt });
+    blocked.push({ reason: c.reason!, original: text, attempt, layer: c.layer });
   }
   return { html: SAFE_REPLY, usages, blocked, rewritten: true };
 }
@@ -395,6 +397,6 @@ export async function eduReply(history: { role: "user" | "assistant"; text: stri
   });
   const out = res.stop_reason === "refusal" ? "" :
     res.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text").map(b => b.text).join("").trim();
-  if (!out || !checkCompliance(out).ok) return { html: SAFE_REPLY, blocked: true };
+  if (!out || !(await reviewText(out)).ok) return { html: SAFE_REPLY, blocked: true };
   return { html: out, blocked: false };
 }

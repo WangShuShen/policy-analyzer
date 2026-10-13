@@ -126,10 +126,10 @@ export async function getFacts(convId: string): Promise<StoredFact[]> {
   });
 }
 
-export async function recordBlocks(convId: string, blocks: { reason: string; original: string; attempt: number }[], replacement?: string): Promise<void> {
+export async function recordBlocks(convId: string, blocks: { reason: string; original: string; attempt: number; layer?: string }[], replacement?: string): Promise<void> {
   if (blocks.length === 0) return;
   await db.insert(complianceBlocks).values(blocks.map(b => ({
-    id: crypto.randomUUID(), conversation_id: convId, layer: "rule", reason: b.reason,
+    id: crypto.randomUUID(), conversation_id: convId, layer: b.layer ?? "rule", reason: b.reason,
     original_enc: encryptJson(b.original), replacement_enc: replacement ? encryptJson(replacement) : null, attempt: b.attempt,
   })));
 }

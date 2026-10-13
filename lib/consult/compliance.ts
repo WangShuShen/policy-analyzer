@@ -56,3 +56,96 @@ export function checkTurn(reply: string, chips: string[]): ComplianceResult {
 /** 連兩次被攔時改送的固定安全回覆 */
 export const SAFE_REPLY =
   "這題要看條款實際怎麼寫、你的狀況適合多少，<b>面談時顧問會當面跟你說明</b>——這部分我不能代替他回答。";
+
+// ── 第二層：AI 審查（W1b、w1b-01）────────────────────────────────────
+/*
+ * 規則層抓不到換句話說的違規（「這種情況多數人會抓年收五倍」「那家的條款比較寬」），
+ * 所以規則層放行的句子，再給 Haiku 判一次。這一層只判斷、不改寫；
+ * 被判違規就跟規則層一樣，由呼叫端重產一次，再不過就送 SAFE_REPLY（重寫／換安全回覆）。
+ * 審查本身出錯（逾時、拒答、格式壞掉）一律當「不通過」——寧可誤攔，不要放過。
+ */
+import Anthropic from "@anthropic-ai/sdk";
+import * as z from "zod/v4";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+
+const REVIEW_MODEL = "claude-haiku-5-5";
+// 每百萬 token 美元價 → 每 token micro-USD，與 ai.ts 的 PRICE 同一套
+const REVIEW_PRICE = { in: 0.1, out: 0.5, cacheRead: 0.01 };
+
+export const AI_REASONS = ["建議保額", "推薦商品", "解釋條款", "比較條款", "保證用語", "宣稱免稅", "招攬話術", "其他違規"] as const;
+
+const ReviewSchema = z.object({
+  ok: z.boolean(),
+  reason: z.enum(AI_REASONS).nullable(),
+});
+
+const REVIEW_SYSTEM = `你是保險合規審查員。RADIA 是保險需求訪談的 AI 小幫手，不是業務員；它說出口的每一句話都要先給你檢查。
+
+判斷這段 AI 回覆（可能附帶給使用者點的選項）有沒有違反下面任一條。只要有一條違反就判 ok:false，並填最符合的 reason：
+- 建議保額：建議或暗示該保多少、保額幾倍年收、補到多少（就算沒寫數字，例如「保額至少要拉高一點」「多數人會抓年收五倍」也算）
+- 推薦商品：推薦或暗示某家保險公司、某張保單、某類商品「適合你」「可以考慮」
+- 解釋條款：說明某張保單／條款會不會賠、怎麼賠、除外責任
+- 比較條款：比較商品或保險公司的好壞、寬嚴
+- 保證用語：保證承保、保證理賠、保證獲利或報酬
+- 宣稱免稅：說保險一定能免遺產稅、免贈與稅、節稅
+- 招攬話術：催促購買、製造恐慌促成投保（「不買會後悔」「現在不保就來不及」）
+- 其他違規：其他明顯會讓人以為 AI 在給個人化投保建議的內容
+
+可以放行（ok:true，reason:null）：
+- 一般保險知識的通則說明（例如「實支實付是看收據報銷」），沒有針對這個人下建議
+- 同理、回應、提問、整理使用者自己講過的話
+- 建議找顧問面談、說「這部分顧問會當面說明」
+
+只判斷，不要改寫。`;
+
+export interface ReviewResult extends ComplianceResult {
+  layer?: "rule" | "ai";
+  usage?: { model: string; tokensIn: number; tokensOut: number; costMicroUsd: number };
+}
+
+let _reviewClient: Anthropic | null = null;
+const reviewClient = () => (_reviewClient ??= new Anthropic());
+
+/** 第二層本體：只做 AI 判斷（規則層請先過） */
+export async function aiReview(text: string, chips: string[] = []): Promise<ReviewResult> {
+  const plain = text.replace(/<[^>]+>/g, "");
+  const content = `<reply>${plain}</reply>${chips.length ? `\n<chips>${chips.join("／")}</chips>` : ""}`;
+  try {
+    const res = await reviewClient().messages.parse({
+      model: REVIEW_MODEL,
+      max_tokens: 256,
+      output_config: { format: zodOutputFormat(ReviewSchema) },
+      system: [{ type: "text", text: REVIEW_SYSTEM, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content }],
+    });
+    const u = res.usage;
+    const cacheRead = u.cache_read_input_tokens ?? 0;
+    const cacheWrite = u.cache_creation_input_tokens ?? 0;
+    const usage = {
+      model: REVIEW_MODEL,
+      tokensIn: u.input_tokens + cacheRead + cacheWrite,
+      tokensOut: u.output_tokens,
+      costMicroUsd: Math.ceil(u.input_tokens * REVIEW_PRICE.in + cacheWrite * REVIEW_PRICE.in * 1.25 + cacheRead * REVIEW_PRICE.cacheRead + u.output_tokens * REVIEW_PRICE.out),
+    };
+    const out = res.stop_reason === "refusal" ? null : res.parsed_output;
+    if (!out) return { ok: false, reason: "審查失敗", layer: "ai", usage };
+    if (out.ok) return { ok: true, layer: "ai", usage };
+    return { ok: false, reason: out.reason ?? "其他違規", layer: "ai", usage };
+  } catch {
+    return { ok: false, reason: "審查失敗", layer: "ai" };
+  }
+}
+
+/** 兩層合一（單句）：規則層 → AI 審查。給 reply()、eduReply() 用 */
+export async function reviewText(text: string): Promise<ReviewResult> {
+  const r = checkCompliance(text);
+  if (!r.ok) return { ...r, layer: "rule" };
+  return aiReview(text);
+}
+
+/** 兩層合一（需求點引導一整輪）：規則層 checkTurn → AI 審查回覆＋選項。給 needTurn() 用 */
+export async function reviewTurn(reply: string, chips: string[]): Promise<ReviewResult> {
+  const r = checkTurn(reply, chips);
+  if (!r.ok) return { ...r, layer: "rule" };
+  return aiReview(reply, chips);
+}
