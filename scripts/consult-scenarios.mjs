@@ -24,7 +24,7 @@ const ROUNDS = Number(arg("rounds", "3"));
 const OUT = arg("out", path.join(os.tmpdir(), "radia-consult-scenarios"));
 const CONC = Number(arg("concurrency", "6"));
 const MOCK = process.argv.includes("--mock");
-const KEY = arg("key", "");
+const KEY = arg("key", process.env.DEV_LOGIN_KEY ?? "");   // 也可從環境變數帶，免得鑰匙出現在指令列
 fs.mkdirSync(OUT, { recursive: true });
 
 // 劇本：{opt:"選項文字片段"} 點選項｜{text:"..."} 打字｜{any:true} 點第一個選項

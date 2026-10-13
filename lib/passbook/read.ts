@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as z from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { aiMock } from "@/lib/consult/mock";
 
 /*
  * 存摺讀清單（實作設計 P1 ①）：只讀「事實」——每張保單的公司、商品名、保額／單位／計劃、生效日、契約狀態。
@@ -53,7 +54,29 @@ export interface ReadUsage { model: string; tokensIn: number; tokensOut: number;
 let _client: Anthropic | null = null;
 const client = () => (_client ??= new Anthropic());
 
+/*
+ * 模擬模式（AI_MOCK，防護條件跟諮詢一樣：RADIA_ENV=dev＋開發版網址白名單，上線版永遠走真 AI）：
+ * 不管上傳什麼，都回這本示範存摺。四張剛好走過每條路：
+ *   ① 國泰享醫靠（資料庫有、已分析，日額）② 國泰實全心意附約（已分析，計劃別 M20）
+ *   ③ 富邦好享福終身壽險（資料庫有、還沒分析 → 排隊分析）④ 對不到的商品，被保險人是子女
+ */
+const MOCK_PASSBOOK: ReadResult = {
+  is_passbook: true,
+  unreadable_note: "模擬資料：開發版 AI 為模擬回覆，這不是你上傳的內容",
+  policies: [
+    { company: "國泰人壽", product_name: "國泰人壽享醫靠醫療終身保險", plan_code: null, is_rider: false, amount: 2000, amount_unit: "元", plan: null,
+      effective_date: "2024-10-15", status: "有效", insured_is_owner: true, insured_label: null, annual_premium: 18600 },
+    { company: "國泰人壽", product_name: "國泰人壽實全心意住院醫療健康保險附約", plan_code: null, is_rider: true, amount: null, amount_unit: null, plan: "M20",
+      effective_date: "2021-06-01", status: "有效", insured_is_owner: true, insured_label: null, annual_premium: 6420 },
+    { company: "富邦人壽", product_name: "富邦人壽好享福終身壽險", plan_code: null, is_rider: false, amount: 100, amount_unit: "萬", plan: null,
+      effective_date: "2015-05-20", status: "有效", insured_is_owner: true, insured_label: null, annual_premium: 41200 },
+    { company: "台灣人壽", product_name: "台灣人壽示範用小額終身壽險", plan_code: null, is_rider: false, amount: 30, amount_unit: "萬", plan: null,
+      effective_date: "2019-03-02", status: "有效", insured_is_owner: false, insured_label: "子女", annual_premium: 9800 },
+  ],
+};
+
 export async function readPassbook(c: PassbookContent): Promise<{ result: ReadResult; usage: ReadUsage }> {
+  if (aiMock()) return { result: structuredClone(MOCK_PASSBOOK), usage: { model: "mock", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 } };
   const content: Anthropic.ContentBlockParam[] = c.kind === "text"
     ? [{ type: "text", text: c.pages.map((p, i) => `【第 ${i + 1} 頁】\n${p}`).join("\n\n") }]
     : c.images.map(img => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mime, data: img.data } }));
