@@ -65,6 +65,7 @@ export const SAFE_REPLY =
  * 審查本身出錯（逾時、拒答、格式壞掉）一律當「不通過」——寧可誤攔，不要放過。
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { aiMock, mockUsage } from "./mock";
 import * as z from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
@@ -108,6 +109,7 @@ const reviewClient = () => (_reviewClient ??= new Anthropic());
 
 /** 第二層本體：只做 AI 判斷（規則層請先過） */
 export async function aiReview(text: string, chips: string[] = []): Promise<ReviewResult> {
+  if (aiMock()) return { ok: true, layer: "ai", usage: mockUsage() };   // 開發版模擬模式：第二層一律通過，規則層照常擋
   const plain = text.replace(/<[^>]+>/g, "");
   const content = `<reply>${plain}</reply>${chips.length ? `\n<chips>${chips.join("／")}</chips>` : ""}`;
   try {

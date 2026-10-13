@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { reviewText, reviewTurn, SAFE_REPLY } from "./compliance";
 import { HEALTH_SLOTS, DECLINED, knownLine, type Slot, type Values } from "./needs";
+import { aiMock, mockUsage, mockExtractAnswer, mockExtractNeeds, mockNeedTurn, mockReply, MOCK_EDU } from "./mock";
 import type { AskStep } from "./engine";
 
 /*
@@ -54,6 +55,7 @@ const EXTRACT_SYSTEM = `你是保險需求訪談的資料整理員。使用者�
 - 只整理使用者講的內容，不推論、不補充、不評論`;
 
 export async function extractAnswer(ask: AskStep, question: string, text: string): Promise<{ result: Extraction; usage: Usage }> {
+  if (aiMock()) return { result: mockExtractAnswer(ask, text), usage: mockUsage() };      // 開發版模擬模式（mock.ts）
   const options = ask.o.map((o, i) => `${i}. ${o.x}${o.v ? `（記為：${o.v}）` : ""}${o.n !== undefined ? `（n=${o.n}）` : ""}`).join("\n");
   const res = await client().messages.parse({
     model: EXTRACT_MODEL,
@@ -177,6 +179,7 @@ export interface Line { role: "user" | "assistant"; text: string }
 const historyXml = (h: Line[]) => h.map(l => `${l.role === "user" ? "他" : "你"}：${l.text}`).join("\n");
 
 export async function extractNeeds(history: Line[], known: Values, text: string): Promise<{ result: NeedExtraction; usage: Usage }> {
+  if (aiMock()) return { result: mockExtractNeeds(known, text), usage: mockUsage() };
   const res = await client().messages.parse({
     model: EXTRACT_MODEL,
     max_tokens: 1024,
@@ -316,6 +319,14 @@ export async function needTurn(m: NeedTurnInput): Promise<NeedTurnResult> {
     const extra = attempt === 2
       ? `上一個版本沒通過檢查（${blocked[0]?.reason}）。這次回覆更短、選項更短，完全不要提任何金額、公司、商品或條款內容，也不要寫出你的考慮過程。`
       : undefined;
+    if (aiMock()) {          // 模擬模式：固定模板，規則層照常擋（第二層審查在 compliance.ts 一律通過）
+      const o = mockNeedTurn(m);
+      usages.push(mockUsage());
+      const c = await reviewTurn(o.reply, o.chips);
+      if (c.ok) return { html: o.reply, chips: o.chips, usages, blocked, rewritten: attempt > 1 };
+      blocked.push({ reason: c.reason!, original: `${o.reply}｜選項：${o.chips.join("／")}`, attempt, layer: c.layer });
+      continue;
+    }
     const res = await client().beta.messages.parse({
       model: CHAT_MODEL,
       max_tokens: 1024,
@@ -357,7 +368,7 @@ export async function reply(mode: ReplyMode): Promise<ReplyResult> {
     const extra = attempt === 2
       ? `上一個版本違反了界線（${blocked[0]?.reason}）。這次完全不要提任何金額、公司、商品或條款內容。`
       : undefined;
-    const { text, usage } = await callChat(content, extra);
+    const { text, usage } = aiMock() ? { text: mockReply(mode), usage: mockUsage() } : await callChat(content, extra);
     usages.push(usage);
     if (!text) { blocked.push({ reason: "模型拒答", original: "", attempt }); continue; }
     const c = await reviewText(text);
@@ -385,6 +396,7 @@ const EDU_SYSTEM = `你是 RADIA 的 AI 小幫手，現在是「衛教模式」�
 另外：不要問他的個人狀況（年齡、收入、健康、保單內容）。如果他主動講了，溫和提醒「衛教模式不會記下這些，想看你自己的保障夠不夠，需要先同意個資告知書」。`;
 
 export async function eduReply(history: { role: "user" | "assistant"; text: string }[], text: string): Promise<{ html: string; blocked: boolean }> {
+  if (aiMock()) return { html: MOCK_EDU, blocked: false };
   const msgs: Anthropic.Beta.BetaMessageParam[] = [
     ...history.slice(-6).map(h => ({ role: h.role, content: h.text })),
     { role: "user", content: text },

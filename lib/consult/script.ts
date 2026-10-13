@@ -6,13 +6,14 @@
  *
  * 步驟型別：ai 說一句｜ask 問一題（等使用者）｜need 需求點引導（4-ai，AI 每輪問一點，READY 齊了才往下）｜trd 醫療趨勢卡｜panel 右欄出一塊｜ph 階段｜hl 強調某格｜up 請上傳存摺
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
+ * skipIfSub：已經決定子路線就跳過（4-ai 10/13 顧問定案：財務版「最擔心」直接決定子路線，答「說不上來」才回頭問「從哪一塊開始看」）
  */
-export const SCRIPT_VERSION = "seed-v39-4ai";
+export const SCRIPT_VERSION = "seed-v40-4ai";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
-  | { id: string; t: "ai"; br?: string; sub?: string; h: string }
-  | { id: string; t: "ask"; br?: string; sub?: string; keys: string[]; o: Option[] }   // keys：這題可能存的需求點（空＝反應題，不存）
+  | { id: string; t: "ai"; br?: string; sub?: string; skipIfSub?: boolean; h: string }
+  | { id: string; t: "ask"; br?: string; sub?: string; skipIfSub?: boolean; keys: string[]; o: Option[] }   // keys：這題可能存的需求點（空＝反應題，不存）
   | { id: string; t: "trd" | "panel" | "ph" | "hl"; br?: string; sub?: string; k: string | number }
   | { id: string; t: "up"; br?: string; sub?: string }
   | { id: string; t: "need"; br?: string; sub?: string };
@@ -242,21 +243,24 @@ export const STEPS: Step[] = [
     "key": "fin_worry",
     "label": "最擔心",
     "health": false,
-    "v": "退休後錢不夠用"
+    "v": "退休後錢不夠用",
+    "f": "ret"
    },
    {
     "x": "錢傳給下一代會出問題",
     "key": "fin_worry",
     "label": "最擔心",
     "health": false,
-    "v": "資產傳承出問題"
+    "v": "資產傳承出問題",
+    "f": "tax"
    },
    {
     "x": "小孩的教育金",
     "key": "fin_worry",
     "label": "最擔心",
     "health": false,
-    "v": "子女教育金"
+    "v": "子女教育金",
+    "f": "edu"
    },
    {
     "x": "說不上來",
@@ -371,7 +375,8 @@ export const STEPS: Step[] = [
   "id": "s057",
   "t": "ai",
   "br": "finance",
-  "h": "那我們從哪一塊開始看？"
+  "h": "那我們從哪一塊開始看？",
+  "skipIfSub": true
  },
  {
   "id": "s058",
@@ -405,7 +410,8 @@ export const STEPS: Step[] = [
     "v": "子女教育金",
     "f": "edu"
    }
-  ]
+  ],
+  "skipIfSub": true
  },
  {
   "id": "s059",
