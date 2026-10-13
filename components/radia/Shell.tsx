@@ -1,5 +1,6 @@
 import { RadiaIcons } from "./RadiaIcons";
 import { SiteFoot } from "./SiteFoot";
+import { DevFeedback } from "./DevFeedback";
 import "@/app/gensen.css";
 import "@/app/radia.css";
 import "@/app/radia-extra.css";
@@ -16,6 +17,7 @@ export function Shell({ chrome, children }: { chrome: React.ReactNode; children:
       {chrome}
       <div className="body"><div className="pad">{children}</div><SiteFoot /></div>
       <div className="foot"><div className="inner" id="rd-foot" /></div>
+      <DevFeedback />{/* 只在開發版出現（RADIA_ENV=dev），上線版不渲染 */}
     </div>
   );
 }

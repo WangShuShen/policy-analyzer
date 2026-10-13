@@ -435,3 +435,19 @@ export const emailOutbox = pgTable("email_outbox", {
   sent_at: text("sent_at"),
   created_at: createdAt(),
 }, t => [index("email_outbox_status").on(t.status, t.next_try_at)]);
+
+// 開發版回饋（卡 A 第 4 步）：只在開發版（RADIA_ENV=dev）收；上線版 API 一律 404、按鈕不出現
+export const devFeedback = pgTable("dev_feedback", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),                     // broken 壞掉了｜not_wanted 不是我要的｜wording 文字要改｜idea 想法
+  body: text("body").notNull(),
+  page_url: text("page_url").notNull(),             // 送出時的網址（自動帶）
+  role: text("role").notNull(),                     // customer｜advisor｜admin｜guest（自動帶）
+  user_id: text("user_id"),
+  user_name: text("user_name"),
+  status: text("status").notNull().default("new"),  // new 新｜in_progress 處理中｜fixed 已修待複測｜closed 結案
+  handler_note: text("handler_note"),               // 處理說明（修了什麼、在哪個版本）
+  seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("dev_feedback_status").on(t.status, t.seq)]);
