@@ -25,7 +25,7 @@
 | 0. 確認 | 驗收清單上這次要上的項目都「驗收通過」；`node scripts/smoke.mjs --env dev` 全過 | 停，回報顧問 |
 | 1. 備份 | Neon 上線版建一個分支 `backup-YYYYMMDD`（等於整個資料庫快照） | 停 |
 | 2. 環境變數 | 比對新版需要的變數，缺的用**上線版自己的金鑰**加到 `policy-analyzer`（只設 Production）。**絕不設** `DEV_LOGIN`／`RADIA_ENV`／`DEV_LOGIN_KEY`／`AI_MOCK` | 停 |
-| 3. 資料庫 | 先跑 migration 到上線版資料庫（`drizzle/` 只加不刪，舊版程式照常能跑） | 不動程式，回報 |
+| 3. 資料庫 | 先跑 migration 到上線版資料庫（`migrations/` 只加不刪，舊版程式照常能跑） | 不動程式，回報 |
 | 4. 程式 | `git checkout main && git merge --ff-only dev` → 從 main 部署 `policy-analyzer` production | 用 Vercel「Promote」切回上一個部署 |
 | 5. 冒煙 | `node scripts/smoke.mjs --env prod` 全過；顧問用真帳號登入看待辦、客戶端看同意書 | 立刻 Promote 回上一版，再查 |
 | 5b. 開發版排程（v1.0 這次）| 跟著這次進 main：新增 `.github/workflows/dev-cron.yml`，每 10 分鐘打開發版的 `/api/cron/bookings`、`/api/cron/ai-usage`，用**開發版專用**的 GitHub secrets（`DEV_APP_URL`、`DEV_CRON_SECRET`），跟上線版的 `APP_URL`／`CRON_SECRET` 分開；之後 `dev-cron.mjs` 只留給手動測試 | 不影響上線版，可下一版再補 |
