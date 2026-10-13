@@ -475,3 +475,45 @@ export const advisorApplications = pgTable("advisor_applications", {
   // 同一個 email 同時只能有一筆待審
   uniqueIndex("advisor_applications_one_pending").on(t.email).where(sql`status = 'pending'`),
 ]);
+
+// 後台可改的設定值（w1b-05 起）：key → JSON。改動寫 audit_logs（action: update_setting）
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),                   // JSON
+  updated_by: text("updated_by"),
+  updated_at: updatedAt(),
+});
+
+// AI 用量警報（I6 觀察期兩道防線、w1b-05）：同一個期間同一個人只通知一次
+export const usageAlerts = pgTable("usage_alerts", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),                     // monthly_budget | user_daily
+  period: text("period").notNull(),                 // 台灣時間：月 YYYY-MM／日 YYYY-MM-DD
+  user_id: text("user_id").notNull().default(""),   // 月預算是全站的，留空字串（讓唯一索引擋得住重複）
+  amount_micro_usd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
+  threshold_micro_usd: bigint("threshold_micro_usd", { mode: "number" }).notNull(),
+  created_at: createdAt(),
+}, t => [uniqueIndex("usage_alerts_once").on(t.kind, t.period, t.user_id)]);
+
+// 誰在線（w1b-04）：登入後的頁面每 60 秒送一次心跳；5 分鐘內有心跳＝在線。一人一列，覆寫
+export const presence = pgTable("presence", {
+  actor_id: text("actor_id").primaryKey(),          // advisors.id 或 users.id（兩邊都是 UUID／前綴，不會撞）
+  role: text("role").notNull(),                     // advisor | customer
+  is_admin: integer("is_admin").notNull().default(0),
+  name: text("name"),
+  path: text("path"),                               // 最後在哪一頁（只記路徑，不記查詢參數）
+  last_seen: text("last_seen").notNull(),           // ISO 8601（UTC）
+  first_seen: text("first_seen").notNull(),         // 這一段連續在線從何時開始（中斷超過 5 分鐘重算）
+}, t => [index("presence_last_seen").on(t.last_seen)]);
+
+// 登入紀錄（w1b-04）：每次登入成功寫一筆（Google 回呼、測試登入由卡 A 呼叫 recordLogin）
+export const loginEvents = pgTable("login_events", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+  actor_id: text("actor_id").notNull(),
+  role: text("role").notNull(),                     // advisor | customer
+  email: text("email"),
+  method: text("method").notNull(),                 // google | dev
+  ip: text("ip"),
+  user_agent: text("user_agent"),
+  created_at: createdAt(),
+}, t => [index("login_events_actor").on(t.actor_id, t.created_at), index("login_events_created").on(t.created_at)]);

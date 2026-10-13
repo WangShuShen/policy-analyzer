@@ -85,6 +85,13 @@
       "when": 1791906717867,
       "tag": "0011_advisor_applications",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791908397677,
+      "tag": "0012_monitor_and_usage",
+      "breakpoints": true
     }
   ]
 }

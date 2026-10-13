@@ -1,6 +1,7 @@
 import { RadiaIcons } from "./RadiaIcons";
 import { SiteFoot } from "./SiteFoot";
 import { DevFeedback } from "./DevFeedback";
+import { Presence } from "@/components/admin/Presence";
 import "@/app/gensen.css";
 import "@/app/radia.css";
 import "@/app/radia-extra.css";
@@ -18,6 +19,7 @@ export function Shell({ chrome, children }: { chrome: React.ReactNode; children:
       <div className="body"><div className="pad">{children}</div><SiteFoot /></div>
       <div className="foot"><div className="inner" id="rd-foot" /></div>
       <DevFeedback />{/* 只在開發版出現（RADIA_ENV=dev），上線版不渲染 */}
+      <Presence />{/* 在線心跳（w1b-04）；沒登入的頁面會自己停 */}
     </div>
   );
 }
