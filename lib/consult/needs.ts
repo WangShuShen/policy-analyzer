@@ -24,7 +24,8 @@ export interface Slot {
   when?: (v: Values) => boolean;
 }
 
-const isFamilyCare = (v: Values) => /家人/.test(v.get("trigger") ?? "") || v.has("care");
+// 只認「家人生病／需要照顧」；「家人過世」不能接著問照顧費（T10）
+const isFamilyCare = (v: Values) => /生病|照顧/.test(v.get("trigger") ?? "") || v.has("care");
 const hasDependents = (v: Values) => {
   const f = v.get("family") ?? "";
   return !!f && f !== DECLINED && !/沒有|自己|單身/.test(f);
@@ -37,7 +38,9 @@ export const HEALTH_SLOTS: Slot[] = [
     when: v => !v.has("trigger") },
   { key: "trigger", label: "起因", ask: "是什麼事讓他想到要看保單：自己身體、家人生病或需要照顧、朋友或同事出事、看到新聞，或沒有特別原因",
     values: ["自己身體出狀況", "家人生病或需要照顧", "朋友或同事出事", "看到新聞", "沒有特別原因"], health: true, editable: true,
-    backup: ["家人生病了", "身邊朋友出事", "看到新聞", "沒什麼，就是想確認"] },
+    backup: ["家人生病了", "身邊朋友出事", "看到新聞", "沒什麼，就是想確認"],
+    // 起因只是讓他開口講自己在意什麼的入口：他已經自己說出最擔心的事，就不回頭問（T11）
+    when: v => !v.has("worry") },
   { key: "care_share", label: "照顧費", ask: "照顧家人的錢，現在主要是誰在出",
     values: ["獨自承擔", "跟兄弟姊妹分", "家人自己付", "還沒開始花錢"], health: false, editable: true,
     backup: ["都是我在出", "跟兄弟姊妹分", "家人自己有存款", "不太想說"], when: isFamilyCare },

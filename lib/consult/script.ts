@@ -7,7 +7,7 @@
  * 步驟型別：ai 說一句｜ask 問一題（等使用者）｜need 需求點引導（4-ai，AI 每輪問一點，READY 齊了才往下）｜trd 醫療趨勢卡｜panel 右欄出一塊｜ph 階段｜hl 強調某格｜up 請上傳存摺
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
  */
-export const SCRIPT_VERSION = "seed-v38-4ai";
+export const SCRIPT_VERSION = "seed-v39-4ai";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
@@ -224,10 +224,54 @@ export const STEPS: Step[] = [
   "h": "好。那我先問你幾題，<b>都是選的、不用打字</b>。"
  },
  {
+  "id": "f_worry_q",
+  "t": "ai",
+  "br": "finance",
+  "h": "先問一件事——想到未來的錢，<b>你最擔心的是哪一個？</b>"
+ },
+ {
+  "id": "f_worry",
+  "t": "ask",
+  "br": "finance",
+  "keys": [
+   "fin_worry"
+  ],
+  "o": [
+   {
+    "x": "退休以後錢不夠用",
+    "key": "fin_worry",
+    "label": "最擔心",
+    "health": false,
+    "v": "退休後錢不夠用"
+   },
+   {
+    "x": "錢傳給下一代會出問題",
+    "key": "fin_worry",
+    "label": "最擔心",
+    "health": false,
+    "v": "資產傳承出問題"
+   },
+   {
+    "x": "小孩的教育金",
+    "key": "fin_worry",
+    "label": "最擔心",
+    "health": false,
+    "v": "子女教育金"
+   },
+   {
+    "x": "說不上來",
+    "key": "fin_worry",
+    "label": "最擔心",
+    "health": false,
+    "v": "說不上來"
+   }
+  ]
+ },
+ {
   "id": "s051",
   "t": "ai",
   "br": "finance",
-  "h": "先問一個會決定後面所有建議的問題——<b>你現在幾歲？</b>"
+  "h": "再來這題會決定後面所有建議——你現在幾歲？"
  },
  {
   "id": "s052",
