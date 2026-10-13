@@ -10,6 +10,7 @@
  *   node scripts/consult-scenarios.mjs --rounds 1 --only T01,T07
  *   node scripts/consult-scenarios.mjs --base http://localhost:3002 --out /tmp/radia-scenarios
  * 前提：本機 dev server 已開，且 .env.local 有 DEV_LOGIN=1（測試登入只認 localhost）。
+ * 跑開發版：node --env-file=.env.local scripts/consult-scenarios.mjs --base https://radia-dev-woad.vercel.app（金鑰從 DEV_LOGIN_KEY 讀，不要寫在指令上）
  * 每改一次 AI 指令或合規層都要全部重跑。
  */
 import fs from "node:fs";
@@ -55,7 +56,8 @@ const strip = h => String(h ?? "").replace(/<[^>]+>/g, "");
 
 async function runOne(id, round) {
   const sc = S[id];
-  const login = await fetch(`${BASE}/api/dev-login?as=new-customer`, { redirect: "manual" });
+  const key = process.env.DEV_LOGIN_KEY && !/localhost|127\.0\.0\.1/.test(BASE) ? `&key=${encodeURIComponent(process.env.DEV_LOGIN_KEY)}` : "";
+  const login = await fetch(`${BASE}/api/dev-login?as=new-customer${key}`, { redirect: "manual" });
   const cookie = login.headers.get("set-cookie")?.split(";")[0];
   if (!cookie) throw new Error(`測試登入失敗（HTTP ${login.status}）：確認 dev server 開著、DEV_LOGIN=1`);
   const H = { cookie, "content-type": "application/json" };
