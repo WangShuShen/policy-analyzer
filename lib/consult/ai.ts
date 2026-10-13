@@ -145,14 +145,15 @@ async function callChat(content: string, extraSystem?: string) {
  * 設計稿與範例：100_Todo/projects/RADIA-v2-諮詢AI指令.md
  */
 
-const slotTable = HEALTH_SLOTS.map(s => `- ${s.key}（${s.label}）：${s.ask}。常見答案：${s.values.join("／")}`).join("\n");
+// 需求點的「要問到什麼」可以在後台改（w1b-06），所以指令每次用呼叫端給的版本組；內容沒變時字串相同，prompt cache 照樣吃得到
+const slotTable = (slots: Slot[]) => slots.map(s => `- ${s.key}（${s.label}）：${s.ask}。常見答案：${s.values.join("／")}`).join("\n");
 
-const NEED_EXTRACT_SYSTEM = `<role>
+const needExtractSystem = (slots: Slot[]) => `<role>
 你是保險需求訪談的資料整理員。讀完整段對話，把民眾講過的事對應到需求點上。
 </role>
 
 <slots>
-${slotTable}
+${slotTable(slots)}
 </slots>
 
 <rules>
@@ -178,13 +179,13 @@ export type NeedExtraction = z.infer<typeof NeedExtractSchema>;
 export interface Line { role: "user" | "assistant"; text: string }
 const historyXml = (h: Line[]) => h.map(l => `${l.role === "user" ? "他" : "你"}：${l.text}`).join("\n");
 
-export async function extractNeeds(history: Line[], known: Values, text: string): Promise<{ result: NeedExtraction; usage: Usage }> {
+export async function extractNeeds(history: Line[], known: Values, text: string, slots: Slot[] = HEALTH_SLOTS): Promise<{ result: NeedExtraction; usage: Usage }> {
   if (aiMock()) return { result: mockExtractNeeds(known, text), usage: mockUsage() };
   const res = await client().messages.parse({
     model: EXTRACT_MODEL,
     max_tokens: 1024,
     thinking: { type: "disabled" },
-    system: [{ type: "text", text: NEED_EXTRACT_SYSTEM, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: needExtractSystem(slots), cache_control: { type: "ephemeral" } }],
     output_config: { format: zodOutputFormat(NeedExtractSchema) },
     messages: [{ role: "user", content: `<history>\n${historyXml(history)}\n</history>\n<known>${knownLine(known)}</known>\n<user>${text}</user>` }],
   });

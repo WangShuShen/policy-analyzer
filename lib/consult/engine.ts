@@ -1,5 +1,7 @@
 import { STEPS, TRENDS, type Option, type Step } from "./script";
 import { needsReady, nextSlot } from "./needs";
+import { liveStep, liveTrend } from "./live";
+import type { LiveContent } from "@/lib/content/store";
 
 /*
  * 對話引擎的確定性部分（實作設計 I1）：照骨架往下走，不呼叫 AI。
@@ -38,16 +40,16 @@ const applies = (s: Step, st: FlowState) =>
   !("skipIfSub" in s && s.skipIfSub && st.sub);      // 子路線已經由「最擔心」決定，不再問從哪一塊開始
 
 /** 從 cursor 往下走，收集要顯示的事件，直到需要使用者動作為止。不改動傳入的 state。 */
-export function advance(state: FlowState): { events: FlowEvent[]; pending: Pending; cursor: number } {
+export function advance(state: FlowState, lc?: LiveContent): { events: FlowEvent[]; pending: Pending; cursor: number } {
   const events: FlowEvent[] = [];
   let i = state.cursor;
   for (; i < STEPS.length; i++) {
-    const s = STEPS[i];
+    const s = lc ? liveStep(lc, STEPS[i]) : STEPS[i];      // 有後台發布版就用發布版（w1b-06）
     if (!applies(s, state)) continue;
     switch (s.t) {
       case "ai": events.push({ type: "ai", html: s.h, stepId: s.id }); break;
       case "trd": {
-        const t = TRENDS[String(s.k)];
+        const t = lc ? liveTrend(lc, String(s.k), TRENDS[String(s.k)]) : TRENDS[String(s.k)];
         if (t) events.push({ type: "trend", title: t[0], body: t[1], forYou: t[2], stepId: s.id });
         break;
       }
@@ -78,9 +80,9 @@ export function stepAt(cursor: number): Step | undefined {
   return STEPS[cursor];
 }
 
-export function askAt(cursor: number): AskStep | null {
+export function askAt(cursor: number, lc?: LiveContent): AskStep | null {
   const s = STEPS[cursor];
-  return s && s.t === "ask" ? s : null;
+  return s && s.t === "ask" ? (lc ? liveStep(lc, s) : s) : null;
 }
 
 /** 一個回答造成的變化：要存的需求點、分支切換 */

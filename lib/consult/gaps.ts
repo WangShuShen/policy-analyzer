@@ -2,7 +2,7 @@ import db from "@/lib/db";
 import { gapOverrides, facts as factsTable, bookings, advisors, auditLogs } from "@/lib/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { encryptJson, decryptJson } from "@/lib/fieldCrypto";
-import { currentAssumptions } from "@/lib/calc/assumptions";
+import { liveContent } from "@/lib/content/store";
 import { gradeGaps, applyOverrides, LEVEL_LABEL, type FinalGapRow, type GapFacts, type GapKey, type GapLevel, type GapOverride } from "@/lib/calc/gaps";
 import { view as passbookView, type PassbookView } from "@/lib/passbook/service";
 import { computeAll, inputsFromFacts } from "@/lib/calc/engine";
@@ -40,7 +40,7 @@ async function overridesOf(userId: string): Promise<GapOverride[]> {
 export async function computeGaps(userId: string, pb: Omit<PassbookView, "lifeCover"> | null, survivorNeed: number | null): Promise<FinalGapRow[] | null> {
   if (!pb?.coverage || pb.counts.counted === 0) return null;
   const cover = pb.coverage.map(c => ({ key: c.key as GapKey, label: c.label, amount: c.amount, display: c.value, preliminary: c.preliminary, missing: c.missing }));
-  const rows = gradeGaps(cover, gapFactsOf(await userFacts(userId), survivorNeed), currentAssumptions());
+  const rows = gradeGaps(cover, gapFactsOf(await userFacts(userId), survivorNeed), (await liveContent()).assumptions());
   return applyOverrides(rows, await overridesOf(userId));
 }
 
@@ -69,7 +69,7 @@ export async function overrideGap(advisorId: string, userId: string, key: GapKey
 export async function computeGapsForUser(userId: string): Promise<FinalGapRow[] | null> {
   const f = await userFacts(userId);
   const inputs = inputsFromFacts([...f.entries()].map(([key, v]) => ({ key, number: v.number })));
-  const survivorNeed = inputs.inc !== undefined ? computeAll(inputs, currentAssumptions()).survivor.longNeed : null;
+  const survivorNeed = inputs.inc !== undefined ? computeAll(inputs, (await liveContent()).assumptions()).survivor.longNeed : null;
   const { stuck: _s, lifeCover: _l, ...pb } = await passbookView(userId);
   return computeGaps(userId, pb, survivorNeed);
 }

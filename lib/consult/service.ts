@@ -2,9 +2,11 @@ import { advance, askAt, answerFromOption, applyAnswer, nearestOption, passUploa
   type Answer, type FlowEvent, type FlowState, type Pending } from "./engine";
 import { STEPS } from "./script";
 import { extractAnswer, reply, confirmLine, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction } from "./ai";
-import { DECLINED, nextSlot, needsReady, slotOf, stillMissing } from "./needs";
+import { DECLINED, HEALTH_SLOTS, nextSlot, needsReady, slotOf, stillMissing } from "./needs";
 import * as store from "./store";
 import { buildAnalysis, publicView, saveSnapshotIfChanged, type AnalysisView } from "./analysis";
+import { liveContent } from "@/lib/content/store";
+import { liveSlot, liveStep } from "./live";
 import { view as passbookView } from "@/lib/passbook/service";
 
 /*
@@ -56,7 +58,10 @@ export class StaleTurnError extends Error {
   constructor() { super("這一題已經回答過了，畫面會更新到最新狀態"); }
 }
 
-const pendingAt = (st: FlowState): Pending => advance({ ...st }).pending;
+/** 後台發布版的需求點（整理員的指令用） */
+const liveSlots = async () => { const lc = await liveContent(); return HEALTH_SLOTS.map(x => liveSlot(lc, x)); };
+
+const pendingAt = async (st: FlowState): Promise<Pending> => advance({ ...st }, await liveContent()).pending;
 
 const isNeedStep = (stepId: string | undefined) => !!stepId && STEPS.find(s => s.id === stepId)?.t === "need";
 
@@ -82,18 +87,20 @@ function historyOf(msgs: store.StoredMessage[]): Line[] {
 }
 
 /** 把引擎吐出的事件存成訊息；phase／highlight 只是畫面效果，不存 */
-async function persistEvents(convId: string, events: FlowEvent[]): Promise<void> {
+async function persistEvents(convId: string, events: FlowEvent[], tag: string): Promise<void> {
+  // content_version_id 記「哪一組後台內容＋哪一步」（I3：每段對話記錄它用的內容版本）
   for (const e of events) {
-    if (e.type === "ai") await store.addMessage(convId, "assistant", { kind: "ai", html: e.html }, { stepId: e.stepId });
-    else if (e.type === "trend") await store.addMessage(convId, "assistant", { kind: "trend", title: e.title, body: e.body, forYou: e.forYou }, { stepId: e.stepId });
-    else if (e.type === "panel") await store.addMessage(convId, "assistant", { kind: "panel", key: e.key }, { stepId: e.stepId });
+    if (e.type === "ai") await store.addMessage(convId, "assistant", { kind: "ai", html: e.html }, { stepId: e.stepId, versionTag: tag });
+    else if (e.type === "trend") await store.addMessage(convId, "assistant", { kind: "trend", title: e.title, body: e.body, forYou: e.forYou }, { stepId: e.stepId, versionTag: tag });
+    else if (e.type === "panel") await store.addMessage(convId, "assistant", { kind: "panel", key: e.key }, { stepId: e.stepId, versionTag: tag });
   }
 }
 
 /** 往下走到下一個需要使用者的地方，存事件與進度 */
 async function runForward(userId: string, convId: string, st: FlowState): Promise<FlowState> {
-  const r = advance(st);
-  await persistEvents(convId, r.events);
+  const lc = await liveContent();
+  const r = advance(st, lc);
+  await persistEvents(convId, r.events, lc.tag);
   const next = { ...st, cursor: r.cursor };
   await store.saveState(userId, convId, next, r.pending.kind === "done");
   return next;
@@ -115,7 +122,7 @@ async function snapshot(userId: string, convId: string): Promise<Snapshot> {
     conversation: { id: conv.id, title: conv.title ?? store.titleOf(conv.branch, conv.sub_route), status: conv.status, branch: conv.branch, sub: conv.sub_route },
     messages,
     facts: facts.map(f => ({ ...f, ...factMeta(f.key) })),
-    pending: withChips(pendingAt(st), messages),
+    pending: withChips(await pendingAt(st), messages),
     analysis: publicView(analysis),
     phase: phaseAt({ ...st, cursor: advance({ ...st }).cursor }),
   };
@@ -167,7 +174,8 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
     return snapshot(userId, convId);
   }
 
-  const ask = askAt(st.cursor);
+  const lc = await liveContent();
+  const ask = askAt(st.cursor, lc);
   if (!ask) throw new StaleTurnError();
 
   if ("option" in input) {
@@ -183,7 +191,7 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
   // ── 自由輸入 ──
   const text = input.text.trim().slice(0, 1000);
   if (!text) throw new Error("請輸入內容");
-  const question = lastQuestion(st.cursor);
+  const question = lastQuestion(st.cursor, lc);
   const { result: ex, usage: exUsage } = await extractAnswer(ask, question, text);
   const userMsgId = await store.addMessage(convId, "user", { kind: "user", text }, { usage: exUsage });
 
@@ -254,7 +262,7 @@ async function needRound(userId: string, convId: string, st: FlowState, input: {
   const text = "option" in input ? lastChips(msgs)[input.option] : input.text.trim().slice(0, 1000);
   if (!text) throw new Error("option" in input ? "沒有這個選項" : "請輸入內容");
   const history = historyOf(msgs);
-  const { result: ex, usage } = await extractNeeds(history, st.values, text);
+  const { result: ex, usage } = await extractNeeds(history, st.values, text, await liveSlots());
   const userMsgId = await store.addMessage(convId, "user", { kind: "user", text }, { usage });
   // 點選項＝回答上一句問的那一點。整理員沒記到的話就照選項記，不然會一直重問同一題
   // （10/14 卡 A 回報：收入題點「兩個人差不多」連點 25 次都重問）
@@ -298,10 +306,11 @@ async function applyNeedUpdates(userId: string, convId: string, known: Map<strin
 /** 說話的人：依意圖決定這一輪問哪一點（或不問），存回覆與選項；三點齊了就讓引擎往下走 */
 async function speakNeed(userId: string, convId: string, st: FlowState, history: Line[], userText: string, intent: NeedExtraction["intent"], extraUsages: Usage[] = []) {
   const ready = needsReady(st.values);
-  const askNow =
+  const lc = await liveContent();
+  const askNow = liveSlot(lc,
     intent === "emotion" ? null                                                    // 情緒重：這一輪只回應感受
     : intent === "book" ? (st.values.has("worry") ? null : slotOf("worry")!)        // 想約顧問：最多再問「最擔心」
-    : ready ? null : nextSlot(st.values);
+    : ready ? null : nextSlot(st.values));
   const r = await needTurn({ history, known: st.values, askNow, missing: stillMissing(st.values), intent, userText });
   await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
   await saveReply(convId, r.html, [...extraUsages, ...r.usages], r.rewritten, r.chips, askNow?.key);
@@ -324,7 +333,7 @@ async function enterNeed(userId: string, convId: string, st: FlowState, userText
   const usages: Usage[] = [];
   if (opts.extract && opts.userMsgId) {
     const before = history.at(-1)?.role === "user" ? history.slice(0, -1) : history;
-    const { result: ex, usage } = await extractNeeds(before, st.values, userText);
+    const { result: ex, usage } = await extractNeeds(before, st.values, userText, await liveSlots());
     usages.push(usage);
     const values = await applyNeedUpdates(userId, convId, st.values, ex, opts.userMsgId, userText);
     next = { ...next, values, filled: new Set(values.keys()) };
@@ -333,10 +342,10 @@ async function enterNeed(userId: string, convId: string, st: FlowState, userText
   await speakNeed(userId, convId, next, history, userText, intent, usages);
 }
 
-/** 題目前面最後一句 AI 台詞＝這一題實際問的話 */
-function lastQuestion(cursor: number): string {
+/** 題目前面最後一句 AI 台詞＝這一題實際問的話（用後台發布版） */
+function lastQuestion(cursor: number, lc: Awaited<ReturnType<typeof liveContent>>): string {
   for (let i = cursor - 1; i >= 0; i--) {
-    const s = STEPS[i];
+    const s = liveStep(lc, STEPS[i]);
     if (s.t === "ai") return s.h.replace(/<[^>]+>/g, "");
     if (s.t === "ask") break;
   }

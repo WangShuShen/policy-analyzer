@@ -80,13 +80,13 @@ export async function saveState(userId: string, convId: string, st: FlowState, d
 }
 
 export async function addMessage(convId: string, role: "user" | "assistant", content: MessageContent,
-  extra: { stepId?: string; usage?: Usage; rewritten?: boolean; quickReplies?: string[] } = {}): Promise<string> {
+  extra: { stepId?: string; versionTag?: string; usage?: Usage; rewritten?: boolean; quickReplies?: string[] } = {}): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(messages).values({
     id, conversation_id: convId, role,
     content_enc: encryptJson(content),
     quick_replies: extra.quickReplies ? JSON.stringify(extra.quickReplies) : null,
-    content_version_id: extra.stepId ? `${SCRIPT_VERSION}:${extra.stepId}` : null,
+    content_version_id: extra.stepId ? `${extra.versionTag ?? SCRIPT_VERSION}:${extra.stepId}` : null,
     model: extra.usage?.model ?? null,
     tokens_in: extra.usage?.tokensIn ?? null,
     tokens_out: extra.usage?.tokensOut ?? null,

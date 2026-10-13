@@ -2,7 +2,7 @@ import db from "@/lib/db";
 import { analysisSnapshots, bookings } from "@/lib/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { encryptJson, decryptJson } from "@/lib/fieldCrypto";
-import { currentAssumptions } from "@/lib/calc/assumptions";
+import { liveContent } from "@/lib/content/store";
 import { computeAll, inputsFromFacts, type CalcInputs, type CalcResults } from "@/lib/calc/engine";
 import type { StoredFact } from "./store";
 import type { PassbookView } from "@/lib/passbook/service";
@@ -116,7 +116,7 @@ function panelData(key: PanelKey, r: CalcResults, factCount: number, pb: Passboo
  */
 export async function buildAnalysis(userId: string, facts: StoredFact[], shown: string[], page = false, pb: PassbookView | null = null,
   opts: { forAdvisor?: boolean } = {}): Promise<AnalysisView & { inputs: CalcInputs; results: CalcResults }> {
-  const A = currentAssumptions();
+  const A = (await liveContent()).assumptions();     // 後台發布、已生效的試算參數（w1b-06、E4）；沒發布過就是種子
   const inputs = inputsFromFacts(facts);
   // 現有壽險：存摺讀好了就帶入（遺族缺口的「− 現有壽險」），沒有就以 0 計並標示
   if (pb?.lifeCover) inputs.lifeCoverExisting = pb.lifeCover.amount;
