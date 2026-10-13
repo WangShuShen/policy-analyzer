@@ -34,7 +34,8 @@ export interface Pending {
 }
 
 const applies = (s: Step, st: FlowState) =>
-  (!s.br || s.br === st.branch) && (!s.sub || s.sub === st.sub);
+  (!s.br || s.br === st.branch) && (!s.sub || s.sub === st.sub) &&
+  !("skipIfSub" in s && s.skipIfSub && st.sub);      // 子路線已經由「最擔心」決定，不再問從哪一塊開始
 
 /** 從 cursor 往下走，收集要顯示的事件，直到需要使用者動作為止。不改動傳入的 state。 */
 export function advance(state: FlowState): { events: FlowEvent[]; pending: Pending; cursor: number } {
