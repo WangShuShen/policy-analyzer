@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { verifyJWT, roleOf } from "@/lib/jwt";
 import { hasAnyRequiredConsent, hasRequiredConsent } from "@/lib/consents";
 import { ConsultChat } from "@/components/public/ConsultChat";
+import { aiMock } from "@/lib/consult/mock";
+import { MockBanner } from "@/components/public/MockBanner";
 
 /*
  * AI 諮詢入口。proxy 只做樂觀的 cookie 檢查，這裡在伺服器端再確認兩件事：
@@ -17,5 +19,5 @@ export default async function ConsultPage() {
     // 同意過舊版 → 提示「內容更新了」；從沒同意過 → 直接看同意書
     redirect((await hasAnyRequiredConsent(session.advisorId)) ? "/welcome/consent?error=consent_outdated" : "/welcome/consent");
   }
-  return <ConsultChat name={session.name} />;
+  return <>{aiMock() && <MockBanner />}<ConsultChat name={session.name} /></>;
 }
