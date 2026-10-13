@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
     if (!a) return new NextResponse("no such advisor", { status: 404 });
     payload = { advisorId: a.id, email: a.email, name: a.name, isAdmin: as === "admin", role: "advisor", plan: "free" }; to = "/todo";
   } else return new NextResponse("bad request", { status: 400 });
+  // TODO(卡C w1b-04)：lib/admin/logins.ts 合進來後在這裡 recordLogin(...)（標成測試登入）
   const res = NextResponse.redirect(new URL(to, req.url));
   res.cookies.set("auth_token", await signJWT(payload), { httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24, path: "/" });
   return res;

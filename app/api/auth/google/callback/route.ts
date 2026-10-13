@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdvisorByEmail, upsertUserOnLogin } from "@/lib/db";
 import { CONSENT_VERSION, hasRequiredConsent, recordConsent } from "@/lib/consents";
 import { signJWT } from "@/lib/jwt";
+import { APPLICANT_COOKIE, applicantCookieOptions, applicantToken } from "@/lib/advisorApply";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -13,9 +14,10 @@ export async function GET(req: NextRequest) {
   let flow: { flow: string; cv: string; mk: boolean } | null = null;
   try { flow = JSON.parse(req.cookies.get("oauth_flow")?.value || "null"); } catch { flow = null; }
   const consult = flow?.flow === "consult";
+  const apply = flow?.flow === "advisor_apply";   // 從顧問申請頁出發（w1b-03）
 
   const loginUrl = (error: string, hint?: string) => {
-    const u = new URL(consult ? `/welcome/consent?error=${error}` : `/login?error=${error}`, req.url);
+    const u = new URL(consult ? `/welcome/consent?error=${error}` : apply ? `/welcome/advisor-apply?error=${error}` : `/login?error=${error}`, req.url);
     if (hint) u.searchParams.set("hint", hint);
     return u;
   };
@@ -79,6 +81,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(loginUrl("advisor_account", email));
   }
 
+  if (!advisor && apply) {
+    // 不是顧問：不建客戶帳號，只發 30 分鐘的申請憑證（只能讀寫自己的申請，進不了任何登入後的頁面），回申請頁填表
+    const res = NextResponse.redirect(new URL("/welcome/advisor-apply", req.url));
+    res.cookies.set(APPLICANT_COOKIE, applicantToken(email, displayName), applicantCookieOptions);
+    res.cookies.set("oauth_state", "", { maxAge: 0, path: "/" });
+    res.cookies.set("oauth_flow", "", { maxAge: 0, path: "/" });
+    return res;
+  }
+
+  // 已經是顧問（包含從申請頁進來、其實已核准的）：照常登入顧問工作台
   if (advisor) {
     jwt = await signJWT({
       advisorId: advisor.id,
@@ -109,6 +121,7 @@ export async function GET(req: NextRequest) {
     landing = (await hasRequiredConsent(user.id)) ? "/consult" : "/welcome/consent";
   }
 
+  // TODO(卡C w1b-04)：lib/admin/logins.ts 合進來後在這裡 recordLogin(...)，記下誰在什麼時候登入
   const res = NextResponse.redirect(new URL(landing, req.url));
 
   res.cookies.set("auth_token", jwt, {
