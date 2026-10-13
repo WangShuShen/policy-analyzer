@@ -8,7 +8,7 @@
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
  * skipIfSub：已經決定子路線就跳過（4-ai 10/13 顧問定案：財務版「最擔心」直接決定子路線，答「說不上來」才回頭問「從哪一塊開始看」）
  */
-export const SCRIPT_VERSION = "seed-v40-4ai-lock";
+export const SCRIPT_VERSION = "seed-v40-4ai-lock2";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
@@ -192,7 +192,7 @@ export const STEPS: Step[] = [
   "id": "s044",
   "t": "ai",
   "br": "health",
-  "h": "為什麼不直接給你看？因為<b>保額、商品、保費要由登錄的顧問當面說明條款</b>，這是規定。"
+  "h": "保額、商品、保費這些，<b>要有登錄的顧問對著條款跟你說才準</b>，所以我們留到面談時一起看。"
  },
  {
   "id": "s046",
