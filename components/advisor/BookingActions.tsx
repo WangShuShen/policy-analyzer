@@ -13,6 +13,14 @@ const CLOSED: Record<string, string> = {
   cancelled_by_advisor: "你取消了這次面談，已通知客戶",
   rescheduled: "客戶改了時間（看最新的那筆）",
 };
+// 資料庫時間是 UTC（nowText：「YYYY-MM-DD HH:MM:SS」沒帶時區）→ 換成台灣時間顯示
+const twTime = (s: string) => {
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(" ", "T") + "Z");
+  if (isNaN(+d)) return s.slice(5, 16);
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d).map(x => [x.type, x.value]));
+  return `${p.month}-${p.day} ${p.hour}:${p.minute}`;
+};
+
 export function BookingActions({ bookingId, status, started, statusAt, when }: { bookingId: string; status: string; started: boolean; statusAt: string | null; when: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -52,7 +60,7 @@ export function BookingActions({ bookingId, status, started, statusAt, when }: {
           </>
         ) : (
           <>
-            <span className={status === "met" ? "mtok" : "mtwarn"}>{status === "met" ? "✓ 已面談" : "客戶沒出現・維持鎖住"}{statusAt && ` · ${statusAt.slice(5, 16)} 由你標記`}{status === "met" && "　客戶的「我的分析」已解鎖"}</span>
+            <span className={status === "met" ? "mtok" : "mtwarn"}>{status === "met" ? "✓ 已面談" : "客戶沒出現・維持鎖住"}{statusAt && ` · ${twTime(statusAt)} 由你標記`}{status === "met" && "　客戶的「我的分析」已解鎖"}</span>
             <button className="abtn" onClick={() => setConfirmUndo(true)}>標錯了，撤銷</button>
           </>
         )
