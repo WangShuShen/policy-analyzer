@@ -9,6 +9,7 @@ import type { GapKey } from "@/lib/calc/gaps";
  *   ・scenario：情境試算，畫面一律標「情境試算，非統計」，每一項都附出處
  * 查證清單（給顧問核對，含暫不放與查不到的）：100_Todo/drafts/research/2026-10-14-A3b案例出處.md
  * ⚠️ 藥費、病房差額、特材價格、重大傷病卡數有時效性，每年底要重查一次（VERIFIED_AT）。
+ * 10/14 顧問核對：免疫治療藥費（原第 3 筆）找不到健保署每人藥費的原始資料（官方只公布總額）→ 拿掉
  * W1b 管理後台（I3／I7、content_items）上線後，這份改成種子資料。
  */
 export const VERIFIED_AT = "2026-10-14";
@@ -33,8 +34,6 @@ export const CASES: Partial<Record<GapKey, CaseSet>> = {
       source: "衛福部國健署 112 年癌症登記報告", year: "2023", url: "https://mohw.gov.tw/cp-16-84987-1.html" },
     { n: "連續 44 年", label: "癌症是國人死因第 1 名；2025 年癌症死亡 5 萬 4,838 人", kind: "official",
       source: "衛福部統計處 114 年死因統計", year: "2025", url: MOHW_DEATH_2025 },
-    { n: "約 171～247 萬元", label: "幾種免疫治療組合一年的藥費（依癌別與用法不同；符合健保條件可給付）", kind: "price",
-      source: "健保署醫審及藥材組組長受訪（TVBS 健康 2.0）", year: "2025", url: "https://health.tvbs.com.tw/cancer/354486" },
   ] },
   card: { stats: [
     { n: "52 萬 4,274 張", label: "還在有效期內的癌症重大傷病證明（這是卡數，不是人數）", kind: "official",
