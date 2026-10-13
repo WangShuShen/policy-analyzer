@@ -1,4 +1,4 @@
-name: Booking reminders · Email retry
+name: Booking reminders · Email retry · AI usage alerts
 
 # 預約提醒（面談前一天／前 1 小時）＋寄信佇列重試（實作設計 B3、T7）。
 # 每 10 分鐘一次；GitHub 排程可能延遲幾分鐘，所以「前 1 小時」抓的是 75 分鐘內。重複呼叫是安全的（寄過就記時間）。
@@ -14,5 +14,11 @@ jobs:
       - name: 呼叫預約排程
         run: |
           CODE=$(curl -s -o resp.json -w "%{http_code}" "${{ secrets.APP_URL }}/api/cron/bookings" -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
+          cat resp.json; echo
+          test "$CODE" = "200"
+      - name: 檢查 AI 用量警報（w1b-05）
+        if: always()   # 預約那步失敗也要照樣檢查費用
+        run: |
+          CODE=$(curl -s -o resp.json -w "%{http_code}" -X POST "${{ secrets.APP_URL }}/api/cron/ai-usage" -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
           cat resp.json; echo
           test "$CODE" = "200"
