@@ -1,19 +1,21 @@
 /*
  * AI 諮詢的骨架（實作設計 I1）：程式決定下一步問什麼，AI 只負責把自由輸入聽懂、講得像人。
- * ⚠️ 自動產生自原型 v37 的 FLOW／TRENDS／EDU（tmp/_gen_script.mjs），文字與順序與顧問確認過的原型一致。
+ * ⚠️ 原本自動產生自原型 v37 的 FLOW／TRENDS／EDU。2026-10-12 決議 4-ai 起手改：健康路線 s003～s024（媽媽中風示範劇本）
+ *    換成單一 need 步驟，問法交給 lib/consult/needs.ts ＋ AI；開場選項與醫療趨勢卡的連接句去掉人設。
  * W1a 是種子資料；W1b 改由管理後台維護（I3／I7），屆時這份變成初始內容。
  *
- * 步驟型別：ai 說一句｜ask 問一題（等使用者）｜trd 醫療趨勢卡｜panel 右欄出一塊｜ph 階段｜hl 強調某格｜up 請上傳存摺
+ * 步驟型別：ai 說一句｜ask 問一題（等使用者）｜need 需求點引導（4-ai，AI 每輪問一點，READY 齊了才往下）｜trd 醫療趨勢卡｜panel 右欄出一塊｜ph 階段｜hl 強調某格｜up 請上傳存摺
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
  */
-export const SCRIPT_VERSION = "seed-v37";
+export const SCRIPT_VERSION = "seed-v38-4ai";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
   | { id: string; t: "ai"; br?: string; sub?: string; h: string }
   | { id: string; t: "ask"; br?: string; sub?: string; keys: string[]; o: Option[] }   // keys：這題可能存的需求點（空＝反應題，不存）
   | { id: string; t: "trd" | "panel" | "ph" | "hl"; br?: string; sub?: string; k: string | number }
-  | { id: string; t: "up"; br?: string; sub?: string };
+  | { id: string; t: "up"; br?: string; sub?: string }
+  | { id: string; t: "need"; br?: string; sub?: string };
 
 export const STEPS: Step[] = [
  {
@@ -24,22 +26,22 @@ export const STEPS: Step[] = [
  {
   "id": "s001",
   "t": "ai",
-  "h": "你好，我是 RADIA。<br>先不用急著講保單——我想知道，你今天會點進來，是因為最近發生了什麼事嗎？"
+  "h": "你好，我是 RADIA。<b>我是 AI</b>，幫你把狀況整理好；判斷會由顧問跟你確認。<br>先不用急著講保單——你今天會點進來，是因為最近發生了什麼事嗎？"
  },
  {
   "id": "s002",
   "t": "ask",
   "keys": [
-   "care",
+   "trigger",
    "intent"
   ],
   "o": [
    {
-    "x": "我媽上個月中風，現在請看護",
-    "key": "care",
-    "label": "照顧支出",
+    "x": "家裡有人生病或要照顧",
+    "key": "trigger",
+    "label": "起因",
     "health": true,
-    "v": "家人中風，正在請看護",
+    "v": "家人生病或需要照顧",
     "r": "health"
    },
    {
@@ -61,297 +63,15 @@ export const STEPS: Step[] = [
   ]
  },
  {
-  "id": "s003",
-  "t": "ai",
-  "br": "health",
-  "h": "辛苦了。<br>那段時間最難的通常不是醫藥費，是<b>突然多出來的開銷看不到盡頭</b>。"
- },
- {
-  "id": "s004",
-  "t": "ai",
-  "br": "health",
-  "h": "我可以問一下嗎——照顧的錢，現在主要是誰在出？"
- },
- {
-  "id": "s005",
-  "t": "ask",
-  "br": "health",
-  "keys": [
-   "care_share"
-  ],
-  "o": [
-   {
-    "x": "我跟我哥分，一個月各出兩萬",
-    "key": "care_share",
-    "label": "分擔",
-    "health": false,
-    "v": "與手足分攤，每月 2 萬"
-   },
-   {
-    "x": "都是我在出",
-    "key": "care_share",
-    "label": "分擔",
-    "health": false,
-    "v": "獨自承擔照顧費用"
-   }
-  ]
- },
- {
-  "id": "s006",
-  "t": "ai",
-  "br": "health",
-  "h": "醫生有說大概要持續多久嗎？"
- },
- {
-  "id": "s007",
-  "t": "ask",
-  "br": "health",
-  "keys": [
-   "care_duration"
-  ],
-  "o": [
-   {
-    "x": "沒有講，可能一直這樣",
-    "key": "care_duration",
-    "label": "期間",
-    "health": true,
-    "v": "沒有明確終點，可能長期"
-   },
-   {
-    "x": "說復健半年到一年",
-    "key": "care_duration",
-    "label": "期間",
-    "health": true,
-    "v": "預期半年到一年"
-   }
-  ]
- },
- {
-  "id": "s008",
-  "t": "ai",
-  "br": "health",
-  "h": "嗯。<b>這種「沒有終點」的支出，才是真正難的地方</b>——<br>它不像一筆手術費，咬牙付完就結束了。"
- },
- {
-  "id": "s009",
-  "t": "ai",
-  "br": "health",
-  "h": "那我想多了解你一點。<br>家裡除了爸媽，還有誰要靠你？"
- },
- {
-  "id": "s010",
-  "t": "ask",
-  "br": "health",
-  "keys": [
-   "family"
-  ],
-  "o": [
-   {
-    "x": "老婆跟小孩，小孩三歲",
-    "key": "family",
-    "label": "家庭",
-    "health": false,
-    "v": "配偶 ＋ 3 歲孩子"
-   },
-   {
-    "x": "只有另一半",
-    "key": "family",
-    "label": "家庭",
-    "health": false,
-    "v": "配偶，無子女"
-   },
-   {
-    "x": "就我自己",
-    "key": "family",
-    "label": "家庭",
-    "health": false,
-    "v": "單身，無扶養"
-   }
-  ]
- },
- {
-  "id": "s011",
-  "t": "ai",
-  "br": "health",
-  "h": "那到他大學畢業還有將近二十年，這段時間你不太能出事。"
- },
- {
-  "id": "s012",
-  "t": "ai",
-  "br": "health",
-  "h": "家裡的收入，你大概佔多少？"
- },
- {
-  "id": "s013",
-  "t": "ask",
-  "br": "health",
-  "keys": [
-   "income_share"
-  ],
-  "o": [
-   {
-    "x": "我是主要的，大概八成",
-    "key": "income_share",
-    "label": "收入結構",
-    "health": false,
-    "v": "主要收入來源，約佔 8 成"
-   },
-   {
-    "x": "兩個人差不多",
-    "key": "income_share",
-    "label": "收入結構",
-    "health": false,
-    "v": "雙薪，收入相當"
-   }
-  ]
- },
- {
-  "id": "s014",
-  "t": "ai",
-  "br": "health",
-  "h": "那如果你的收入停掉，剩下的要同時撐<b>房貸、小孩、你媽的看護費，還有你自己的醫療費</b>。"
- },
- {
-  "id": "s015",
-  "t": "ai",
-  "br": "health",
-  "h": "你們有房貸嗎？"
- },
- {
-  "id": "s016",
-  "t": "ask",
-  "br": "health",
-  "keys": [
-   "debt"
-  ],
-  "o": [
-   {
-    "x": "有，還剩五百多萬",
-    "key": "debt",
-    "label": "負債",
-    "health": false,
-    "v": "房貸餘額約 500 萬"
-   },
-   {
-    "x": "有，剩一千萬以上",
-    "key": "debt",
-    "label": "負債",
-    "health": false,
-    "v": "房貸餘額 1,000 萬以上"
-   },
-   {
-    "x": "沒有",
-    "key": "debt",
-    "label": "負債",
-    "health": false,
-    "v": "無長期負債"
-   }
-  ]
- },
- {
-  "id": "s017",
-  "t": "ai",
-  "br": "health",
-  "h": "還有一題，可能有點直接——<br>如果你明天就沒辦法工作，家裡的存款可以撐多久？"
- },
- {
-  "id": "s018",
-  "t": "ask",
-  "br": "health",
-  "keys": [
-   "buffer"
-  ],
-  "o": [
-   {
-    "x": "大概半年吧",
-    "key": "buffer",
-    "label": "緩衝",
-    "health": false,
-    "v": "存款約可支撐 6 個月"
-   },
-   {
-    "x": "一年以上",
-    "key": "buffer",
-    "label": "緩衝",
-    "health": false,
-    "v": "存款可支撐一年以上"
-   },
-   {
-    "x": "沒算過",
-    "key": "buffer",
-    "label": "緩衝",
-    "health": false,
-    "v": "未評估過"
-   }
-  ]
- },
- {
-  "id": "s019",
-  "t": "ai",
-  "br": "health",
-  "h": "這個答案其實很正常，大部分人都在這個區間。<br>但那之後呢？<b>這就是保險要補的那一段。</b>"
- },
- {
-  "id": "s020",
-  "t": "ai",
-  "br": "health",
-  "h": "那我換個角度問你——<br><b>如果今天倒下的是你呢？</b>"
- },
- {
-  "id": "s021",
-  "t": "ask",
-  "br": "health",
-  "keys": [],
-  "o": [
-   {
-    "x": "……我沒想過"
-   },
-   {
-    "x": "想過，但不知道怎麼準備"
-   }
-  ]
- },
- {
-  "id": "s022",
-  "t": "ai",
-  "br": "health",
-  "h": "大部分人都沒想過。<br>因為我們習慣想「走了家人怎麼辦」，很少想「<b>沒走，但也站不起來</b>」。"
- },
- {
-  "id": "s023",
-  "t": "ai",
-  "br": "health",
-  "h": "你手上有保單嗎？"
- },
- {
-  "id": "s024",
-  "t": "ask",
-  "br": "health",
-  "keys": [
-   "existing_policy"
-  ],
-  "o": [
-   {
-    "x": "有，我媽十幾年前幫我買的，我沒看過內容",
-    "key": "existing_policy",
-    "label": "既有保單",
-    "health": false,
-    "v": "約 10 年前由母親投保，本人未檢視"
-   },
-   {
-    "x": "有，但我不確定內容",
-    "key": "existing_policy",
-    "label": "既有保單",
-    "health": false,
-    "v": "有保單，內容不確定"
-   }
-  ]
+  "id": "h_need",
+  "t": "need",
+  "br": "health"
  },
  {
   "id": "s025",
   "t": "ai",
   "br": "health",
-  "h": "那在我們看你的保單之前，我想先讓你知道<b>這十年醫療發生了什麼變化</b>——<br>因為這會直接影響那幾張保單現在還賠不賠得到。"
+  "h": "那在我們看你的保單之前，我想先讓你知道<b>這十年醫療發生了什麼變化</b>——<br>因為這會直接影響保單現在還賠不賠得到。"
  },
  {
   "id": "s026",
@@ -378,7 +98,7 @@ export const STEPS: Step[] = [
   "keys": [],
   "o": [
    {
-    "x": "所以我那時候買的可能都沒用？"
+    "x": "所以我買的可能都沒用？"
    },
    {
     "x": "那我該怎麼知道我的夠不夠？"
@@ -389,13 +109,13 @@ export const STEPS: Step[] = [
   "id": "s030",
   "t": "ai",
   "br": "health",
-  "h": "不會沒用，<b>但很可能不是為現在的醫療設計的</b>。<br>十幾年前買的保單通常以日額型為主，那個年代住院天數長，日額型是合理的選擇。"
+  "h": "不會沒用，<b>但很可能不是為現在的醫療設計的</b>。<br>早期的保單多半以日額型為主，那個年代住院天數長，日額型是合理的選擇。"
  },
  {
   "id": "s031",
   "t": "ai",
   "br": "health",
-  "h": "還有第三個變化，這個跟你媽的狀況直接相關。"
+  "h": "還有第三個變化，這個是很多家庭都沒準備到的。"
  },
  {
   "id": "s032",
@@ -407,7 +127,7 @@ export const STEPS: Step[] = [
   "id": "s033",
   "t": "ai",
   "br": "health",
-  "h": "所以我們不要猜。<br>你可以上傳保險存摺，我直接把那幾張攤開來看——<b>現在的醫療，你那幾張接得住哪些、接不住哪些</b>。"
+  "h": "所以我們不要猜。<br>你可以上傳保險存摺，我直接把你的保單攤開來看——<b>現在的醫療，哪些接得住、哪些接不住</b>。"
  },
  {
   "id": "s034",
@@ -435,7 +155,7 @@ export const STEPS: Step[] = [
   "id": "s037",
   "t": "ai",
   "br": "health",
-  "h": "讀完了。<b>右邊</b>是你現在有的——我把 4 張疊成一張表。"
+  "h": "讀完了。<b>右邊</b>是你現在有的——我把你的保單疊成一張表。"
  },
  {
   "id": "s038",
@@ -447,7 +167,7 @@ export const STEPS: Step[] = [
   "id": "s039",
   "t": "ai",
   "br": "health",
-  "h": "十個保障類別，你有 4 類。以 35 歲來說，<b>這個底子不算差</b>。"
+  "h": "每一格是一種保障，<b>有寫金額的是你已經有的</b>，空著的就是還沒有。"
  },
  {
   "id": "s040",
@@ -459,7 +179,7 @@ export const STEPS: Step[] = [
   "id": "s041",
   "t": "ai",
   "br": "health",
-  "h": "接下來我幫每一項標了該不該補。<br><b>紅色的那兩項，是我建議你一定要補的。</b>"
+  "h": "接下來我幫每一項標了該不該補。<br><b>紅色的，是我建議你一定要補的。</b>"
  },
  {
   "id": "s042",
@@ -468,22 +188,10 @@ export const STEPS: Step[] = [
   "k": "gaps"
  },
  {
-  "id": "s043",
-  "t": "hl",
-  "br": "health",
-  "k": "失能"
- },
- {
   "id": "s044",
   "t": "ai",
   "br": "health",
-  "h": "<b>失能排第一，就是你剛剛說的那件事。</b>"
- },
- {
-  "id": "s045",
-  "t": "ai",
-  "br": "health",
-  "h": "意外險只賠意外，中風不算。<br>壽險要人走了才賠，而失能的人還活著。<br><b>生病失能剛好卡在中間，兩邊都不管。</b>"
+  "h": "紅色那幾項有個共同點：<b>現在完全沒有，而且剛好對上你剛剛說的事</b>。"
  },
  {
   "id": "s046",
@@ -495,7 +203,7 @@ export const STEPS: Step[] = [
   "id": "s047",
   "t": "ai",
   "br": "health",
-  "h": "黃色那三項是「有，但不夠」。<b>不急，但你知道一下。</b><br>灰色的三項我建議這輪先不要做，別一次把保費做滿。"
+  "h": "黃色是「有，但不夠」。<b>不急，但你知道一下。</b><br>灰色的我建議這輪先不要做，別一次把保費做滿。"
  },
  {
   "id": "s048",
@@ -1678,7 +1386,7 @@ export const TRENDS: Record<string, [string, string, string]> = {
  "t3": [
   "活得久，不代表健康地久",
   "醫療進步讓人活下來，但不一定站得起來。中風、失智、重大傷病之後，被照顧的那段期間反而被拉長了。",
-  "以前買保險想的是「走了家人怎麼辦」。<br>現在真正會拖垮一個家的，是<b>「沒走，但要被照顧很多年」</b>——就是你現在在經歷的那件事。"
+  "以前買保險想的是「走了家人怎麼辦」。<br>現在真正會拖垮一個家的，是<b>「沒走，但要被照顧很多年」</b>——這也是很多家庭沒準備到的那件事。"
  ]
 };
 

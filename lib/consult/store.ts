@@ -15,7 +15,7 @@ export type ConversationRow = typeof conversations.$inferSelect;
 /** 對話內容的種類（加密後存在 messages.content_enc） */
 export type MessageContent =
   | { kind: "user"; text: string }
-  | { kind: "ai"; html: string }
+  | { kind: "ai"; html: string; chips?: string[] }      // chips：4-ai 需求點引導時 AI 產生的選項（可能含健康資訊，跟著內容一起加密）
   | { kind: "trend"; title: string; body: string; forYou: string }
   | { kind: "panel"; key: string }
   | { kind: "note"; text: string };
@@ -55,12 +55,14 @@ export async function listConversations(userId: string): Promise<ConversationRow
 }
 
 export async function loadState(conv: ConversationRow): Promise<FlowState> {
-  const keys = await db.select({ key: facts.key }).from(facts).where(eq(facts.conversation_id, conv.id));
+  const rows = await db.select({ key: facts.key, value: facts.value_enc }).from(facts).where(eq(facts.conversation_id, conv.id));
+  const values = new Map(rows.map(r => [r.key, decryptJson<{ display: string }>(r.value).display] as const));
   return {
     cursor: Number(conv.flow_cursor ?? 0),
     branch: (conv.branch as FlowState["branch"]) ?? null,
     sub: (conv.sub_route as FlowState["sub"]) ?? null,
-    filled: new Set(keys.map(k => k.key)),
+    filled: new Set(values.keys()),
+    values,
   };
 }
 

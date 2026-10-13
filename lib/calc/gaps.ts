@@ -25,6 +25,7 @@ export interface GapFacts {
   debt?: string | null;           // 負債（例：房貸餘額約 500 萬）
   family?: string | null;         // 家庭（例：配偶 ＋ 3 歲孩子）
   buffer?: string | null;         // 存款可支撐多久
+  worry?: string | null;          // 最擔心的情況（4-ai，客戶自己講的；排在最前面）
   survivorNeed?: number | null;   // 財務分支有年收時：遺族長期需求（4-ae 公式）
 }
 
@@ -50,11 +51,17 @@ export function debtAmount(text: string | null | undefined): number {
   const m = text.normalize("NFKC").replace(/,/g, "").match(/([\d.]+)\s*萬/);
   return m ? Math.round(Number(m[1]) * 10000) : 0;
 }
-const hasDependents = (family?: string | null) => !!family && /配偶|孩|子女|小孩|父母|扶養/.test(family) && !/單身|無扶養/.test(family);
+const hasDependents = (family?: string | null) => !!family && /配偶|另一半|孩|子女|小孩|父母|爸媽|扶養/.test(family) && !/單身|無扶養|沒有人/.test(family);
 
 /** 需求點 → 對上的格子（G6）。順序就是「一定要補」超過上限時的取捨順序 */
 export function triggersOf(f: GapFacts): { key: GapKey; quote: string }[] {
   const out: { key: GapKey; quote: string }[] = [];
+  // 4-ai：客戶自己說最擔心的事排第一——第三階段要能指著那格說「就是你剛剛說的那件事」
+  const w = f.worry ?? "";
+  if (/收入/.test(w)) { out.push({ key: "disability", quote: w }); out.push({ key: "card", quote: w }); }
+  if (/照顧/.test(w)) out.push({ key: "disability", quote: w });
+  if (/住院|醫療/.test(w)) out.push({ key: "reimb", quote: w });
+  if (/身故|走了|家人生活/.test(w)) out.push({ key: "life", quote: w });
   if (f.care) out.push({ key: "disability", quote: f.care });
   if (f.incomeShare && /主要/.test(f.incomeShare)) { out.push({ key: "disability", quote: f.incomeShare }); out.push({ key: "card", quote: f.incomeShare }); }
   if (debtAmount(f.debt) > 0) out.push({ key: "life", quote: f.debt! });

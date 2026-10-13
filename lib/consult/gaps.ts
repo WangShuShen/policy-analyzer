@@ -22,7 +22,10 @@ export async function userFacts(userId: string): Promise<Map<string, { display: 
 
 export function gapFactsOf(f: Map<string, { display: string; number: number | null }>, survivorNeed: number | null): GapFacts {
   const d = (k: string) => f.get(k)?.display ?? null;
-  return { care: d("care"), incomeShare: d("income_share"), debt: d("debt"), family: d("family"), buffer: d("buffer"), survivorNeed };
+  // 4-ai 之後沒有 care 這個需求點了：起因是「家人生病或需要照顧」就當成照顧支出
+  const trigger = d("trigger");
+  const care = d("care") ?? (trigger && /家人/.test(trigger) ? trigger : null);
+  return { care, incomeShare: d("income_share"), debt: d("debt"), family: d("family"), buffer: d("buffer"), worry: d("worry"), survivorNeed };
 }
 
 async function overridesOf(userId: string): Promise<GapOverride[]> {

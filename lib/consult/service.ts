@@ -1,7 +1,8 @@
 import { advance, askAt, answerFromOption, applyAnswer, nearestOption, passUpload, stepAt,
   type Answer, type FlowEvent, type FlowState, type Pending } from "./engine";
 import { STEPS } from "./script";
-import { extractAnswer, reply, confirmLine, type Usage } from "./ai";
+import { extractAnswer, reply, confirmLine, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction } from "./ai";
+import { nextSlot, needsReady, slotOf, stillMissing } from "./needs";
 import * as store from "./store";
 import { buildAnalysis, publicView, saveSnapshotIfChanged, type AnalysisView } from "./analysis";
 import { view as passbookView } from "@/lib/passbook/service";
@@ -12,6 +13,10 @@ import { view as passbookView } from "@/lib/passbook/service";
  *   打字   → Haiku 抽取 → 對到答案就記下、Opus 回一句 → 引擎接著往下走
  *            岔題問知識 → Opus 簡短回答並拉回 → 停在同一題
  *            聽不懂     → Opus 請他再說一次 → 停在同一題
+ *            想約顧問   → Opus 說可以、指出約顧問按鈕 → 停在同一題
+ *   需求點引導（4-ai，健康路線的 need 步驟）：點選項或打字都一樣
+ *            Haiku 讀整段對話填需求點 → needs.ts 挑下一點 → Opus 回應＋問＋產生選項
+ *            READY 三點齊了 → 引擎接著往下（醫療趨勢 → 上傳存摺）
  */
 
 export interface Snapshot {
@@ -35,6 +40,8 @@ function phaseAt(st: FlowState): number {
 
 /** 需求點的中文名稱與右欄可以改成哪些選項（決定分支的題目不能改 → options=null） */
 function factMeta(key: string): { label: string; options: { index: number; label: string }[] | null } {
+  const slot = slotOf(key);
+  if (slot) return { label: slot.label, options: slot.editable ? slot.values.map((label, index) => ({ index, label })) : null };
   for (const s of STEPS) {
     if (s.t !== "ask" || !s.keys.includes(key)) continue;
     const mine = s.o.map((o, index) => ({ o, index })).filter(x => x.o.key === key);
@@ -50,6 +57,29 @@ export class StaleTurnError extends Error {
 }
 
 const pendingAt = (st: FlowState): Pending => advance({ ...st }).pending;
+
+const isNeedStep = (stepId: string | undefined) => !!stepId && STEPS.find(s => s.id === stepId)?.t === "need";
+
+/** 上一則 AI 訊息帶的選項（need 步驟的選項是 AI 每輪產生的，跟著訊息加密存） */
+function lastChips(msgs: store.StoredMessage[]): string[] {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const c = msgs[i].content;
+    if (msgs[i].role === "user") return [];
+    if (c.kind === "ai") return c.chips ?? [];
+  }
+  return [];
+}
+
+function withChips(p: Pending, msgs: store.StoredMessage[]): Pending {
+  if (p.kind !== "ask" || !p.ask || !isNeedStep(p.ask.stepId)) return p;
+  return { ...p, ask: { ...p.ask, options: lastChips(msgs) } };
+}
+
+/** 給 AI 看的對話紀錄：只取他說的話與 AI 說的話，最近 12 則 */
+function historyOf(msgs: store.StoredMessage[]): Line[] {
+  return msgs.flatMap((m): Line[] => m.content.kind === "user" ? [{ role: "user", text: m.content.text }]
+    : m.content.kind === "ai" ? [{ role: "assistant", text: m.content.html.replace(/<[^>]+>/g, "") }] : []).slice(-12);
+}
 
 /** 把引擎吐出的事件存成訊息；phase／highlight 只是畫面效果，不存 */
 async function persistEvents(convId: string, events: FlowEvent[]): Promise<void> {
@@ -85,7 +115,7 @@ async function snapshot(userId: string, convId: string): Promise<Snapshot> {
     conversation: { id: conv.id, title: conv.title ?? store.titleOf(conv.branch, conv.sub_route), status: conv.status, branch: conv.branch, sub: conv.sub_route },
     messages,
     facts: facts.map(f => ({ ...f, ...factMeta(f.key) })),
-    pending: pendingAt(st),
+    pending: withChips(pendingAt(st), messages),
     analysis: publicView(analysis),
     phase: phaseAt({ ...st, cursor: advance({ ...st }).cursor }),
   };
@@ -131,6 +161,12 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
     return snapshot(userId, convId);
   }
 
+  if (cur.t === "need") {
+    if (!("option" in input) && !("text" in input)) throw new StaleTurnError();
+    await needRound(userId, convId, st, input);
+    return snapshot(userId, convId);
+  }
+
   const ask = askAt(st.cursor);
   if (!ask) throw new StaleTurnError();
 
@@ -140,7 +176,7 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
     const msgId = await store.addMessage(convId, "user", { kind: "user", text: opt.x });
     const a = answerFromOption(ask, opt);
     if (a.fact) await store.upsertFact(convId, userId, { ...a.fact, confidence: "clear", sourceMessageId: msgId });
-    await runForward(userId, convId, applyAnswer(st, a));
+    await enterNeed(userId, convId, await runForward(userId, convId, applyAnswer(st, a)), opt.x);
     return snapshot(userId, convId);
   }
 
@@ -173,15 +209,19 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
 
   if (answer) {
     const recorded = answer.fact?.display ?? text;
-    const r = await reply({ kind: "bridge", question, userText: text, recorded, estimated });
-    await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
+    // 下一步是需求點引導的話，回應交給 speakNeed（不然會連講兩次「辛苦了」）
+    const toNeed = isNeedStep(advance(applyAnswer(st, answer)).pending.ask?.stepId);
+    if (!toNeed) {
+      const r = await reply({ kind: "bridge", question, userText: text, recorded, estimated });
+      await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
+      await saveReply(convId, r.html, r.usages, r.rewritten);
+    }
     if (answer.fact) await store.upsertFact(convId, userId, { ...answer.fact, confidence: estimated ? "estimated" : "clear", sourceMessageId: userMsgId });
-    await saveReply(convId, r.html, r.usages, r.rewritten);
     if (estimated && answer.fact) await store.addMessage(convId, "assistant", { kind: "ai", html: confirmLine(answer.fact.display) });
-    await runForward(userId, convId, applyAnswer(st, answer));
+    await enterNeed(userId, convId, await runForward(userId, convId, applyAnswer(st, answer)), text);
   } else {
-    const mode = ex.kind === "question"
-      ? { kind: "answer_question" as const, question, userText: text }
+    const mode = ex.kind === "question" ? { kind: "answer_question" as const, question, userText: text }
+      : ex.kind === "book" ? { kind: "book" as const, question, userText: text }
       : { kind: "clarify" as const, question, userText: text, options: ask.o.map(o => o.x) };
     const r = await reply(mode);
     await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
@@ -191,11 +231,54 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
   return snapshot(userId, convId);
 }
 
-async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean) {
+async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean, chips?: string[]) {
   // 一句話可能重產過（合規攔截），用量加總記在這則訊息上（I6）
   const total = usages.reduce<Usage>((a, u) => ({ model: u.model, tokensIn: a.tokensIn + u.tokensIn, tokensOut: a.tokensOut + u.tokensOut, costMicroUsd: a.costMicroUsd + u.costMicroUsd }),
     { model: usages[0]?.model ?? "", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 });
-  await store.addMessage(convId, "assistant", { kind: "ai", html }, { usage: total, rewritten });
+  await store.addMessage(convId, "assistant", chips ? { kind: "ai", html, chips } : { kind: "ai", html }, { usage: total, rewritten });
+}
+
+// ── 需求點引導（4-ai）──────────────────────────────────────────────
+
+/** 一輪：整理員填需求點 → 說話的人回應＋問下一點 */
+async function needRound(userId: string, convId: string, st: FlowState, input: { option: number } | { text: string }) {
+  const msgs = await store.getMessages(convId);
+  const text = "option" in input ? lastChips(msgs)[input.option] : input.text.trim().slice(0, 1000);
+  if (!text) throw new Error("option" in input ? "沒有這個選項" : "請輸入內容");
+  const history = historyOf(msgs);
+  const { result: ex, usage } = await extractNeeds(history, st.values, text);
+  const userMsgId = await store.addMessage(convId, "user", { kind: "user", text }, { usage });
+  const values = new Map(st.values);
+  for (const u of ex.updates) {
+    const slot = slotOf(u.slot)!;
+    if (slot.key === "intent" && values.has("intent")) continue;     // 來意決定路線，不從對話裡改
+    values.set(slot.key, u.value);
+    await store.upsertFact(convId, userId, { key: slot.key, display: u.value, number: null,
+      bucket: slot.values.includes(u.value) ? u.value : null, health: slot.health, confidence: u.confidence, sourceMessageId: userMsgId });
+  }
+  await speakNeed(userId, convId, { ...st, values, filled: new Set(values.keys()) }, [...history, { role: "user", text }], text, ex.intent);
+}
+
+/** 說話的人：依意圖決定這一輪問哪一點（或不問），存回覆與選項；三點齊了就讓引擎往下走 */
+async function speakNeed(userId: string, convId: string, st: FlowState, history: Line[], userText: string, intent: NeedExtraction["intent"]) {
+  const ready = needsReady(st.values);
+  const askNow =
+    intent === "emotion" ? null                                                    // 情緒重：這一輪只回應感受
+    : intent === "book" ? (st.values.has("worry") ? null : slotOf("worry")!)        // 想約顧問：最多再問「最擔心」
+    : ready ? null : nextSlot(st.values);
+  const r = await needTurn({ history, known: st.values, askNow, missing: stillMissing(st.values), intent, userText });
+  await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
+  await saveReply(convId, r.html, r.usages, r.rewritten, r.chips);
+  if (ready) await runForward(userId, convId, { ...st, cursor: st.cursor + 1 });
+  else await store.saveState(userId, convId, st, false);
+}
+
+/** 剛走到 need 步驟（例如開場選了健康路線）：還沒有任何一句在問需求點，先讓 AI 開口 */
+async function enterNeed(userId: string, convId: string, st: FlowState, userText: string) {
+  const r = advance({ ...st });
+  if (r.pending.kind !== "ask" || !isNeedStep(r.pending.ask?.stepId)) return;
+  const msgs = await store.getMessages(convId);
+  await speakNeed(userId, convId, { ...st, cursor: r.cursor }, historyOf(msgs), userText, "answer");
 }
 
 /** 題目前面最後一句 AI 台詞＝這一題實際問的話 */
@@ -215,10 +298,20 @@ function lastQuestion(cursor: number): string {
 export async function editFact(userId: string, convId: string, key: string, change: { option: number } | { number: number; display: string }): Promise<Snapshot> {
   const conv = await store.getConversation(userId, convId);
   if (!conv) throw new Error("找不到這段對話");
+  const before = (await store.getFacts(convId)).find(f => f.key === key);
+  const slot = slotOf(key);
+  if (slot) {
+    if (!slot.editable) throw new Error("這一項決定了聊天的方向，要改的話請開一個新的對話");
+    const v = "option" in change ? slot.values[change.option] : undefined;
+    if (!v) throw new Error("沒有這個選項");
+    await store.upsertFact(convId, userId, { key, display: v, number: null, bucket: slot.health ? null : v, health: slot.health, confidence: "confirmed" });
+    await store.addMessage(convId, "assistant", { kind: "note", text: `已更新：${before?.display ?? ""} → ${v}` });
+    await store.saveState(userId, convId, await store.loadState(conv), conv.status === "done");
+    return snapshot(userId, convId);
+  }
   const ask = STEPS.find(s => s.t === "ask" && s.keys.includes(key));
   if (!ask || ask.t !== "ask") throw new Error("這一項不能修改");
   if (ask.o.some(o => o.r || o.f)) throw new Error("這一項決定了聊天的方向，要改的話請開一個新的對話");
-  const before = (await store.getFacts(convId)).find(f => f.key === key);
   let a: Answer;
   if ("option" in change) {
     const opt = ask.o[change.option];

@@ -94,6 +94,8 @@ export function ConsultChat({ name }: { name: string }) {
 
   const pick = (i: number) => {
     const ask = snap?.pending.ask; if (!ask) return;
+    // 4-ai：想約顧問的人不擋——AI 給的「先不說，直接約」「先去約顧問」直接帶去約（講過的都已經存好了）
+    if (/直接約|去約顧問|現在去約/.test(ask.options[i])) { window.location.href = "/advisors"; return; }
     send({ stepId: ask.stepId, option: i }, ask.options[i]);
   };
   const submitText = (e: React.FormEvent) => {

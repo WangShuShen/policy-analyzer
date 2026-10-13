@@ -27,9 +27,29 @@ const RULES: { reason: string; re: RegExp }[] = [
   { reason: "宣稱免稅", re: /(買|有|用)保險[^。！？\n]{0,6}(就|可以|能)[^。！？\n]{0,3}免(遺產|贈與)?稅/ },
 ];
 
+// 4-ai：AI 把自己的猶豫寫進回覆（2026-10-12 實測：「點擊此處預約顧問…不行，不能說，不知道系統有沒有預約按鈕。這樣講就好：……」）
+// 或把內部指令念出來（「最後問持續多久」「下一題」）。對客戶來說這是聊天，不是問卷
+const LEAK = /不行，|不能說|這樣講就好|這樣說就好|我應該(說|問|回)|系統有沒有|不知道系統|下一題|這一輪|最後問|回到剛剛|撰寫考量|考量：|結果：|```|\*\*|字，符合|ask_now|still_missing|known/;
+
 export function checkCompliance(text: string): ComplianceResult {
   const plain = text.replace(/<[^>]+>/g, "");
   for (const r of RULES) if (r.re.test(plain)) return { ok: false, reason: r.reason };
+  if (LEAK.test(plain)) return { ok: false, reason: "思考外洩" };
+  return { ok: true };
+}
+
+/** 需求點引導的一整輪輸出：回覆＋選項都要過（4-ai），還有長度上限 */
+export function checkTurn(reply: string, chips: string[]): ComplianceResult {
+  const r = checkCompliance(reply);
+  if (!r.ok) return r;
+  if (reply.replace(/<[^>]+>/g, "").length > 120) return { ok: false, reason: "回覆太長" };
+  if (chips.length > 4) return { ok: false, reason: "選項太多" };
+  for (const c of chips) {
+    if (c.length > 20) return { ok: false, reason: "選項太長" };
+    const cr = checkCompliance(c);
+    if (!cr.ok) return { ok: false, reason: `選項${cr.reason}` };
+    if (/\d[\d,，.]*\s*(萬|元)/.test(c)) return { ok: false, reason: "選項含金額" };
+  }
   return { ok: true };
 }
 
