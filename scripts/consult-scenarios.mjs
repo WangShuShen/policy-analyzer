@@ -50,6 +50,10 @@ const S = {
     facts: { existing_policy: /團保|有/ } },
   T13: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "老婆跟一個小孩靠我" }, { text: "最怕生病沒收入" }, { text: "有幾張，不太清楚內容" }], bad: [/照顧費/] },
   T15: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "沒什麼" }, { any: true }, { any: true }, { any: true }], bad: [] },
+  // 上傳存摺 → 確認清單 → 送出「上傳好了」→ 走到「該補什麼」→ 約顧問 → 顧問端看得到案例區塊（A3b）
+  // 模擬模式下存摺讀取回固定的示範保單（lib/passbook/read.ts）；真 AI 模式要真的檔案，所以只在 --mock 跑
+  T20: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
+    { any: true }, { any: true }, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼要補？看數據" },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
@@ -82,6 +86,44 @@ async function runOne(id, round) {
   for (const m of snap.messages) log.push(`AI: ${strip(m.content.html ?? m.content.text)}`);
   for (const step of sc.steps) {
     const p = snap.pending;
+    if (step.upload) {
+      if (p?.kind !== "upload") { broken = `走不到上傳存摺那一步（pending=${p?.kind}）`; break; }
+      log.push("(上傳存摺)");
+      const up = await fetch(`${BASE}/api/passbook`, { method: "POST", headers: H,
+        body: JSON.stringify({ conversationId: snap.conversation.id, content: { kind: "text", pages: ["情境測試用存摺：模擬模式下內容不會被讀，讀取會回固定的示範保單。上傳端要求至少 30 個字。"] } }) });
+      if (!up.ok) { broken = `上傳失敗 HTTP ${up.status}`; break; }
+      const waitFor = async (want) => {
+        for (let i = 0; i < 60; i++) {
+          const v = await (await fetch(`${BASE}/api/passbook`, { headers: H })).json();
+          if (v.upload?.status === want) return v;
+          if (v.upload?.status === "failed") throw new Error(`存摺讀取失敗：${v.upload.error}`);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        throw new Error(`等不到存摺狀態 ${want}`);
+      };
+      try {
+        const v = await waitFor("confirming");
+        log.push(`(確認清單 ${v.policies.length} 張)`);
+        const c = await fetch(`${BASE}/api/passbook/confirm`, { method: "POST", headers: H,
+          body: JSON.stringify({ uploadId: v.upload.id, items: v.policies.map(x => ({ id: x.id, keep: true })) }) });
+        if (!c.ok) { broken = `確認清單失敗 HTTP ${c.status}`; break; }
+        await waitFor("done");
+      } catch (e) { broken = String(e.message ?? e); break; }
+      const r = await fetch(`${BASE}/api/consult/turn`, { method: "POST", headers: H,
+        body: JSON.stringify({ conversationId: snap.conversation.id, stepId: p.uploadStepId, uploaded: true }) });
+      const j = await r.json();
+      if (!r.ok) { broken = `送出「上傳好了」HTTP ${r.status} ${JSON.stringify(j).slice(0, 200)}`; break; }
+      snap = j;
+      const turn = [];
+      for (const m of snap.messages.slice(seen)) if (m.role === "assistant") {
+        const text = strip(m.content.html ?? m.content.text ?? (m.content.kind === "panel" ? `［右欄：${m.content.key}］` : ""));
+        turn.push({ text, chips: m.content.chips ?? [] });
+        log.push(`AI: ${text}`);
+      }
+      replies.push(turn);
+      seen = snap.messages.length;
+      continue;
+    }
     const opts = p?.ask?.options ?? [];
     let body;
     if (step.text) { body = { text: step.text }; log.push(`客戶: ${step.text}`); }
@@ -107,6 +149,28 @@ async function runOne(id, round) {
     seen = snap.messages.length;
   }
   const facts = Object.fromEntries(snap.facts.map(f => [f.key, f.display]));
+  const shownPanels = snap.messages.flatMap(m => m.content.kind === "panel" ? [m.content.key] : []);
+  // 顧問端：客戶約了顧問之後，顧問的客戶頁「保障分析」要看得到案例區塊
+  let advisorFail = null;
+  if (sc.advisorSees && !broken) {
+    try {
+      const userId = JSON.parse(Buffer.from(cookie.split("=")[1].split(".")[1], "base64url").toString()).advisorId;
+      const advisorId = arg("advisor", "dev-adv-b");
+      const slots = await (await fetch(`${BASE}/api/advisors/${advisorId}/slots`, { headers: H })).json();
+      // 同時跑好幾輪會搶同一個時段，隨機挑一個
+      const free = slots.slots ?? [];
+      const startsAt = free[Math.floor(Math.random() * Math.min(free.length, 40))]?.startsAt;
+      if (!startsAt) throw new Error("這位顧問沒有可約的時段");
+      const b = await fetch(`${BASE}/api/bookings`, { method: "POST", headers: H, body: JSON.stringify({ advisorId, startsAt, mode: "online" }) });
+      if (!b.ok) throw new Error(`約顧問失敗 HTTP ${b.status} ${(await b.text()).slice(0, 150)}`);
+      const al = await fetch(`${BASE}/api/dev-login?as=advisor&id=${advisorId}${KEY ? `&key=${encodeURIComponent(KEY)}` : ""}`, { redirect: "manual" });
+      const ac = al.headers.get("set-cookie")?.split(";")[0];
+      const html = await (await fetch(`${BASE}/clients/${userId}?tab=gap`, { headers: { cookie: ac } })).text();
+      const n = html.split(sc.advisorSees).length - 1;
+      log.push(`顧問端客戶頁：「${sc.advisorSees}」出現 ${n} 處`);
+      if (n === 0) advisorFail = `顧問端客戶頁看不到「${sc.advisorSees}」`;
+    } catch (e) { advisorFail = String(e.message ?? e); }
+  }
   log.push(`右欄：${snap.facts.map(f => `${f.label ?? f.key}=${f.display}`).join("｜")}`);
 
   const checked = sc.lastOnly ? replies.slice(-1) : replies;
@@ -117,6 +181,8 @@ async function runOne(id, round) {
     ...sc.bad.filter(re => re.test(replyText)).map(re => `出現 ${re}`),
     ...COMMON_BAD.filter(re => re.test(allText)).map(re => `出現 ${re}`),
     ...(sc.expect ?? []).filter(([i, re]) => !re.test((replies[i] ?? []).map(x => x.text).join("\n"))).map(([i, re]) => `第 ${i + 1} 步的回覆應符合 ${re}`),
+    ...(sc.panels ?? []).filter(k => !shownPanels.includes(k)).map(k => `右欄沒有出現 ${k}`),
+    ...(advisorFail ? [advisorFail] : []),
     ...Object.entries(sc.facts ?? {}).filter(([k, re]) => !re.test(facts[k] ?? "")).map(([k, re]) => `右欄 ${k}=${facts[k] ?? "（沒記）"}，應符合 ${re}`),
   ];
   const deferred = MOCK && !!sc.realAI;
@@ -131,7 +197,7 @@ if (MOCK) {
   const html = await (await fetch(`${BASE}/consult`, { headers: { cookie: l.headers.get("set-cookie")?.split(";")[0] ?? "" } })).text();
   if (!html.includes("AI 為模擬回覆")) { console.error("--mock：伺服器沒有開模擬模式（AI_MOCK=1、RADIA_ENV=dev、APP_URL 是本機或開發版）"); process.exit(2); }
 }
-const ids = arg("only")?.split(",") ?? Object.keys(S);
+const ids = arg("only")?.split(",") ?? Object.keys(S).filter(id => MOCK || !S[id].mockOnly);
 for (const id of ids) if (!S[id]) { console.error(`沒有情境 ${id}`); process.exit(2); }
 const jobs = ids.flatMap(id => Array.from({ length: ROUNDS }, (_, r) => [id, r + 1]));
 const results = [];
