@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FinalGapRow } from "@/lib/calc/gaps";
+import { Evidence } from "@/components/public/GapEvidence";
 
 /*
  * 缺口分級核對（G1；表格照原型顧問端「保障分析」的 gptbl）。
@@ -36,7 +37,8 @@ export function GapEditor({ userId, initial }: { userId: string; initial: FinalG
           <div key={r.key} style={{ display: "contents" }}>
             <div className="gpr">
               <div className="gpk">{r.label}<span className="gpsrc" style={{ display: "block", fontFamily: "var(--ui)", fontSize: 11, fontWeight: 500, color: "var(--muted)", marginTop: 2 }}>{r.reason}{r.override && `（系統原判：${LV[r.systemLevel]}・${r.override.advisorName ?? "顧問"}調整）`}</span>
-                <button className="alink" style={{ padding: 0, marginTop: 3 }} onClick={() => { setEdit(edit === r.key ? null : r.key); setLevel(r.level); setReason(""); setErr(""); }}>{edit === r.key ? "取消改級" : "改級"}</button></div>
+                <button className="alink" style={{ padding: 0, marginTop: 3 }} onClick={() => { setEdit(edit === r.key ? null : r.key); setLevel(r.level); setReason(""); setErr(""); }}>{edit === r.key ? "取消改級" : "改級"}</button>
+                <Evidence k={r.key} />{/* 跟客戶「我的分析」同一份案例數據（A3b）——顧問面談時可以直接講出處 */}</div>
               <div className="gpv now"><span className="gpl">現在</span><b>{r.current}{r.preliminary && "＊"}</b></div>
               <div className="gpv"><span className="gpl">標準</span><b style={{ color: "var(--brand-ink)" }}>{r.standard ?? "—"}</b></div>
               <div className="gpbar"><i style={{ width: `${r.level === "ok" ? 100 : r.current === "沒有" ? 0 : 50}%`, background: r.level === "ok" ? "var(--brand)" : undefined }} /></div>
