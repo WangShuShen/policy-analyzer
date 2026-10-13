@@ -283,6 +283,9 @@ export const contentVersions = pgTable("content_versions", {
   reviewer_id: text("reviewer_id"),
   reviewed_at: text("reviewed_at"),
   created_at: createdAt(),
+  // w1b-06：試算參數可預設生效日（E4，台灣日期 YYYY-MM-DD）；其他內容發布即生效
+  effective_from: text("effective_from"),
+  note: text("note"),                               // 這次改了什麼（給之後查版本的人看）
 }, t => [index("content_versions_item").on(t.item_id)]);
 
 // 上傳的保險存摺（4-w、P1、N19）。檔案本身放私有儲存，這裡只記位置與解析狀態
