@@ -428,7 +428,7 @@ export const emailOutbox = pgTable("email_outbox", {
   ics_method: text("ics_method"),                     // PUBLISH | CANCEL
   kind: text("kind").notNull(),                       // 跟通知同一組 kind
   booking_id: text("booking_id"),
-  status: text("status").notNull().default("queued"), // queued | sent | failed（重試用完）
+  status: text("status").notNull().default("queued"), // queued | sent | failed（重試用完）| skipped（測試網域 .invalid 不寄）
   attempts: integer("attempts").notNull().default(0),
   last_error: text("last_error"),
   next_try_at: text("next_try_at"),

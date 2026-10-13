@@ -34,6 +34,11 @@ export async function enqueue(mails: OutMail[]): Promise<string[]> {
 
 async function deliverOne(row: typeof emailOutbox.$inferSelect): Promise<boolean> {
   const files = row.ics ? (JSON.parse(row.ics) as IcsFile[]) : [];
+  // 測試帳號（dev-login、測試顧問）用保留網域 .invalid，永遠寄不到；真的寄出去只會有退信塞進寄件人信箱 → 留紀錄不寄
+  if (/\.invalid$/i.test(row.to_addr)) {
+    await db.update(emailOutbox).set({ status: "skipped", attempts: row.attempts + 1, last_error: "測試網域 .invalid，不寄" }).where(eq(emailOutbox.id, row.id));
+    return true;
+  }
   try {
     await send()({
       from: `RADIA <${process.env.GMAIL_USER}>`, to: row.to_addr, replyTo: row.reply_to ?? undefined, subject: row.subject, html: row.html,
