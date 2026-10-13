@@ -64,3 +64,41 @@
 .rd .rd-nb{font-size:12.5px;color:var(--ink-2);line-height:1.45}
 .rd .rd-nd{font-size:11.5px;color:var(--muted)}
 .rd .rd-nempty{padding:18px 14px;font-size:13px;color:var(--muted);line-height:1.6}
+/* 開發版回饋鈕（卡 A 第 4 步；只在開發版渲染）：右下角浮動，手機避開底部動作列 */
+.rd .rd-fbbtn{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:60;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:650;box-shadow:0 4px 14px rgba(0,0,0,.12);cursor:pointer}
+.rd .rd-fbbtn:hover{border-color:var(--brand);color:var(--brand-ink)}
+.rd .rd-fbbox{position:fixed;right:16px;bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:61;width:min(360px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.16);padding:14px;display:flex;flex-direction:column;gap:10px}
+.rd .rd-fbhd{display:flex;justify-content:space-between;align-items:center}
+.rd .rd-fbhd b{font-size:14px}
+.rd .rd-fbhd button{border:0;background:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;padding:2px 6px}
+.rd .rd-fbkinds{display:flex;flex-wrap:wrap;gap:6px}
+.rd .rd-fbkinds button{border:1px solid var(--line);background:var(--sunk);border-radius:999px;padding:5px 11px;font-size:12.5px;color:var(--ink-2);cursor:pointer}
+.rd .rd-fbkinds button[aria-checked="true"]{background:var(--brand);border-color:var(--brand);color:#fff}
+.rd .rd-fbbox textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;font-size:13.5px;resize:vertical;background:var(--surface);color:var(--ink)}
+.rd .rd-fbbox textarea:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+.rd .rd-fbmeta{font-size:11.5px;color:var(--muted);line-height:1.5;word-break:break-all}
+.rd .rd-fbok{background:var(--brand-soft);color:var(--brand-ink);border-radius:10px;padding:9px 11px;font-size:13px}
+.rd .rd-fbact{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.rd .rd-fbact a{font-size:12.5px;color:var(--brand-ink)}
+.rd .rd-fbsend{margin-left:auto;border:0;background:var(--brand);color:#fff;border-radius:10px;padding:8px 18px;font-weight:700;font-size:13.5px;cursor:pointer}
+.rd .rd-fbsend:disabled{opacity:.45;cursor:default}
+/* 開發版回饋清單（/dev/feedback） */
+.rd .rd-devtag{margin-left:10px;font-size:11.5px;font-weight:700;color:var(--amber);background:var(--amber-soft);border-radius:999px;padding:2px 9px}
+.rd .rd-fblist{display:flex;flex-direction:column;gap:10px}
+.rd .rd-fbrow{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.rd .rd-fbrow.s-in_progress{border-left-color:var(--brand)}
+.rd .rd-fbrow.s-fixed{border-left-color:#5a6bb0}
+.rd .rd-fbrow.s-closed{border-left-color:var(--line);opacity:.7}
+.rd .rd-fbtop{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:12.5px}
+.rd .rd-fbno{font-weight:800;color:var(--ink)}
+.rd .rd-fbkind{font-weight:700;border-radius:999px;padding:1px 9px;background:var(--sunk);color:var(--ink-2)}
+.rd .rd-fbkind.k-broken{background:var(--must-soft);color:var(--must)}
+.rd .rd-fbkind.k-not_wanted{background:var(--amber-soft);color:var(--amber)}
+.rd .rd-fbkind.k-idea{background:var(--brand-soft);color:var(--brand-ink)}
+.rd .rd-fburl{color:var(--brand-ink);word-break:break-all}
+.rd .rd-fbwho{color:var(--muted);margin-left:auto}
+.rd .rd-fbbody{margin:0;font-size:14px;line-height:1.7;white-space:pre-wrap;color:var(--ink)}
+.rd .rd-fbctl{display:flex;flex-wrap:wrap;gap:8px}
+.rd .rd-fbctl select,.rd .rd-fbctl input{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink)}
+.rd .rd-fbctl input{flex:1 1 220px}
+.rd .rd-fbst{font-size:12.5px;color:var(--muted)}

@@ -22,6 +22,7 @@ export async function proxy(req: NextRequest) {
     pathname === "/consult/edu" ||
     pathname === "/api/consult/edu" ||   // 衛教模式 API：不用登入、不記任何資料
     pathname === "/api/dev-login" ||     // 本機測試登入（DEV_LOGIN=1＋localhost 才有作用）
+    pathname === "/api/dev/feedback" ||  // 開發版回饋：沒登入的頁面也要能送；非開發版一律 404（權限在 route 內判斷）
     pathname === "/pricing" ||
     pathname === "/favicon.ico" ||
     /\.(png|jpg|jpeg|svg|ico|webp|gif|woff2?|ttf|otf)$/.test(pathname)

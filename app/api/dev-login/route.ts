@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   let payload: Parameters<typeof signJWT>[0], to: string;
   if (as === "new-customer") {
-    const uid = `demo-${Date.now()}`;
+    const uid = `demo-${crypto.randomUUID()}`;   // 不用時間戳：同一毫秒建兩個會撞號回 500（卡F 回報）
     await db.insert(users).values({ id: uid, email: `${uid}@example.invalid`, name: "測試客戶" });
     await recordConsent(uid, { marketing: false });
     payload = { advisorId: uid, email: `${uid}@example.invalid`, name: "測試客戶", isAdmin: false, role: "customer", plan: "free" }; to = "/consult";
