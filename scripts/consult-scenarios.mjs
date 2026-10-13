@@ -10,7 +10,7 @@
  *   node scripts/consult-scenarios.mjs --rounds 1 --only T01,T07
  *   node scripts/consult-scenarios.mjs --base http://localhost:3002 --out /tmp/radia-scenarios
  *   node scripts/consult-scenarios.mjs --mock                 # 伺服器開著 AI_MOCK=1：只驗程式流程，要靠 AI 理解力的情境標「需真 AI 補驗」
- *   node scripts/consult-scenarios.mjs --base https://radia-dev-woad.vercel.app --key <DEV_LOGIN_KEY>   # 對開發版跑
+ *   node scripts/consult-scenarios.mjs --base https://radia-dev-woad.vercel.app --key <DEV_LOGIN_KEY>   # 對開發版跑（或 node --env-file=.env.local … 不帶 --key，從 DEV_LOGIN_KEY 讀）
  * 前提：本機 dev server 已開，且 .env.local 有 DEV_LOGIN=1（測試登入只認 localhost）。
  * 每改一次 AI 指令或合規層都要全部重跑。
  */
@@ -24,7 +24,8 @@ const ROUNDS = Number(arg("rounds", "3"));
 const OUT = arg("out", path.join(os.tmpdir(), "radia-consult-scenarios"));
 const CONC = Number(arg("concurrency", "6"));
 const MOCK = process.argv.includes("--mock");
-const KEY = arg("key", process.env.DEV_LOGIN_KEY ?? "");   // 也可從環境變數帶，免得鑰匙出現在指令列
+// 金鑰優先從環境變數讀（node --env-file=.env.local …），避免留在 shell 歷史
+const KEY = arg("key", /localhost|127\.0\.0\.1/.test(BASE) ? "" : process.env.DEV_LOGIN_KEY ?? "");
 fs.mkdirSync(OUT, { recursive: true });
 
 // 劇本：{opt:"選項文字片段"} 點選項｜{text:"..."} 打字｜{any:true} 點第一個選項

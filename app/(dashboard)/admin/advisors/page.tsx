@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2, ShieldCheck, ShieldOff, UserCheck, UserX } from "lucide-react";
+import { AdvisorApplications } from "@/components/admin/AdvisorApplications";
 
 interface Advisor {
   id: string;
@@ -80,6 +81,7 @@ export default function AdvisorsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
+      <AdvisorApplications onApproved={load} />
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-stone-400">僅名單內的 Google 帳號才可登入系統；登錄字號設好，客戶端才會列出這位顧問</p>

@@ -9,11 +9,12 @@ import { useEffect, useState } from "react";
  * 保單審核、審核進度、顧問管理只給管理者（2026-10-11 決定：一般顧問的分頁跟原型完全一樣）。
  */
 const ANAV: [string, string][] = [["/todo", "待辦"], ["/clients", "客戶"], ["/analyze", "保單分析"], ["/catalog", "商品查詢"], ["/profile", "我的顧問頁"]];
-const ADMIN: [string, string][] = [["/review", "保單審核"], ["/admin/progress", "審核進度"], ["/admin/advisors", "顧問管理"]];
+const ADMIN: [string, string][] = [["/review", "保單審核"], ["/admin/progress", "審核進度"], ["/admin/advisors", "顧問管理"], ["/admin/audit", "查閱紀錄"]];
 const TITLE: [string, string, string][] = [
   ["/clients/", "", ""], ["/clients", "客戶", "從 AI 諮詢預約你的客戶"], ["/analyze", "保單分析", "上傳保單條款，AI 自動解析填入全險圖"],
   ["/catalog", "商品查詢", "搜尋已審核的商品"], ["/product/", "商品條款", "給付、試算與條款原文"], ["/profile", "我的顧問頁", "客戶選顧問時看到的就是這一頁"],
   ["/review", "保單審核", "逐一審核 AI 分析結果，確認後歸檔"], ["/admin/progress", "審核進度", "全員審核狀況總覽"], ["/admin/advisors", "顧問管理", "僅名單內的 Google 帳號才可登入"],
+  ["/admin/audit", "查閱紀錄", "誰在何時看了哪位客戶的資料"],
 ];
 
 const greeting = () => { const h = Number(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei", hour: "numeric", hour12: false })); return h < 11 ? "早安" : h < 18 ? "午安" : "晚安"; };
