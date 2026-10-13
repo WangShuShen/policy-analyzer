@@ -451,3 +451,27 @@ export const devFeedback = pgTable("dev_feedback", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [index("dev_feedback_status").on(t.status, t.seq)]);
+
+// 顧問申請（w1b-03、C4）：用 Google 申請 → 管理者核准才寫進 advisors。
+// 待審／退件的人不在 advisors 表裡，所以不可能出現在客戶看得到的顧問名單。
+// company 只給管理者看（4-aj：客戶端不顯示顧問所屬公司），核准時不帶進 advisors。
+export const advisorApplications = pgTable("advisor_applications", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull(),                   // 來自 Google 登入，申請人不能自己改
+  google_name: text("google_name"),
+  name: text("name").notNull(),
+  license_no: text("license_no").notNull(),         // 登錄字號（N2／N20），管理者核准前核對
+  company: text("company").notNull(),               // 所屬公司／通路，只給管理者判斷（傳燈學院招募邊界）
+  phone: text("phone").notNull(),
+  intro: text("intro").notNull(),                   // 一句自我介紹，只給管理者看；客戶看到的自介由顧問核准後在「我的顧問頁」自己寫
+  status: text("status").notNull().default("pending"),   // pending | approved | rejected
+  reviewed_by: text("reviewed_by"),                 // 管理者的 advisors.id
+  reviewed_at: text("reviewed_at"),
+  review_note: text("review_note"),
+  advisor_id: text("advisor_id"),                   // 核准後建立的 advisors.id
+  created_at: createdAt(),
+}, t => [
+  index("advisor_applications_status").on(t.status, t.created_at),
+  // 同一個 email 同時只能有一筆待審
+  uniqueIndex("advisor_applications_one_pending").on(t.email).where(sql`status = 'pending'`),
+]);
