@@ -239,11 +239,11 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
   return snapshot(userId, convId);
 }
 
-async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean, chips?: string[]) {
+async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean, chips?: string[], ask?: string) {
   // 一句話可能重產過（合規攔截），用量加總記在這則訊息上（I6）
   const total = usages.reduce<Usage>((a, u) => ({ model: u.model, tokensIn: a.tokensIn + u.tokensIn, tokensOut: a.tokensOut + u.tokensOut, costMicroUsd: a.costMicroUsd + u.costMicroUsd }),
     { model: usages[0]?.model ?? "", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 });
-  await store.addMessage(convId, "assistant", chips ? { kind: "ai", html, chips } : { kind: "ai", html }, { usage: total, rewritten });
+  await store.addMessage(convId, "assistant", chips ? { kind: "ai", html, chips, ...(ask ? { ask } : {}) } : { kind: "ai", html }, { usage: total, rewritten });
 }
 
 // ── 需求點引導（4-ai）──────────────────────────────────────────────
@@ -256,20 +256,38 @@ async function needRound(userId: string, convId: string, st: FlowState, input: {
   const history = historyOf(msgs);
   const { result: ex, usage } = await extractNeeds(history, st.values, text);
   const userMsgId = await store.addMessage(convId, "user", { kind: "user", text }, { usage });
-  const values = await applyNeedUpdates(userId, convId, st.values, ex, userMsgId, text);
+  // 點選項＝回答上一句問的那一點。整理員沒記到的話就照選項記，不然會一直重問同一題
+  // （10/14 卡 A 回報：收入題點「兩個人差不多」連點 25 次都重問）
+  const asked = lastAsk(msgs);
+  if ("option" in input && asked && slotOf(asked) && !st.values.has(asked) && !ex.updates.some(u => u.slot === asked)) {
+    ex.updates.push({ slot: asked, value: OPTION_DECLINE.test(text) ? DECLINED : text.slice(0, 20), confidence: "clear" });
+  }
+  const values = await applyNeedUpdates(userId, convId, st.values, ex, userMsgId, text, asked);
   await speakNeed(userId, convId, { ...st, values, filled: new Set(values.keys()) }, [...history, { role: "user", text }], text, ex.intent);
 }
 
 /** 整理員填的需求點寫進右欄，回傳更新後的值 */
-const INCOME_WORDS = /賺|收入|薪|養家|一個人養|在養|錢|經濟|雙薪|主要|都靠我|靠我撐/;
+const INCOME_WORDS = /賺|收入|薪|養家|一個人養|在養|錢|經濟|雙薪|主要|靠我|差不多/;
+const OPTION_DECLINE = /不太想說|不想說|不想講|不方便|先不說/;
 
-async function applyNeedUpdates(userId: string, convId: string, known: Map<string, string>, ex: NeedExtraction, userMsgId: string, userText: string) {
+/** 上一句 AI 在問哪個需求點（跟著訊息存） */
+function lastAsk(msgs: store.StoredMessage[]): string | undefined {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const c = msgs[i].content;
+    if (msgs[i].role === "user") return undefined;
+    if (c.kind === "ai") return c.ask;
+  }
+  return undefined;
+}
+
+async function applyNeedUpdates(userId: string, convId: string, known: Map<string, string>, ex: NeedExtraction, userMsgId: string, userText: string, asked?: string) {
   const values = new Map(known);
   for (const u of ex.updates) {
     const slot = slotOf(u.slot)!;
     if (slot.key === "intent" && values.has("intent")) continue;     // 來意決定路線，不從對話裡改
     // 收入只收他自己講到錢的（指令寫了不准推論，整理員還是偶爾從「老婆跟小孩」推出「主要收入」）；拒答照收
-    if (slot.key === "income_share" && u.value !== DECLINED && !INCOME_WORDS.test(userText)) continue;
+    // 正在問收入時他回的話就是答案，不用這道檢查
+    if (slot.key === "income_share" && asked !== "income_share" && u.value !== DECLINED && !INCOME_WORDS.test(userText)) continue;
     values.set(slot.key, u.value);
     await store.upsertFact(convId, userId, { key: slot.key, display: u.value, number: null,
       bucket: slot.values.includes(u.value) ? u.value : null, health: slot.health, confidence: u.confidence, sourceMessageId: userMsgId });
@@ -286,7 +304,7 @@ async function speakNeed(userId: string, convId: string, st: FlowState, history:
     : ready ? null : nextSlot(st.values);
   const r = await needTurn({ history, known: st.values, askNow, missing: stillMissing(st.values), intent, userText });
   await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
-  await saveReply(convId, r.html, [...extraUsages, ...r.usages], r.rewritten, r.chips);
+  await saveReply(convId, r.html, [...extraUsages, ...r.usages], r.rewritten, r.chips, askNow?.key);
   if (ready) await runForward(userId, convId, { ...st, cursor: st.cursor + 1 });
   else await store.saveState(userId, convId, st, false);
 }

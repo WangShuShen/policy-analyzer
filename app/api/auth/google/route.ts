@@ -43,6 +43,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL("/welcome/consent?error=consent_outdated", req.url));
     }
     res.cookies.set("oauth_flow", JSON.stringify({ flow: "consult", cv: CONSENT_VERSION, mk: sp.get("mk") === "1" }), cookieOpts);
+  } else if (sp.get("flow") === "advisor_apply") {
+    // 顧問申請（w1b-03）：回呼時不是顧問就只發申請憑證，不建客戶帳號
+    res.cookies.set("oauth_flow", JSON.stringify({ flow: "advisor_apply" }), cookieOpts);
   } else {
     res.cookies.set("oauth_flow", "", { maxAge: 0, path: "/" });
   }

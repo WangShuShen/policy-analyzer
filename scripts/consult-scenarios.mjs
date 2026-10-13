@@ -50,6 +50,9 @@ const S = {
     facts: { existing_policy: /團保|有/ } },
   T13: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "老婆跟一個小孩靠我" }, { text: "最怕生病沒收入" }, { text: "有幾張，不太清楚內容" }], bad: [/照顧費/] },
   T15: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "沒什麼" }, { any: true }, { any: true }, { any: true }], bad: [] },
+  // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
+  T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
+    facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
   // 財務版「最擔心」直接決定子路線，之後不再問「從哪一塊開始看」（4-ai，顧問 10/13 定案）
   T16: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "退休" }, { any: true }, { any: true }], bad: [/照顧|看護|中風/, /哪一塊/],
     expect: [[0, /擔心/], [3, /每個月/]] },

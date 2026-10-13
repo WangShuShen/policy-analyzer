@@ -39,6 +39,7 @@ function LoginContent() {
           <svg width="19" height="19" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45 24.5c0-1.6-.1-2.8-.4-4H24v7.3h12c-.2 2-1.5 5-4.4 7l6.7 5.2c4-3.7 6.7-9.1 6.7-15.5z"/><path fill="#34A853" d="M24 46c5.8 0 10.7-1.9 14.3-5.2l-6.8-5.3c-1.8 1.3-4.3 2.2-7.5 2.2-5.7 0-10.6-3.8-12.3-9l-7 5.4C8.3 41.1 15.6 46 24 46z"/><path fill="#FBBC05" d="M11.7 28.7c-.5-1.3-.7-2.7-.7-4.2s.3-2.9.7-4.2l-7-5.4C3.6 17.8 3 20.8 3 24s.6 6.2 1.7 9.1z"/><path fill="#EA4335" d="M24 10.6c3.2 0 5.3 1.4 6.6 2.5l5.9-5.8C32.9 4 28.5 2 24 2 15.6 2 8.3 6.9 4.7 14.1l7 5.4c1.7-5.2 6.6-8.9 12.3-8.9z"/></svg>
           {loading ? "跳轉中…" : "使用 Google 帳號登入"}
         </button>
+        <p className="sub" style={{ marginTop: 18 }}>還不是 RADIA 顧問？<a href="/welcome/advisor-apply" style={{ color: "var(--brand-ink)" }}>申請成為顧問</a>（管理者核准後才能登入）</p>
       </div></div>
     </Shell>
   );

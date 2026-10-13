@@ -15,7 +15,7 @@ export type ConversationRow = typeof conversations.$inferSelect;
 /** 對話內容的種類（加密後存在 messages.content_enc） */
 export type MessageContent =
   | { kind: "user"; text: string }
-  | { kind: "ai"; html: string; chips?: string[] }      // chips：4-ai 需求點引導時 AI 產生的選項（可能含健康資訊，跟著內容一起加密）
+  | { kind: "ai"; html: string; chips?: string[]; ask?: string }   // chips：4-ai 需求點引導時 AI 產生的選項（可能含健康資訊，跟著內容一起加密）；ask：這一句在問哪個需求點
   | { kind: "trend"; title: string; body: string; forYou: string }
   | { kind: "panel"; key: string }
   | { kind: "note"; text: string };
