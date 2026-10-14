@@ -91,7 +91,7 @@ const wan = (n: number) => `${Math.round(n / 10000).toLocaleString()} 萬`;
  */
 function routeForClient(R: CalcResults["route"]): CalcResults["route"] {
   const why: Record<string, string> = {
-    "成長型累積": `離退休還有 ${R.yrsLeft} 年，<b>中間跌了有時間漲回來</b>。而且你說願意承受波動，這段時間可以多看重成長。`,
+    "成長型累積": `離退休還有 ${R.yrsLeft} 年，<b>比較承受得起中間的起伏</b>，但市場不保證一定漲回來。你說願意承受波動，這段時間可以多看重成長。`,
     "穩健型累積": `時間夠（還有 ${R.yrsLeft} 年），但你說<b>不想虧到本金</b>。那就以穩為主——<b>規劃要配合人，不是人配合規劃</b>。`,
   };
   return { ...R, why: why[R.main] ?? R.why, tools: [] };

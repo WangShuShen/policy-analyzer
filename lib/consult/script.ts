@@ -8,7 +8,7 @@
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
  * skipIfSub：已經決定子路線就跳過（4-ai 10/13 顧問定案：財務版「最擔心」直接決定子路線，答「說不上來」才回頭問「從哪一塊開始看」）
  */
-export const SCRIPT_VERSION = "seed-v40-4ai-lock4";
+export const SCRIPT_VERSION = "seed-v40-4ai-lock5";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
@@ -1231,7 +1231,7 @@ export const STEPS: Step[] = [
   "t": "ai",
   "br": "finance",
   "sub": "tax",
-  "h": "我知道這個數字看起來很嚇人。<br><b>做不到全部也沒關係</b>——實務上最常見的折衷是：<b>先把貸款和孩子成年前那段補起來</b>，其他等收入上來再說。"
+  "h": "我知道這個數字看起來很嚇人。<br><b>做不到全部也沒關係</b>——很多家庭會先想<b>貸款和孩子成年前那段</b>，其他等收入上來再說。"
  },
  {
   "id": "s119",

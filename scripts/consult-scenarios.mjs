@@ -61,7 +61,7 @@ const S = {
   T21: { mockOnly: true, exclusive: true, run: runCap },
   // 4-ap：面談前客戶端不出現工具類型（投資型、變額……），只講路線；顧問端照樣看得到完整配置
   T22: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "說不上來" }, { opt: "30 幾" }, { opt: "願意承受波動" }], bad: [TOOL_WORDS],
-    panels: ["route"], customerSees: [/建議路線/], customerNot: [TOOL_WORDS], snapNot: TOOL_WORDS, advisorFin: TOOL_WORDS },
+    panels: ["route"], customerSees: [/建議路線/], customerNot: [TOOL_WORDS, /有時間漲回來|賺回來/], snapNot: TOOL_WORDS, advisorFin: TOOL_WORDS },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
