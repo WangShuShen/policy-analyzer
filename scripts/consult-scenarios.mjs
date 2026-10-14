@@ -168,11 +168,7 @@ async function runOne(id, round) {
     try {
       const userId = JSON.parse(Buffer.from(cookie.split("=")[1].split(".")[1], "base64url").toString()).advisorId;
       const advisorId = arg("advisor", "dev-adv-b");
-      const free = (await (await fetch(`${BASE}/api/advisors/${advisorId}/slots`, { headers: H })).json()).slots ?? [];
-      const startsAt = free[Math.floor(Math.random() * Math.min(free.length, 40))]?.startsAt;
-      if (!startsAt) throw new Error("這位顧問沒有可約的時段");
-      const b = await fetch(`${BASE}/api/bookings`, { method: "POST", headers: H, body: JSON.stringify({ advisorId, startsAt, mode: "online" }) });
-      if (!b.ok) throw new Error(`約顧問失敗 HTTP ${b.status}`);
+      await bookSlot(H, advisorId);
       const ac = await devLogin("advisor", advisorId);
       const html = await (await fetch(`${BASE}/clients/${userId}?tab=fin&conv=${snap.conversation.id}`, { headers: { cookie: ac } })).text();
       const hit = html.match(sc.advisorFin);
@@ -195,13 +191,7 @@ async function runOne(id, round) {
     try {
       const userId = JSON.parse(Buffer.from(cookie.split("=")[1].split(".")[1], "base64url").toString()).advisorId;
       const advisorId = arg("advisor", "dev-adv-b");
-      const slots = await (await fetch(`${BASE}/api/advisors/${advisorId}/slots`, { headers: H })).json();
-      // 同時跑好幾輪會搶同一個時段，隨機挑一個
-      const free = slots.slots ?? [];
-      const startsAt = free[Math.floor(Math.random() * Math.min(free.length, 40))]?.startsAt;
-      if (!startsAt) throw new Error("這位顧問沒有可約的時段");
-      const b = await fetch(`${BASE}/api/bookings`, { method: "POST", headers: H, body: JSON.stringify({ advisorId, startsAt, mode: "online" }) });
-      if (!b.ok) throw new Error(`約顧問失敗 HTTP ${b.status} ${(await b.text()).slice(0, 150)}`);
+      await bookSlot(H, advisorId);
       const al = await fetch(`${BASE}/api/dev-login?as=advisor&id=${advisorId}${KEY ? `&key=${encodeURIComponent(KEY)}` : ""}`, { redirect: "manual" });
       const ac = al.headers.get("set-cookie")?.split(";")[0];
       const html = await (await fetch(`${BASE}/clients/${userId}?tab=gap`, { headers: { cookie: ac } })).text();
@@ -231,6 +221,20 @@ async function runOne(id, round) {
   const out = { id, round, ok: fails.length === 0 || deferred, deferred, fails, ms, log };
   fs.writeFileSync(path.join(OUT, `${id}-${round}.json`), JSON.stringify(out, null, 1));
   return out;
+}
+
+// 約顧問：同時跑好幾輪（T20、T22）會搶同一個時段，隨機挑一個；被搶走（409 slot_taken）就重新拿時段再約，最多 5 次
+async function bookSlot(H, advisorId) {
+  for (let i = 0; i < 5; i++) {
+    const free = (await (await fetch(`${BASE}/api/advisors/${advisorId}/slots`, { headers: H })).json()).slots ?? [];
+    const startsAt = free[Math.floor(Math.random() * Math.min(free.length, 40))]?.startsAt;
+    if (!startsAt) throw new Error("這位顧問沒有可約的時段");
+    const b = await fetch(`${BASE}/api/bookings`, { method: "POST", headers: H, body: JSON.stringify({ advisorId, startsAt, mode: "online" }) });
+    if (b.ok) return;
+    const t = await b.text();
+    if (b.status !== 409 || !t.includes("slot_taken")) throw new Error(`約顧問失敗 HTTP ${b.status} ${t.slice(0, 150)}`);
+  }
+  throw new Error("約顧問失敗：連續 5 次時段都被搶走");
 }
 
 async function devLogin(as, id) {
