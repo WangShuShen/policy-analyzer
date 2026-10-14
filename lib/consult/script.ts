@@ -8,7 +8,7 @@
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
  * skipIfSub：已經決定子路線就跳過（4-ai 10/13 顧問定案：財務版「最擔心」直接決定子路線，答「說不上來」才回頭問「從哪一塊開始看」）
  */
-export const SCRIPT_VERSION = "seed-v40-4ai-lock3";
+export const SCRIPT_VERSION = "seed-v40-4ai-lock4";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
@@ -1217,7 +1217,7 @@ export const STEPS: Step[] = [
   "t": "ai",
   "br": "finance",
   "sub": "tax",
-  "h": "業界抓壽險保額常用<b>年收入的 10 倍</b>。<br>為什麼是 10 倍？因為那大約是遺族把錢放著保守運用，<b>可以替代你收入的年數</b>。"
+  "h": "這一塊是<b>假設你不在了，家裡長期還需要多少</b>。<br>怎麼算的，我寫在數字旁邊，僅供參考。"
  },
  {
   "id": "s117",
