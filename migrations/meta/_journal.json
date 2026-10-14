@@ -120,6 +120,20 @@
       "when": 1791997470792,
       "tag": "0016_w4_advisor_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791998432275,
+      "tag": "0017_w2_crm",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791998433083,
+      "tag": "0018_skip_passbook_reminder_existing",
+      "breakpoints": true
     }
   ]
 }
