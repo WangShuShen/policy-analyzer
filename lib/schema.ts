@@ -577,3 +577,31 @@ export const dataRequests = pgTable("data_requests", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [index("data_requests_user").on(t.user_id, t.created_at), index("data_requests_status").on(t.status, t.created_at)]);
+
+// ── W4 地基 B3a：保障規劃書（advisor-plan 產的 plan.json）進資料庫 ──
+// 表名用 advisor_plans 不用 plans：lib/plans.ts 與 users.plan 已經是「訂閱方案」，避免搞混。
+// plan.json 有收入、負債、健康備註 → 整份加密存（plan_enc）。不連 advisor_clients：誰能碰這位客戶走 advisorHasClient()
+// 狀態（4-i PlanLock）：draft 草稿 | ready 已產出未解鎖 | unlocked 已解鎖（面談時顧問解鎖，客戶才看得到）
+export const advisorPlans = pgTable("advisor_plans", {
+  id: text("id").primaryKey(),
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),   // 手動客戶＝卡 D 的影子帳號
+  plan_enc: text("plan_enc").notNull(),
+  schema_version: text("schema_version").notNull(),     // plan-schema.md 的版本（目前 "1"）
+  status: text("status").notNull().default("draft"),
+  version: integer("version").notNull().default(1),     // 目前是第幾版；每存一次 +1，舊版留在 advisor_plan_versions
+  unlocked_at: text("unlocked_at"),
+  unlocked_by: text("unlocked_by"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("advisor_plans_user").on(t.user_id, t.created_at), index("advisor_plans_advisor").on(t.advisor_id, t.updated_at)]);
+
+// 每一版的內容（改一次存一版，只加不改）
+export const advisorPlanVersions = pgTable("advisor_plan_versions", {
+  plan_id: text("plan_id").notNull().references(() => advisorPlans.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  plan_enc: text("plan_enc").notNull(),
+  schema_version: text("schema_version").notNull(),
+  saved_by: text("saved_by").notNull(),                 // 顧問 id，或 import:<顧問 id>（匯入腳本）
+  created_at: createdAt(),
+}, t => [primaryKey({ columns: [t.plan_id, t.version] })]);
