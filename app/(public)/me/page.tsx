@@ -59,7 +59,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
             <div className="ccc wide lead">
               <div className="cct">{met ? "已面談" : "下一步"}</div>
               <div className="ccb">{when}　{b.b.mode === "online" ? "線上視訊" : "面對面"}</div>
-              <div className="ccd">{adv!.name} 顧問{advSp && ` · 擅長${advSp}`}<br />{met ? "談完的內容已經解鎖在「我的分析」，之後隨時回來看。" : <>約 40 分鐘，他會在前一天跟你確認。{b.b.mode === "online" && adv!.meeting_link && <><br />會議連結：<a href={adv!.meeting_link} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand-ink)" }}>{adv!.meeting_link}</a></>}{b.b.mode === "onsite" && adv!.onsite_location && <><br />地點：{adv!.onsite_location}</>}</>}</div>
+              <div className="ccd">{adv!.name} 顧問{advSp && ` · 擅長${advSp}`}<br />{met ? "談完的內容已經解鎖在「我的分析」，之後隨時回來看。" : <>最長約 2 小時，他會在前一天跟你確認。{b.b.mode === "online" && adv!.meeting_link && <><br />會議連結：<a href={adv!.meeting_link} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand-ink)" }}>{adv!.meeting_link}</a></>}{b.b.mode === "onsite" && adv!.onsite_location && <><br />地點：{adv!.onsite_location}</>}</>}</div>
               {!met && <div className="ccacts"><a className="ccbtn" href={`/api/bookings/${b.b.id}/ics`}>加入行事曆</a></div>}
               {!met && <MeBookingActions bookingId={b.b.id} advisorId={adv!.id} startsAt={b.b.starts_at} advisorName={adv!.name} />}
             </div>

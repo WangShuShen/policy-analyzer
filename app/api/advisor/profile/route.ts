@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdvisor } from "@/lib/auth";
 import { getProfile, saveProfile, BookingError } from "@/lib/booking/service";
 
-// 我的顧問頁（B4、B8）：專長、風格、自我介紹、會議連結、面對面地點、每週時段、封鎖日期。登錄字號由管理者設定
+// 我的顧問頁（B4、B8）：專長、風格、自我介紹、會議連結、面對面地點、每週時段、封鎖日期與封鎖時段。登錄字號由管理者設定
 export async function GET(req: NextRequest) {
   const a = await requireAdvisor(req);
   if (a instanceof NextResponse) return a;
@@ -15,6 +15,8 @@ const Body = z.object({
   meetingLink: z.string().max(300), onsiteLocation: z.string().max(100),
   rules: z.array(z.object({ weekday: z.number().int().min(0).max(6), start: z.string(), end: z.string() })).max(40),
   blocked: z.array(z.string()).max(120),
+  // 4-ar：某天某段時間不能約
+  blockRanges: z.array(z.object({ date: z.string(), start: z.string(), end: z.string() })).max(120).default([]),
 });
 
 export async function PUT(req: NextRequest) {

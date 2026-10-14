@@ -12,9 +12,10 @@ const STYLES = ["先把數字算清楚再談", "慢慢來，不急著成交", "�
 const WD = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
 
 interface Rule { weekday: number; start: string; end: string }
+interface BlockRange { date: string; start: string; end: string }
 interface Profile {
   name: string; specialties: string[]; style: string; intro: string; meetingLink: string; onsiteLocation: string;
-  licenseNo: string; rules: Rule[]; blocked: string[];
+  licenseNo: string; rules: Rule[]; blocked: string[]; blockRanges: BlockRange[]; rulesAdjusted?: boolean;
 }
 
 
@@ -23,6 +24,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newBlock, setNewBlock] = useState("");
+  const [newRange, setNewRange] = useState<BlockRange>({ date: "", start: "14:00", end: "18:00" });
 
   useEffect(() => { fetch("/api/advisor/profile").then(r => r.json()).then(setP).catch(() => setMsg({ ok: false, text: "載入失敗" })); }, []);
   if (!p) return <p className="ah2">{msg?.text ?? "載入中…"}</p>;
@@ -48,6 +50,7 @@ export default function ProfilePage() {
   // 原型 SCREENS.advprofile：左邊改欄位、右邊即時看到客戶端的卡片
   return (
     <>
+      {p.rulesAdjusted && <div className="statusline" style={{ marginTop: 0 }}><span className="dotp" /><span>可約時段改規則了：最早 12:00、最晚 22:00、每場 2 小時。你原本的時段已經先幫你調進範圍內，看一下、按「儲存」就生效。</span></div>}
       {missing.length > 0 && <div className="statusline" style={{ marginTop: 0 }}><span className="dotp" /><span>還差 {missing.join("、")}——補齊之前，客戶端的顧問列表不會出現你。</span></div>}
       <div className="profwrap">
         <div className="profedit">
@@ -70,14 +73,14 @@ export default function ProfilePage() {
                 <select className="pta" style={{ width: "auto", marginTop: 0 }} value={r.weekday} onChange={e => setRule(i, { weekday: Number(e.target.value) })} aria-label="星期">
                   {WD.map((w, k) => <option key={k} value={k}>{w}</option>)}
                 </select>
-                <input type="time" className="pta" style={{ width: "auto", marginTop: 0 }} value={r.start} step={1800} onChange={e => setRule(i, { start: e.target.value })} aria-label="開始" />
+                <input type="time" className="pta" style={{ width: "auto", marginTop: 0 }} value={r.start} step={1800} min="12:00" max="22:00" onChange={e => setRule(i, { start: e.target.value })} aria-label="開始" />
                 <span className="pfhint" style={{ marginTop: 0 }}>到</span>
-                <input type="time" className="pta" style={{ width: "auto", marginTop: 0 }} value={r.end} step={1800} onChange={e => setRule(i, { end: e.target.value })} aria-label="結束" />
+                <input type="time" className="pta" style={{ width: "auto", marginTop: 0 }} value={r.end} step={1800} min="12:00" max="22:00" onChange={e => setRule(i, { end: e.target.value })} aria-label="結束" />
                 <button type="button" className="alink" onClick={() => set({ rules: p.rules.filter((_, j) => j !== i) })}>刪除</button>
               </div>
             ))}
             <button type="button" className="alink" style={{ padding: "8px 0 0" }} onClick={() => set({ rules: [...p.rules, { weekday: 1, start: "19:00", end: "22:00" }] })}>＋ 加一個時段</button>
-            <div className="pfhint">一場 40 分鐘、每小時一場；例如 19:00–22:00 會開 19:00、20:00、21:00 三場</div></div>
+            <div className="pfhint">最早 12:00 開始、最晚 22:00 結束。每場預留 2 小時，兩場之間至少空 30 分鐘；客戶約了 12:00–14:00，下一場最早 14:30</div></div>
           <div className="pf"><div className="ack">封鎖日期</div>
             <div className="pfo" style={{ alignItems: "center" }}>
               {p.blocked.map(d => <button key={d} type="button" className="lvt" onClick={() => set({ blocked: p.blocked.filter(x => x !== d) })} aria-label={`取消封鎖 ${d}`}>{d} ✕</button>)}
@@ -85,6 +88,19 @@ export default function ProfilePage() {
               <button type="button" className="alink" disabled={!newBlock} onClick={() => { if (newBlock && !p.blocked.includes(newBlock)) set({ blocked: [...p.blocked, newBlock].sort() }); setNewBlock(""); }}>封鎖這天</button>
             </div>
             <div className="pfhint">請假、已有行程的日子，那天就不開放預約；已經約好的不受影響</div></div>
+          <div className="pf"><div className="ack">封鎖時段</div>
+            <div className="pfo" style={{ alignItems: "center" }}>
+              {p.blockRanges.map((b, i) => <button key={`${b.date}-${b.start}-${i}`} type="button" className="lvt" onClick={() => set({ blockRanges: p.blockRanges.filter((_, j) => j !== i) })} aria-label={`取消封鎖 ${b.date} ${b.start}–${b.end}`}>{b.date} {b.start}–{b.end} ✕</button>)}
+            </div>
+            <div className="pfo" style={{ alignItems: "center" }}>
+              <input type="date" className="pta" style={{ width: "auto", marginTop: 0 }} value={newRange.date} onChange={e => setNewRange({ ...newRange, date: e.target.value })} aria-label="封鎖哪一天" />
+              <input type="time" className="pta" style={{ width: "auto", marginTop: 0 }} value={newRange.start} step={1800} onChange={e => setNewRange({ ...newRange, start: e.target.value })} aria-label="封鎖開始" />
+              <span className="pfhint" style={{ marginTop: 0 }}>到</span>
+              <input type="time" className="pta" style={{ width: "auto", marginTop: 0 }} value={newRange.end} step={1800} onChange={e => setNewRange({ ...newRange, end: e.target.value })} aria-label="封鎖結束" />
+              <button type="button" className="alink" disabled={!newRange.date || !newRange.start || !newRange.end || newRange.start >= newRange.end}
+                onClick={() => { set({ blockRanges: [...p.blockRanges, newRange].sort((x, y) => x.date.localeCompare(y.date) || x.start.localeCompare(y.start)) }); setNewRange({ ...newRange, date: "" }); }}>封鎖這段</button>
+            </div>
+            <div className="pfhint">某天只有一段時間不行（例如 10/20 14:00–18:00），那段時間碰到的場次就不開放；記得按下面的「儲存」</div></div>
           <div className="pf lock"><div className="ack">回應速度</div>
             <div className="pfro">新加入　<span className="pfhint">系統依實際回覆紀錄自動計算，不能自己填</span></div></div>
           <div className="pf lock"><div className="ack">登錄字號</div>

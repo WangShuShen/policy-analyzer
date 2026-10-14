@@ -14,6 +14,7 @@ export default async function AdvisorSlotsPage({ params, searchParams }: { param
   if (active && !rescheduling) redirect("/me");
   const card = await advisorCard(id);
   if (!card) notFound();
-  const slots = await advisorSlotsFor(id);
+  // 改期時自己原本那場不算衝突，才挑得到同一天前後的時間（4-ar）
+  const slots = await advisorSlotsFor(id, Date.now(), rescheduling ? active!.id : undefined);
   return <SlotPicker advisor={card} slots={slots} reschedule={rescheduling ? { id: active!.id, startsAt: active!.starts_at } : undefined} />;
 }
