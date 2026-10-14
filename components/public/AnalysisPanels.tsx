@@ -55,7 +55,7 @@ export function Panel({ d }: { d: PanelData }) {
       return (
         <div className="dpan dfx"><div className="dph"><span className="dpt">你現在的位置</span><span className="dpn">{R.age} 歲 · {R.stage}</span></div>
           <div className="stagebar">
-            <div className={`stg ${R.acc ? "on" : "done"}`}><b>累積期</b><span>～49 歲</span><small>跌了有時間漲回來</small></div>
+            <div className={`stg ${R.acc ? "on" : "done"}`}><b>累積期</b><span>～49 歲</span><small>比較承受得起起伏</small></div>
             <div className={`stg ${R.acc ? "" : "on"}`}><b>保全期</b><span>50 歲～</span><small>不能再賠，時間不夠修復</small></div>
           </div>
           <div className="rtmain">建議路線　<b>{R.main}</b></div>
@@ -63,7 +63,7 @@ export function Panel({ d }: { d: PanelData }) {
           {R.tools.length > 0
             ? <div className="ndl" style={{ marginTop: 11 }}>{R.tools.map(t => <div key={t} className="ndi"><span className="ndk">工具</span><span className="ndv">{t}</span></div>)}</div>
             : <div className="gprn" style={{ marginTop: 11 }}>這條路線要用哪些工具、各放多少，<b>面談時顧問會依你的狀況一起規劃</b>。</div>}
-          <div className="gprn" style={{ marginTop: 11 }}><b>50 歲是分水嶺，不是因為規定</b>，是因為「賠掉之後還有沒有時間賺回來」。<br />
+          <div className="gprn" style={{ marginTop: 11 }}><b>50 歲是分水嶺，不是因為規定</b>，是因為「遇到虧損時，還有多少時間可以調整」。<br />
             {R.risk === 2 && !R.acc && <>你願意承受波動，但這個階段<b>時間才是限制因素</b>。</>}
             {R.risk === 1 && R.acc && <>你時間夠但不想虧——<b>工具要配合人，不是人配合工具</b>。</>}
             {R.risk === 0 && <>你還沒有明確偏好，<b>這題面談時顧問會用適合度分析（KYC）幫你問清楚</b>，那是法規要求的程序。</>}</div>

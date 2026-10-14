@@ -45,20 +45,20 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 // ── 工具配置邏輯：年齡 × 資金態度（原型 ROUTE）────────────────────────
 export interface RouteResult { age: number; risk: number; acc: boolean; stage: string; yrsLeft: number; main: string; why: string; tools: string[] }
 
-/* 50 歲是分水嶺——不是因為規定，是因為「賠掉之後還有沒有時間賺回來」 */
+/* 50 歲是分水嶺——不是因為規定，是因為「遇到虧損時，還有多少時間可以調整」（法遵清單 2c：不暗示一定會回本） */
 export function route(i: CalcInputs, assumed: Assumed = []): RouteResult {
   const a = pick(i, "age", assumed), r = pick(i, "risk", assumed);
   const acc = a < 50, stage = acc ? "累積期" : "保全期", yrsLeft = Math.max(0, 65 - a);
   let main: string, why: string, tools: string[];
   if (acc && r === 2) {
     main = "成長型累積"; tools = ["投資型（變額年金／變額壽險）", "搭配部分儲蓄型打底"];
-    why = `離退休還有 ${yrsLeft} 年，<b>中間跌了有時間漲回來</b>。而且你說願意承受波動，所以可以用成長型工具拉高效率。`;
+    why = `離退休還有 ${yrsLeft} 年，<b>比較承受得起中間的起伏</b>，但市場不保證一定漲回來。你說願意承受波動，所以可以用成長型工具拉高效率。`;
   } else if (acc) {
     main = "穩健型累積"; tools = ["儲蓄型／利變型為主", "想試投資型可小部位"];
     why = `時間夠（還有 ${yrsLeft} 年），但你說<b>不想虧到本金</b>。那就不該硬塞投資型——<b>工具要配合人，不是人配合工具</b>。`;
   } else if (r === 2) {
     main = "保全為主、成長為輔"; tools = ["儲蓄型／利變年金為主", "投資型最多擺小部位"];
-    why = `你 ${a} 歲，離退休剩 ${yrsLeft} 年。<b>就算你願意承受波動，時間也不夠了</b>——這個階段跌一次，沒有二十年可以等它回來。`;
+    why = `你 ${a} 歲，離退休剩 ${yrsLeft} 年。<b>就算你願意承受波動，時間也不夠了</b>——這個階段遇到一次大跌，能等待、調整的時間少了很多。`;
   } else {
     main = "資產保全與傳承"; tools = ["儲蓄型／利變年金", "稅源準備（指定受益人壽險）", "生前贈與規劃"];
     why = `你 ${a} 歲，重點已經不是「怎麼讓錢變多」，是<b>怎麼讓它確定地留下來、並且在需要的時候拿得出現金</b>。`;
