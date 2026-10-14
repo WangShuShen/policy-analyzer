@@ -53,7 +53,8 @@ const S = {
   // 上傳存摺 → 確認清單 → 送出「上傳好了」→ 走到「該補什麼」→ 約顧問 → 顧問端看得到案例區塊（A3b）
   // 模擬模式下存摺讀取回固定的示範保單（lib/passbook/read.ts）；真 AI 模式要真的檔案，所以只在 --mock 跑
   T20: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
-    { any: true }, { any: true }, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼要補？看數據" },
+    { any: true }, { any: true }, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼要補？看數據",
+    customerSees: [/對著條款跟你說才準/], customerNot: [/這是規定/] },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
@@ -150,6 +151,15 @@ async function runOne(id, round) {
   }
   const facts = Object.fromEntries(snap.facts.map(f => [f.key, f.display]));
   const shownPanels = snap.messages.flatMap(m => m.content.kind === "panel" ? [m.content.key] : []);
+  // 客戶端「我的分析」：面談前鎖住的區塊，解鎖卡的說法（顧問 10/14：不說「這是規定」）
+  let customerFail = null;
+  if ((sc.customerSees || sc.customerNot) && !broken) {
+    const html = await (await fetch(`${BASE}/analysis`, { headers: { cookie } })).text();
+    const miss = (sc.customerSees ?? []).filter(re => !re.test(html)).map(re => `客戶端我的分析看不到 ${re}`);
+    const hit = (sc.customerNot ?? []).filter(re => re.test(html)).map(re => `客戶端我的分析出現 ${re}`);
+    log.push(`客戶端我的分析：${miss.length + hit.length ? "不符" : "解鎖卡說法正確"}`);
+    if (miss.length + hit.length) customerFail = [...miss, ...hit].join("；");
+  }
   // 顧問端：客戶約了顧問之後，顧問的客戶頁「保障分析」要看得到案例區塊
   let advisorFail = null;
   if (sc.advisorSees && !broken) {
@@ -182,6 +192,7 @@ async function runOne(id, round) {
     ...COMMON_BAD.filter(re => re.test(allText)).map(re => `出現 ${re}`),
     ...(sc.expect ?? []).filter(([i, re]) => !re.test((replies[i] ?? []).map(x => x.text).join("\n"))).map(([i, re]) => `第 ${i + 1} 步的回覆應符合 ${re}`),
     ...(sc.panels ?? []).filter(k => !shownPanels.includes(k)).map(k => `右欄沒有出現 ${k}`),
+    ...(customerFail ? [customerFail] : []),
     ...(advisorFail ? [advisorFail] : []),
     ...Object.entries(sc.facts ?? {}).filter(([k, re]) => !re.test(facts[k] ?? "")).map(([k, re]) => `右欄 ${k}=${facts[k] ?? "（沒記）"}，應符合 ${re}`),
   ];

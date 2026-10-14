@@ -317,7 +317,7 @@ export function LockCard({ a }: { a: AnalysisView }) {
     <>
       <div className="lockcard">
         <div className="lkh"><span className="lkic">🔒</span><span className="lkt">下面這些我已經算好了</span></div>
-        <div className="lkd">但<b>完整內容要面談時跟顧問一起看</b>。<br />不是刁難——<b>保額、商品、保費要由登錄的顧問當面說明條款</b>，這是規定。</div>
+        <div className="lkd">但<b>完整內容要面談時跟顧問一起看</b>。<br />保額、商品、保費這些，<b>要有登錄的顧問對著條款跟你說才準</b>，所以留到面談時一起看。</div>
         {a.headlines.length > 0 && <div className="lkl">{a.headlines.map(h => <div key={h.label} className="lkr"><span className="lkk">{h.label}</span><span className="lkn">{h.value}</span><span className="lkx">已算出</span></div>)}</div>}
         <div className="lkl">{a.locked.map(l => <div key={l.key} className="lkr"><span className="lkk">🔒</span><span>{l.title}</span><span className="lkx">{l.hint}</span></div>)}</div>
         {a.booking?.status === "booked"
