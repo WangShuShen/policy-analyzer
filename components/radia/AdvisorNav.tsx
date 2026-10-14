@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
  * 保單審核、審核進度、顧問管理只給管理者（2026-10-11 決定：一般顧問的分頁跟原型完全一樣）。
  */
 const ANAV: [string, string][] = [["/todo", "待辦"], ["/clients", "客戶"], ["/analyze", "保單分析"], ["/catalog", "商品查詢"], ["/profile", "我的顧問頁"]];
-const ADMIN: [string, string][] = [["/review", "保單審核"], ["/admin/progress", "審核進度"], ["/admin/advisors", "顧問管理"], ["/admin/audit", "查閱紀錄"], ["/admin/monitor", "後台監控"], ["/admin/content", "內容管理"]];
+const ADMIN: [string, string][] = [["/review", "保單審核"], ["/admin/progress", "審核進度"], ["/admin/advisors", "顧問管理"], ["/admin/audit", "查閱紀錄"], ["/admin/monitor", "後台監控"], ["/admin/content", "內容管理"], ["/admin/news", "快訊管理"]];
 const TITLE: [string, string, string][] = [
   ["/clients/", "", ""], ["/clients", "客戶", "從 AI 諮詢預約你的客戶"], ["/analyze", "保單分析", "上傳保單條款，AI 自動解析填入全險圖"],
   ["/catalog", "商品查詢", "搜尋已審核的商品"], ["/product/", "商品條款", "給付、試算與條款原文"], ["/profile", "我的顧問頁", "客戶選顧問時看到的就是這一頁"],
@@ -17,6 +17,7 @@ const TITLE: [string, string, string][] = [
   ["/admin/audit", "查閱紀錄", "誰在何時看了哪位客戶的資料"],
   ["/admin/monitor", "後台監控", "誰在線、登入紀錄、AI 用量與費用"],
   ["/admin/content", "內容管理", "AI 問法、趨勢卡、試算參數；每次發布留版本"],
+  ["/admin/news", "快訊管理", "寫好送審，審核通過才會公開；每一步都留紀錄"],
 ];
 
 const greeting = () => { const h = Number(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei", hour: "numeric", hour12: false })); return h < 11 ? "早安" : h < 18 ? "午安" : "晚安"; };
