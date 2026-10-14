@@ -2,13 +2,14 @@ import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import db, { nowText } from "@/lib/db";
 import { advisors, auditLogs, dataRequests, users } from "@/lib/schema";
 import { notify } from "@/lib/notify/inbox";
-import { enqueue } from "@/lib/notify/outbox";
+import { enqueue, sendNow } from "@/lib/notify/outbox";
+import { appUrl, esc, layout } from "@/lib/booking/mail";
 import { taipeiDay } from "@/lib/admin/usage";
 
 /*
  * 我的資料（4-ap、N5、N21，卡 E）：當事人權利申請的簡單版。
  *   客戶在「我的頁面 → 我的資料」選一種申請、寫一句說明送出 → 建一筆 data_requests、寫稽核、通知管理者（鈴鐺＋信）
- *   管理者在後台標「處理中／已完成」並寫處理說明；實際處理先人工，自動刪除留到 W7
+ *   管理者在後台標「處理中／已完成」並寫處理說明；標已完成時寄信告訴客戶（處理中不寄）；實際處理先人工，自動刪除留到 W7
  * 期限：同意書第六條承諾「15 日內處理」。個資法第 13 條是查詢 15 日、更正刪除 30 日（日曆天，可延長一次），我們一律用比較嚴的 15 天。
  * 通知與信件不放個資細節（姓名、信箱、客戶寫的內容），只放申請類別、期限與後台連結。
  */
@@ -93,7 +94,32 @@ export async function updateRequest(adminId: string, id: string, status: Status,
   if (r.status === "done") throw new DataRequestError("這筆已經完成了");
   await db.update(dataRequests).set({ status, handled_note: text || r.handled_note, handled_by: adminId, handled_at: nowText, updated_at: nowText }).where(eq(dataRequests.id, id));
   await audit(adminId, "admin", `data_request_${status}`, id, r.user_id);
-  if (status === "done") {
-    await notify({ type: "user", id: r.user_id }, { kind: "data_request_done", title: `你的「${KINDS[r.kind as Kind]?.label ?? "個資"}」申請處理好了`, body: "處理說明在「我的頁面 → 我的資料」。", link: "/me?tab=data" });
-  }
+  if (status === "done") await sendDoneMail(r.user_id, r.email, r.kind as Kind);
+}
+
+/**
+ * 處理完成寄信給客戶（主管 10/14：客戶不常登入，用信通知；「處理中」不寄）。
+ * 用預約信同一個版型（lib/booking/mail.ts layout）。信裡只說「已處理完成」＋申請類型，
+ * 不放處理說明與任何個資（信會被轉寄、留在信箱裡），要看說明請登入「我的資料」。
+ */
+export function buildDoneMail(to: string, kind: Kind) {
+  const label = KINDS[kind]?.label ?? "個資";
+  return {
+    to, kind: "data_request_done", subject: "RADIA｜你的申請已處理完成",
+    html: layout({
+      title: "你的申請已處理完成",
+      preheader: `你送出的「${label}」申請，我們處理好了`,
+      rows: [["申請", esc(label)], ["狀態", "已處理完成"]],
+      intro: ["處理的說明放在「我的資料」，登入後就看得到。",
+        ...(kind === "delete" ? ["如果你申請的是刪除整個帳號，帳號刪除後就不能再登入查看，這封信就是處理完成的通知。"] : [])],
+      cta: { href: `${appUrl()}/me?tab=data`, text: "查看處理結果" },
+      outro: "對處理結果有疑問，可以在「我的資料」再送一次申請。",
+    }),
+  };
+}
+
+async function sendDoneMail(userId: string, fallback: string, kind: Kind) {
+  // 寄到帳號目前的信箱；帳號已刪除（刪除申請處理完）就寄到送出當下的信箱
+  const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  await sendNow([buildDoneMail(u?.email ?? fallback, kind)]);
 }
