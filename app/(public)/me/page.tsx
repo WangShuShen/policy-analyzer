@@ -8,6 +8,7 @@ import { view as passbookView } from "@/lib/passbook/service";
 import { fmtTaipei } from "@/lib/booking/slots";
 import { MeBookingActions } from "@/components/public/MeBookingActions";
 import { MyData } from "@/components/public/MyData";
+import { supportEmail } from "@/lib/support";
 
 /*
  * 我的頁面（原型 SCREENS.me）：客戶端唯一的家。分頁：預約與進度｜我的規劃｜我的保單｜我的顧問｜我的資料（4-ap：同意書第六條寫的入口）。
@@ -145,7 +146,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         </div>
       )}
 
-      {tab === "data" && <MyData />}
+      {tab === "data" && <MyData supportEmail={supportEmail()} />}
 
       <div className="ccsoon">
         <div className="cct">之後會有（還沒做）</div>

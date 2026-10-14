@@ -17,7 +17,7 @@ interface Req { id: string; kind: string; message: string; status: string; due: 
 const md = (d: string) => { const [, m, day] = d.split("-").map(Number); return `${m} 月 ${day} 日`; };
 const tw = (utc: string) => new Date(utc.replace(" ", "T") + "Z").toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric" });
 
-export function MyData() {
+export function MyData({ supportEmail }: { supportEmail: string | null }) {
   const [list, setList] = useState<Req[] | null>(null);
   const [kind, setKind] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
@@ -43,7 +43,7 @@ export function MyData() {
       <div className="ccc wide">
         <div className="cct">我的資料</div>
         <div className="ccb">你可以查詢、更正或刪除你在 RADIA 的資料</div>
-        <div className="ccd">這是個資法給你的權利，平台不能拒絕或限制。送出後我們會在 <b>15 天內</b>回覆你（結果也會顯示在這裡）。</div>
+        <div className="ccd">這是個資法給你的權利，平台不能拒絕或限制。送出後我們會在 <b>15 天內</b>回覆你（結果也會顯示在這裡）。{supportEmail && <> 也可以直接寫信到客服信箱 <a href={`mailto:${supportEmail}`} style={{ color: "var(--brand-ink)" }}>{supportEmail}</a>。</>}</div>
       </div>
       {sent && <div className="ccc wide" style={{ background: "var(--brand-soft)", borderColor: "transparent" }}>
         <div className="ccb">已收到你的申請</div><div className="ccd">我們會在 {md(sent)} 前回覆你。處理好了會通知你，結果也會顯示在下面。</div></div>}
