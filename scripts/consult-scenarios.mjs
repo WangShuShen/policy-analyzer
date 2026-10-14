@@ -31,6 +31,7 @@ fs.mkdirSync(OUT, { recursive: true });
 // 劇本：{opt:"選項文字片段"} 點選項｜{text:"..."} 打字｜{any:true} 點第一個選項
 // facts：最後右欄該記成什麼｜expect：[第幾步, 那一步的 AI 回覆要符合]
 // bad 只比對 AI 回覆本文（不含選項）：「老了要人照顧」這種擔心選項是正常的，10/12 的 bug 是追問照顧費
+const TOOL_WORDS = /投資型|變額|利變|利率變動|儲蓄險|儲蓄型|月配息|類全委|萬能/;
 const S = {
   T01: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "我只想問我自己的個人保險" }, { text: "我可以預約顧問嗎" }],
     bad: [/醫生|持續多久|照顧(費|的錢)/] },
@@ -58,6 +59,9 @@ const S = {
   // N7：每人每天 AI 用量上限。暫時把上限調到 0.000001 美元（模擬模式每次呼叫記 1 微美元），測完一定還原。
   // 改的是全站設定，所以 T21 等其他情境都跑完才一輪一輪單獨跑（exclusive）
   T21: { mockOnly: true, exclusive: true, run: runCap },
+  // 4-ap：面談前客戶端不出現工具類型（投資型、變額……），只講路線；顧問端照樣看得到完整配置
+  T22: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "說不上來" }, { opt: "30 幾" }, { opt: "願意承受波動" }], bad: [TOOL_WORDS],
+    panels: ["route"], customerSees: [/建議路線/], customerNot: [TOOL_WORDS], snapNot: TOOL_WORDS, advisorFin: TOOL_WORDS },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
@@ -155,13 +159,34 @@ async function runOne(id, round) {
   }
   const facts = Object.fromEntries(snap.facts.map(f => [f.key, f.display]));
   const shownPanels = snap.messages.flatMap(m => m.content.kind === "panel" ? [m.content.key] : []);
+  // 客戶端整個畫面資料（對話＋右欄）不能出現的字
+  const snapFail = sc.snapNot && !broken && sc.snapNot.test(JSON.stringify({ m: snap.messages, a: snap.analysis }))
+    ? `客戶端畫面資料出現 ${sc.snapNot}（${JSON.stringify({ m: snap.messages, a: snap.analysis }).match(sc.snapNot)[0]}）` : null;
+  // 顧問端「財務規劃」分頁：配置邏輯照算，工具類型要看得到（4-ad；客戶端只是不顯示）
+  let finFail = null;
+  if (sc.advisorFin && !broken) {
+    try {
+      const userId = JSON.parse(Buffer.from(cookie.split("=")[1].split(".")[1], "base64url").toString()).advisorId;
+      const advisorId = arg("advisor", "dev-adv-b");
+      const free = (await (await fetch(`${BASE}/api/advisors/${advisorId}/slots`, { headers: H })).json()).slots ?? [];
+      const startsAt = free[Math.floor(Math.random() * Math.min(free.length, 40))]?.startsAt;
+      if (!startsAt) throw new Error("這位顧問沒有可約的時段");
+      const b = await fetch(`${BASE}/api/bookings`, { method: "POST", headers: H, body: JSON.stringify({ advisorId, startsAt, mode: "online" }) });
+      if (!b.ok) throw new Error(`約顧問失敗 HTTP ${b.status}`);
+      const ac = await devLogin("advisor", advisorId);
+      const html = await (await fetch(`${BASE}/clients/${userId}?tab=fin&conv=${snap.conversation.id}`, { headers: { cookie: ac } })).text();
+      const hit = html.match(sc.advisorFin);
+      log.push(`顧問端財務規劃：${hit ? `看得到「${hit[0]}」` : "看不到工具類型"}`);
+      if (!hit) finFail = "顧問端財務規劃看不到工具類型（配置不該被拿掉）";
+    } catch (e) { finFail = String(e.message ?? e); }
+  }
   // 客戶端「我的分析」：面談前鎖住的區塊，解鎖卡的說法（顧問 10/14：不說「這是規定」）
   let customerFail = null;
   if ((sc.customerSees || sc.customerNot) && !broken) {
     const html = await (await fetch(`${BASE}/analysis`, { headers: { cookie } })).text();
     const miss = (sc.customerSees ?? []).filter(re => !re.test(html)).map(re => `客戶端我的分析看不到 ${re}`);
     const hit = (sc.customerNot ?? []).filter(re => re.test(html)).map(re => `客戶端我的分析出現 ${re}`);
-    log.push(`客戶端我的分析：${miss.length + hit.length ? "不符" : "解鎖卡說法正確"}`);
+    log.push(`客戶端我的分析：${miss.length + hit.length ? "不符" : "符合"}`);
     if (miss.length + hit.length) customerFail = [...miss, ...hit].join("；");
   }
   // 顧問端：客戶約了顧問之後，顧問的客戶頁「保障分析」要看得到案例區塊
@@ -197,6 +222,8 @@ async function runOne(id, round) {
     ...(sc.expect ?? []).filter(([i, re]) => !re.test((replies[i] ?? []).map(x => x.text).join("\n"))).map(([i, re]) => `第 ${i + 1} 步的回覆應符合 ${re}`),
     ...(sc.panels ?? []).filter(k => !shownPanels.includes(k)).map(k => `右欄沒有出現 ${k}`),
     ...(customerFail ? [customerFail] : []),
+    ...(snapFail ? [snapFail] : []),
+    ...(finFail ? [finFail] : []),
     ...(advisorFail ? [advisorFail] : []),
     ...Object.entries(sc.facts ?? {}).filter(([k, re]) => !re.test(facts[k] ?? "")).map(([k, re]) => `右欄 ${k}=${facts[k] ?? "（沒記）"}，應符合 ${re}`),
   ];
@@ -206,7 +233,7 @@ async function runOne(id, round) {
   return out;
 }
 
-async function login(as, id) {
+async function devLogin(as, id) {
   const r = await fetch(`${BASE}/api/dev-login?as=${as}${id ? `&id=${id}` : ""}${KEY ? `&key=${encodeURIComponent(KEY)}` : ""}`, { redirect: "manual" });
   const c = r.headers.get("set-cookie")?.split(";")[0];
   if (!c) throw new Error(`測試登入失敗（${as}，HTTP ${r.status}）`);
@@ -215,11 +242,11 @@ async function login(as, id) {
 
 async function runCap(id, round) {
   const log = [], fails = [], ms = [];
-  const admin = { cookie: await login("admin", arg("advisor", "dev-adv-b")), "content-type": "application/json" };
+  const admin = { cookie: await devLogin("admin", arg("advisor", "dev-adv-b")), "content-type": "application/json" };
   const getUsage = async () => (await (await fetch(`${BASE}/api/admin/monitor`, { headers: admin })).json()).usage;
   const putTh = (t) => fetch(`${BASE}/api/admin/monitor`, { method: "PUT", headers: admin, body: JSON.stringify(t) });
   const saved = (await getUsage()).thresholds;
-  const H = { cookie: await login("new-customer"), "content-type": "application/json" };
+  const H = { cookie: await devLogin("new-customer"), "content-type": "application/json" };
   let snap = await (await fetch(`${BASE}/api/consult`, { method: "POST", headers: H, body: "{}" })).json();
   const turn = async (body) => {
     const t0 = Date.now();

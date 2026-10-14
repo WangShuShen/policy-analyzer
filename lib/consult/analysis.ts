@@ -68,7 +68,7 @@ export interface AnalysisView {
   booking: { status: "booked" | "met"; startsAt: string } | null;
   open: PanelData[];
   locked: { key: PanelKey; title: string; hint: string }[];
-  headlines: { key: PanelKey; label: string; value: string }[];     // 鎖卡上「已算出」的總數（原型 4-i）
+  headlines: { key: PanelKey; label: string; value: string; note?: string }[];     // 鎖卡上「已算出」的總數（原型 4-i）；note＝數字旁的試算基準
   assumptionsVersion: string;
 }
 
@@ -85,7 +85,19 @@ async function bookingState(userId: string): Promise<AnalysisView["booking"]> {
 
 const wan = (n: number) => `${Math.round(n / 10000).toLocaleString()} 萬`;
 
-function panelData(key: PanelKey, r: CalcResults, factCount: number, pb: PassbookView | null, gaps: FinalGapRow[] | null): PanelData | null {
+/*
+ * 4-ap（顧問 10/14）：面談前客戶端不出現工具類型（投資型、變額年金……），只講路線。
+ * 配置邏輯照 4-ad 算（lib/calc/engine.ts route），顧問端與面談解鎖後看完整版；客戶端換掉「工具」和提到工具的說明。
+ */
+function routeForClient(R: CalcResults["route"]): CalcResults["route"] {
+  const why: Record<string, string> = {
+    "成長型累積": `離退休還有 ${R.yrsLeft} 年，<b>中間跌了有時間漲回來</b>。而且你說願意承受波動，這段時間可以多看重成長。`,
+    "穩健型累積": `時間夠（還有 ${R.yrsLeft} 年），但你說<b>不想虧到本金</b>。那就以穩為主——<b>規劃要配合人，不是人配合規劃</b>。`,
+  };
+  return { ...R, why: why[R.main] ?? R.why, tools: [] };
+}
+
+function panelData(key: PanelKey, r: CalcResults, factCount: number, pb: PassbookView | null, gaps: FinalGapRow[] | null, unlocked = true): PanelData | null {
   const hasPolicies = pb?.upload?.status === "done" && pb.counts.counted > 0;
   if (key === "gaps" && gaps) return { key, rows: gaps.map(({ systemLevel: _s, override, ...g }) => ({ ...g, adjusted: !!override })) };
   if (key === "sum" && gaps) return { key, must: gaps.filter(g => g.level === "must").map(g => g.label), boost: gaps.filter(g => g.level === "boost").map(g => g.label) };
@@ -96,7 +108,7 @@ function panelData(key: PanelKey, r: CalcResults, factCount: number, pb: Passboo
       const { lifeCover: _l, ...rest } = pb;
       return { key, passbook: rest };
     }
-    case "route": return { key, r: r.route };
+    case "route": return { key, r: unlocked ? r.route : routeForClient(r.route) };
     case "exp": return { key, r: pickKeys(r.retirement, ["food", "home", "homeRet", "trans", "transRet", "fun", "medical", "baseNow", "baseRet"]), assumed: r.assumed.retirement };
     case "retgap": return { key, r: r.retirement, assumed: r.assumed.retirement };
     case "taxest": return { key, r: pickKeys(r.estate, ["est", "deductions", "deductTotal", "net", "tax", "children"]), assumed: r.assumed.estate };
@@ -133,7 +145,7 @@ export async function buildAnalysis(userId: string, facts: StoredFact[], shown: 
   const open: PanelData[] = [];
   const locked: AnalysisView["locked"] = [];
   for (const k of uniq) {
-    if (unlocked || OPEN.has(k)) { const d = panelData(k, results, facts.length, pb, gaps); if (d) open.push(d); }
+    if (unlocked || OPEN.has(k)) { const d = panelData(k, results, facts.length, pb, gaps, unlocked); if (d) open.push(d); }
     else locked.push({ key: k, title: PANEL_TITLE[k][0], hint: PANEL_TITLE[k][1] });
   }
   const headlines: AnalysisView["headlines"] = [];
@@ -142,7 +154,8 @@ export async function buildAnalysis(userId: string, facts: StoredFact[], shown: 
     if (lk.has("gaps") && gaps) headlines.push({ key: "gaps", label: "保障缺口", value: `${gaps.filter(g => g.level === "must").length} 項一定要補` });
     if (lk.has("retgap")) headlines.push({ key: "retgap", label: "退休缺口", value: wan(results.retirement.gap) });
     if (lk.has("taxsrc")) headlines.push({ key: "taxsrc", label: "稅源缺口", value: wan(results.taxSource.gap) });
-    if (lk.has("survgap")) headlines.push({ key: "survgap", label: "遺族保障缺口", value: wan(results.survivor.longGap) });
+    // 4-ap：倍數不由 AI 講，寫成數字旁的試算基準（4-ae 照樣用年收倍數算）
+    if (lk.has("survgap")) headlines.push({ key: "survgap", label: "遺族保障缺口", value: wan(results.survivor.longGap), note: `試算基準：年收入 × ${results.survivor.mult}，僅供參考` });
   }
   return { unlocked, booking, open, locked, headlines, assumptionsVersion: A.version, inputs, results };
 }

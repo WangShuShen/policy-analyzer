@@ -60,7 +60,9 @@ export function Panel({ d }: { d: PanelData }) {
           </div>
           <div className="rtmain">建議路線　<b>{R.main}</b></div>
           <div className="gpwy" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: safeHtml(R.why) }} />
-          <div className="ndl" style={{ marginTop: 11 }}>{R.tools.map(t => <div key={t} className="ndi"><span className="ndk">工具</span><span className="ndv">{t}</span></div>)}</div>
+          {R.tools.length > 0
+            ? <div className="ndl" style={{ marginTop: 11 }}>{R.tools.map(t => <div key={t} className="ndi"><span className="ndk">工具</span><span className="ndv">{t}</span></div>)}</div>
+            : <div className="gprn" style={{ marginTop: 11 }}>這條路線要用哪些工具、各放多少，<b>面談時顧問會依你的狀況一起規劃</b>。</div>}
           <div className="gprn" style={{ marginTop: 11 }}><b>50 歲是分水嶺，不是因為規定</b>，是因為「賠掉之後還有沒有時間賺回來」。<br />
             {R.risk === 2 && !R.acc && <>你願意承受波動，但這個階段<b>時間才是限制因素</b>。</>}
             {R.risk === 1 && R.acc && <>你時間夠但不想虧——<b>工具要配合人，不是人配合工具</b>。</>}
@@ -160,7 +162,7 @@ export function Panel({ d }: { d: PanelData }) {
       const t = d.r;
       const lifeNote = !d.life ? "還沒有你的保單，先以 0 計" : [`依你的保險存摺${d.life.preliminary ? "（含 AI 初步讀取）" : ""}`, d.life.missing ? `尚未含 ${d.life.missing} 張還在確認的` : ""].filter(Boolean).join("，");
       return (
-        <div className="dpan dfx"><div className="dph"><span className="dpt">遺族長期保障缺口</span><span className="dpn">年收 × {t.mult} 倍</span></div>
+        <div className="dpan dfx"><div className="dph"><span className="dpt">遺族長期保障缺口</span><span className="dpn">試算基準：年收入 × {t.mult}，僅供參考</span></div>
           <div className="fnbig" style={{ margin: "0 0 12px" }}><b>{W(t.longGap)}</b><span>萬</span></div>
           <div className="srcg">
             <div className="srcr"><span>收入替代{sm("var(--muted)", `年收 ${W(t.inc)} 萬 × ${t.mult} 倍`)}</span><b>{W(t.repl)} 萬</b></div>
@@ -317,8 +319,8 @@ export function LockCard({ a }: { a: AnalysisView }) {
     <>
       <div className="lockcard">
         <div className="lkh"><span className="lkic">🔒</span><span className="lkt">下面這些我已經算好了</span></div>
-        <div className="lkd">但<b>完整內容要面談時跟顧問一起看</b>。<br />保額、商品、保費這些，<b>要有登錄的顧問對著條款跟你說才準</b>，所以留到面談時一起看。</div>
-        {a.headlines.length > 0 && <div className="lkl">{a.headlines.map(h => <div key={h.label} className="lkr"><span className="lkk">{h.label}</span><span className="lkn">{h.value}</span><span className="lkx">已算出</span></div>)}</div>}
+        <div className="lkd">但<b>完整內容要面談時跟顧問一起看</b>。<br />保額、商品、保費這些，<b>要有登錄的顧問對著條款跟你說才準</b>。</div>
+        {a.headlines.length > 0 && <div className="lkl">{a.headlines.map(h => <div key={h.label} className="lkr"><span className="lkk">{h.label}</span><span className="lkn">{h.value}</span><span className="lkx">{h.note ?? "已算出"}</span></div>)}</div>}
         <div className="lkl">{a.locked.map(l => <div key={l.key} className="lkr"><span className="lkk">🔒</span><span>{l.title}</span><span className="lkx">{l.hint}</span></div>)}</div>
         {a.booking?.status === "booked"
           ? <div className="statusline" style={{ margin: "4px 0 0" }}><span className="dotp" /><span>已約好 <b>{fmtDate(a.booking.startsAt)}</b>。<b>面談時顧問會跟你一起打開</b>，談完就一直留在這裡。</span></div>

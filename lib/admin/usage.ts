@@ -21,7 +21,8 @@ export const Thresholds = z.object({
   userDailyUsd: z.number().positive().max(1_000),
 });
 export type Thresholds = z.infer<typeof Thresholds>;
-// 顧問 2026-10-14 決定：每月 20 美元；每人每天 0.5 美元就擋（N7），通知門檻跟著一樣（原本 0.15 會誤報，一般客戶聊完約 0.25）
+// 顧問 2026-10-14 決定：每月 20 美元；每人每天 0.5 美元就擋（N7），通知門檻跟著一樣（原本 0.15）
+// 參考：10/13 開發版 58 段真 AI 對話實測，一段中位數 0.011、最多 0.029 美元（卡 A）
 export const DEFAULT_THRESHOLDS: Thresholds = { monthlyBudgetUsd: 20, userDailyUsd: 0.5 };
 
 /** 台灣時間的 YYYY-MM-DD */
