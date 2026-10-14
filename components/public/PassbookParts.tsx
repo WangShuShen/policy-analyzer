@@ -12,23 +12,23 @@ import { PassbookUpload } from "./PassbookUpload";
 const changed = () => window.dispatchEvent(new Event("passbook:changed"));
 
 /** 讀取中／對版本中：每 4 秒看一次，有變化就更新畫面 */
-export function PassbookPoller({ status }: { status: string }) {
+export function PassbookPoller({ status, api = "/api/passbook" }: { status: string; api?: string }) {
   const router = useRouter();
   useEffect(() => {
     const t = setInterval(async () => {
-      const r = await fetch("/api/passbook").catch(() => null);
+      const r = await fetch(api).catch(() => null);
       const j = r?.ok ? await r.json() : null;
       if (j?.upload && j.upload.status !== status) { changed(); router.refresh(); }
     }, 4000);
     return () => clearInterval(t);
-  }, [status, router]);
+  }, [status, router, api]);
   return null;
 }
 
 const looksEnded = (s: string | null) => !!s && /終止|解約|滿期|失效|撤銷/.test(s);
 
 /** 「我讀到 N 張，對嗎？」——可刪掉已解約的、可改保額（事實確認，不碰條款，N1） */
-export function PassbookConfirm({ uploadId, policies }: { uploadId: string; policies: PolicyView[] }) {
+export function PassbookConfirm({ uploadId, policies, api = "/api/passbook" }: { uploadId: string; policies: PolicyView[]; api?: string }) {
   const router = useRouter();
   const [keep, setKeep] = useState<Record<string, boolean>>(() => Object.fromEntries(policies.map(p => [p.id, !looksEnded(p.status)])));
   const [edit, setEdit] = useState<Record<string, string>>({});
@@ -42,7 +42,7 @@ export function PassbookConfirm({ uploadId, policies }: { uploadId: string; poli
       const n = e !== undefined ? Number(e.replace(/[,，\s]/g, "")) : NaN;
       return { id: p.id, keep: keep[p.id], ...(e !== undefined && Number.isFinite(n) ? { amount: n } : {}) };
     });
-    const r = await fetch("/api/passbook/confirm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ uploadId, items }) });
+    const r = await fetch(`${api}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ uploadId, items }) });
     const j = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setError(j.error ?? "沒送出去，請再試一次"); return; }
@@ -78,7 +78,7 @@ export function PassbookConfirm({ uploadId, policies }: { uploadId: string; poli
 }
 
 /** 沒讀成功時重新上傳（伺服器頁面不能直接傳函式給客戶端元件，包一層） */
-export function PassbookRetry() {
+export function PassbookRetry({ api }: { api?: string } = {}) {
   const router = useRouter();
-  return <PassbookUpload conversationId={null} onUploaded={() => { changed(); router.refresh(); }} />;
+  return <PassbookUpload conversationId={null} api={api} onUploaded={() => { changed(); router.refresh(); }} />;
 }

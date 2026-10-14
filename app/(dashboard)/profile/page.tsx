@@ -15,6 +15,7 @@ interface Rule { weekday: number; start: string; end: string }
 interface Profile {
   name: string; specialties: string[]; style: string; intro: string; meetingLink: string; onsiteLocation: string;
   licenseNo: string; rules: Rule[]; blocked: string[];
+  response?: { label: string | null; medianMin: number | null; samples: number; on: string | null };   // W2 w2-05：系統算，唯讀
 }
 
 
@@ -86,7 +87,7 @@ export default function ProfilePage() {
             </div>
             <div className="pfhint">請假、已有行程的日子，那天就不開放預約；已經約好的不受影響</div></div>
           <div className="pf lock"><div className="ack">回應速度</div>
-            <div className="pfro">新加入　<span className="pfhint">系統依實際回覆紀錄自動計算，不能自己填</span></div></div>
+            <div className="pfro">{p.response?.label ?? (p.response && p.response.samples >= 3 ? "超過 2 天（客戶看到的卡片上不會顯示）" : "新加入")}　<span className="pfhint">系統依實際回覆紀錄自動計算，不能自己填：客戶預約後，到你第一次打開他的諮詢紀錄經過多久（夜間 23:00～08:00 不算），取最近 90 天的中位數{p.response && p.response.samples < 3 ? `；目前 ${p.response.samples} 筆，滿 3 筆才會顯示` : ""}</span></div></div>
           <div className="pf lock"><div className="ack">登錄字號</div>
             <div className="pfro">{p.licenseNo || "未設定"}　<span className="pfhint">由管理者設定</span></div></div>
           <div className="acnext" style={{ marginTop: 6 }}>

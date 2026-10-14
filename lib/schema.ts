@@ -75,6 +75,11 @@ export const advisors = pgTable("advisors", {
   onsite_location: text("onsite_location"),  // 面對面地點
   license_no: text("license_no"),            // 登錄字號（N2／N20），由管理者設定
   created_at: createdAt(),
+  // 回應速度（W2 w2-05、4-aq）：系統每天重算，顧問不能自己填。label＝2 小時內回覆／當天回覆／2 天內回覆／null（新加入或超過 2 天不顯示）
+  response_label: text("response_label"),
+  response_median_min: integer("response_median_min"),
+  response_samples: integer("response_samples"),
+  response_on: text("response_on"),          // 哪一天（台灣日期）算的
 });
 
 export const policyAssignments = pgTable("policy_assignments", {
@@ -349,6 +354,7 @@ export const bookings = pgTable("bookings", {
   reschedule_count: integer("reschedule_count").notNull().default(0),   // 累計第幾次改期；第 3 次起通知顧問（B5）
   reminded_24h_at: text("reminded_24h_at"),         // 面談前一天提醒寄出時間（B3；有值就不再寄）
   reminded_1h_at: text("reminded_1h_at"),           // 面談前 1 小時提醒
+  passbook_reminded_at: text("passbook_reminded_at"),   // W2 w2-06：預約後 24 小時還沒傳存摺的提醒，寄過就記時間（防重複寄）
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [
@@ -577,3 +583,56 @@ export const dataRequests = pgTable("data_requests", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [index("data_requests_user").on(t.user_id, t.created_at), index("data_requests_status").on(t.status, t.created_at)]);
+
+// ── W2 顧問的客戶管理（卡 D；4-e B 級：進線追蹤＋面談與提案紀錄，不做保全／續期／理賠／轉介紹／業績報表）──
+// 顧問跟客戶的關係，一位顧問對一位客戶一列。平台預約時自動建立（w2-01）；手動建的客戶 source=manual
+export const advisorClients = pgTable("advisor_clients", {
+  id: text("id").primaryKey(),
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  source: text("source").notNull().default("platform"),   // platform 平台進線 | manual 自己開發
+  outcome: text("outcome").notNull().default("open"),      // open 進行中 | won 成交 | lost 沒成
+  outcome_note: text("outcome_note"),                      // 成交了什麼／沒成的原因
+  follow_up_on: text("follow_up_on"),                      // 下次追蹤日（台灣日期 YYYY-MM-DD）
+  follow_up_note: text("follow_up_note"),                  // 追蹤要做什麼
+  phone: text("phone"),                                    // 手動客戶的聯絡方式（平台客戶用帳號信箱）
+  note: text("note"),
+  consent_by: text("consent_by"),                          // 手動客戶：顧問勾「已取得客戶同意」的人與時間（N4、N21）
+  consent_at: text("consent_at"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [uniqueIndex("advisor_clients_pair").on(t.advisor_id, t.user_id), index("advisor_clients_follow").on(t.advisor_id, t.follow_up_on)]);
+
+// 互動紀錄（w2-02）：面談、提案、電話、備註。只加；刪除是軟刪除，留稽核
+export const clientInteractions = pgTable("client_interactions", {
+  id: text("id").primaryKey(),
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),                     // meeting | proposal | call | note
+  happened_on: text("happened_on").notNull(),       // 台灣日期
+  summary: text("summary").notNull(),
+  deleted_at: text("deleted_at"),
+  created_at: createdAt(),
+}, t => [index("client_interactions_pair").on(t.advisor_id, t.user_id, t.happened_on)]);
+
+// 首頁待辦的延後與關掉（w2-03）。key 是待辦的身分（例：followup:<userId>:<日期>），同一件事換日期就是新的待辦
+export const todoStates = pgTable("todo_states", {
+  advisor_id: text("advisor_id").notNull().references(() => advisors.id),
+  key: text("key").notNull(),
+  snoozed_until: text("snoozed_until"),             // UTC 文字；到了就重新出現
+  dismissed_at: text("dismissed_at"),
+  dismiss_reason: text("dismiss_reason"),           // 關掉的原因（之後給產能儀表板）
+  updated_at: updatedAt(),
+}, t => [primaryKey({ columns: [t.advisor_id, t.key] })]);
+
+// 客戶端頁面的開啟追蹤（w2-04，通用：我的分析現在用，W4 規劃書接上）。一次打開一列，離開時補上停留時間與看到的段落
+export const viewEvents = pgTable("view_events", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  page: text("page").notNull(),                     // analysis | plan（W4）…
+  ref_id: text("ref_id"),                           // 哪一份（對話 id、規劃書 id）
+  sections: text("sections"),                       // JSON：看到的段落 [{ key, ms }]
+  duration_ms: integer("duration_ms"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("view_events_user").on(t.user_id, t.page, t.created_at)]);

@@ -7,6 +7,8 @@ import { buildAnalysis, publicView, type AnalysisView } from "@/lib/consult/anal
 import { audit, computeGapsForUser } from "@/lib/consult/gaps";
 import { STEPS } from "@/lib/consult/script";
 import type { FinalGapRow } from "@/lib/calc/gaps";
+import { ensurePlatformClients, isMyClient, lastInteractionDays, relationsOf } from "@/lib/crm/store";
+import { taipeiDay } from "@/lib/admin/usage";
 
 /*
  * 顧問端：我的客戶與客戶頁（W1a；B1、D4、4-ah、N8、N12）。
@@ -16,12 +18,14 @@ import type { FinalGapRow } from "@/lib/calc/gaps";
  * 解鎖的開關在顧問手上：標「已面談」客戶端才解鎖，預約不算（4-ah）。
  */
 
-export type ClientGroup = "todo" | "upcoming" | "met" | "closed";
-export const GROUP_LABEL: Record<ClientGroup, string> = { todo: "等我處理", upcoming: "進行中", met: "已面談", closed: "沒出現／取消" };
+// W2（原型 advclients 3381）：加上銷售結果——已成交、沒成；手動建的客戶沒有預約，放「進行中」
+export type ClientGroup = "todo" | "upcoming" | "met" | "won" | "lost" | "closed";
+export const GROUP_LABEL: Record<ClientGroup, string> = { todo: "等我處理", upcoming: "進行中", met: "已面談", won: "已成交", lost: "沒成", closed: "沒出現／取消" };
 
 export interface ClientRow {
   userId: string; name: string; group: ClientGroup; status: string; when: string; source: string;
-  bookingId: string; startsAt: string;
+  bookingId: string | null; startsAt: string | null;
+  manual: boolean; followUpOn: string | null; followUpNote: string | null; lastAt: string; createdAt: string;
 }
 
 const UNMARKED_AFTER_MS = 12 * 3600_000;      // B1：面談結束 12 小時還沒標記 → 待辦
@@ -35,6 +39,8 @@ export async function viewedSet(advisorId: string, userIds: string[]): Promise<S
 }
 
 export async function listClients(advisorId: string, now = Date.now()): Promise<ClientRow[]> {
+  await ensurePlatformClients(advisorId);   // w2-01：平台預約自動變成客戶
+  const rels = new Map((await relationsOf(advisorId)).map(r => [r.user_id, r]));
   const rows = await db.select({ b: bookings, name: users.name, email: users.email }).from(bookings)
     .innerJoin(users, eq(users.id, bookings.user_id))
     .where(eq(bookings.advisor_id, advisorId)).orderBy(desc(bookings.starts_at));
@@ -42,6 +48,8 @@ export async function listClients(advisorId: string, now = Date.now()): Promise<
   const latest = new Map<string, (typeof rows)[number]>();
   for (const r of rows) if (r.b.status !== "rescheduled" && !latest.has(r.b.user_id)) latest.set(r.b.user_id, r);   // 改期的舊預約不算，看新的那筆
   const viewed = await viewedSet(advisorId, [...latest.keys()]);
+  const lastTalk = await lastInteractionDays(advisorId);
+  const today = taipeiDay(now);
   const out: ClientRow[] = [];
   for (const [userId, r] of latest) {
     const b = r.b, start = Date.parse(b.starts_at), end = Date.parse(b.ends_at);
@@ -52,16 +60,37 @@ export async function listClients(advisorId: string, now = Date.now()): Promise<
     else if (now > end) { group = "todo"; status = "面談結束了，記得標記結果"; }
     else if (!viewed.has(userId)) { group = "todo"; status = "還沒看諮詢紀錄"; }
     else { group = "upcoming"; status = start - now < 86_400_000 ? "快到了，面談前再看一次" : "已約好"; }
-    out.push({ userId, name: r.name ?? r.email, group, status, when: b.starts_at, source: "AI 諮詢進線", bookingId: b.id, startsAt: b.starts_at });
+    out.push(withCrm({ userId, name: r.name ?? r.email, group, status, when: b.starts_at, source: "平台進線", bookingId: b.id, startsAt: b.starts_at,
+      manual: false, followUpOn: null, followUpNote: null, lastAt: b.starts_at, createdAt: b.created_at }));
   }
-  const order: ClientGroup[] = ["todo", "upcoming", "met", "closed"];
-  return out.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group) || a.startsAt.localeCompare(b.startsAt));
+  // 手動建的客戶（沒有預約）
+  const manualIds = [...rels.values()].filter(r => r.source === "manual" && !latest.has(r.user_id)).map(r => r.user_id);
+  if (manualIds.length) {
+    const us = await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, manualIds));
+    for (const u of us) {
+      const rel = rels.get(u.id)!;
+      out.push(withCrm({ userId: u.id, name: u.name ?? "（未命名）", group: "upcoming", status: "自己開發的客戶", when: rel.created_at, source: "自己開發", bookingId: null, startsAt: null,
+        manual: true, followUpOn: null, followUpNote: null, lastAt: rel.created_at, createdAt: rel.created_at }));
+    }
+  }
+  // 成交／沒成蓋過預約狀態；下次追蹤日到了 → 等我處理（w2-02、w2-03）
+  function withCrm(c: ClientRow): ClientRow {
+    const rel = rels.get(c.userId);
+    const talked = lastTalk.get(c.userId);
+    const lastAt = talked && talked > c.lastAt.slice(0, 10) ? talked : c.lastAt;
+    if (!rel) return { ...c, lastAt };
+    const base = { ...c, followUpOn: rel.follow_up_on, followUpNote: rel.follow_up_note, lastAt };
+    if (rel.outcome === "won") return { ...base, group: "won", status: `成交 · ${rel.outcome_note ?? ""}` };
+    if (rel.outcome === "lost") return { ...base, group: "lost", status: `沒成 · ${rel.outcome_note ?? ""}` };
+    if (rel.follow_up_on && rel.follow_up_on <= today && c.group !== "todo") return { ...base, group: "todo", status: rel.follow_up_on < today ? `該追蹤了（${rel.follow_up_on.slice(5).replace("-", "/")} 到期）` : "今天要追蹤" };
+    return base;
+  }
+  const order: ClientGroup[] = ["todo", "upcoming", "met", "won", "lost", "closed"];
+  return out.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group) || (a.startsAt ?? a.createdAt).localeCompare(b.startsAt ?? b.createdAt));
 }
 
-export async function advisorHasClient(advisorId: string, userId: string): Promise<boolean> {
-  const [b] = await db.select({ id: bookings.id }).from(bookings).where(and(eq(bookings.advisor_id, advisorId), eq(bookings.user_id, userId))).limit(1);
-  return !!b;
-}
+/** 有預約過，或是手動建的（w2-01） */
+export const advisorHasClient = isMyClient;
 
 const labelOf = (key: string) => {
   for (const s of STEPS) if (s.t === "ask" && s.keys.includes(key)) return s.o.find(o => o.key === key)?.label ?? key;

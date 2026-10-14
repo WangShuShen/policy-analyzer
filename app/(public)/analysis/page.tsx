@@ -8,6 +8,7 @@ import { buildAnalysis, publicView } from "@/lib/consult/analysis";
 import { view as passbookView } from "@/lib/passbook/service";
 import { AnalysisPanels } from "@/components/public/AnalysisPanels";
 import { STEPS } from "@/lib/consult/script";
+import { ViewTracker } from "@/components/public/ViewTracker";
 
 /*
  * 我的分析（4-ag）：對話是「過程」，這頁是「結果」——同一份資料、兩個入口。
@@ -81,6 +82,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
         )}
         <AnalysisPanels a={a} />
       </div>
+      <ViewTracker page="analysis" refId={cur.id} selector=".anzbody .dpan" labelSelector=".dpt" />{/* W2 w2-04：顧問看得到「看過幾次、在哪段停最久」 */}
       <p className="dinn" style={{ textAlign: "left" }}>數字依財政部、勞動部公告參數（版本 {a.assumptionsVersion}）計算，<b>沒有假設任何投資報酬率</b>。</p>
     </div></div>
   );

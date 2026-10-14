@@ -251,3 +251,36 @@
 .rd .md-st.processing{background:var(--amber-soft);color:var(--amber)}
 .rd .md-st.done{background:var(--brand-soft);color:var(--brand-ink)}
 .rd .md-note{background:var(--sunk);border-radius:9px;padding:9px 11px}
+
+/* ── W2 客戶管理（卡 D）── */
+.rd .crm-new{margin-bottom:18px;display:flex;flex-direction:column;gap:10px;max-width:560px}
+.rd .crm-f{display:flex;flex-direction:column;gap:4px}
+.rd .crm-f label{font-size:12px;font-weight:700;color:var(--ink-2)}
+.rd .crm-f label b{color:var(--must);font-weight:700;font-size:11px;margin-left:4px}
+.rd .crm-in{font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--ground);color:var(--ink);width:100%}
+.rd textarea.crm-in{resize:vertical;line-height:1.65}
+.rd .crm-consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.6;background:var(--amber-soft);border-radius:10px;padding:10px 12px;cursor:pointer}
+.rd .crm-consent input{width:18px;height:18px;accent-color:var(--brand);flex:none;margin-top:2px}
+.rd .crm-consent small{display:block;color:var(--ink-2);font-size:11.5px;margin-top:2px}
+.rd .crm-err{background:var(--must-soft);color:var(--must);border-radius:8px;padding:7px 11px;font-size:12.5px}
+.rd .crm-acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.rd .crm-handled{display:inline}
+.rd .crm-handled[open]{display:block;margin-top:8px}
+.rd .crm-hrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--hair);font-size:12.5px}
+.rd .crm-panel{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+.rd .crm-box{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r,10px);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.rd .crm-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.rd .crm-date{width:auto;min-width:150px}
+.rd .crm-sel{width:auto}
+.rd .crm-list{list-style:none;margin:4px 0 0;padding:0}
+.rd .crm-list li{display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid var(--hair);font-size:13px}
+.rd .crm-k{font-family:var(--ui);font-size:11px;font-weight:700;color:var(--brand-ink);background:var(--brand-soft);border-radius:999px;padding:1px 8px;flex:none}
+.rd .crm-d{color:var(--muted);font-size:12px;flex:none}
+.rd .crm-s{flex:1;min-width:0;white-space:pre-wrap}
+.rd .crm-nocopy{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;background-repeat:repeat;border-radius:10px}
+@media print{.rd .crm-nocopy>*{display:none!important}.rd .crm-nocopy::before{content:attr(data-print-note);display:block;padding:20px;font-size:14px}}
+.rd .crm-tl{list-style:none;margin:12px 0 0;padding:0;border-left:2px solid var(--line)}
+.rd .crm-tl li{position:relative;padding:4px 0 12px 16px;font-size:13.5px}
+.rd .crm-tl li::before{content:"";position:absolute;left:-6px;top:10px;width:10px;height:10px;border-radius:50%;background:var(--surface);border:2px solid var(--brand)}
+.rd .crm-tl li.cust::before{border-color:var(--amber)}
+.rd .crm-tl time{display:block;font-family:var(--ui);font-size:11.5px;color:var(--muted)}

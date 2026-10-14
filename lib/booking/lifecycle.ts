@@ -1,3 +1,5 @@
+import { runPassbookReminders } from "@/lib/crm/passbookReminder";
+import { runResponseSpeedDaily } from "@/lib/crm/responseSpeed";
 import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import db, { nowText } from "@/lib/db";
 import { bookings } from "@/lib/schema";
@@ -142,6 +144,8 @@ export async function runReminders(now = Date.now()): Promise<{ day: number; hou
 /** 排程入口：提醒 → 把佇列裡該寄的寄掉 */
 export async function runBookingCron(now = Date.now()) {
   const reminders = await runReminders(now);
+  const passbook = await runPassbookReminders(now);   // W2 w2-06（卡 D）：預約 24 小時後還沒傳存摺，提醒一次
+  const responseSpeed = await runResponseSpeedDaily(now);   // W2 w2-05（卡 D）：顧問回應速度，每天重算一次
   const outbox = await processOutbox(50, now);
-  return { reminders, outbox };
+  return { reminders, passbook, responseSpeed, outbox };
 }

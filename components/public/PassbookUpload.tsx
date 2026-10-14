@@ -56,8 +56,9 @@ async function imageFileToJpeg(f: File): Promise<string> {
   return canvasToJpeg(c);
 }
 
-export function PassbookUpload({ conversationId, onUploaded, onSkip, busy }: {
+export function PassbookUpload({ conversationId, onUploaded, onSkip, busy, api = "/api/passbook" }: {
   conversationId: string | null; onUploaded: () => void; onSkip?: () => void; busy?: boolean;
+  api?: string;   // W2：顧問幫手動客戶上傳時改打 /api/advisor/clients/<id>/passbook（客戶端照舊）
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -131,7 +132,7 @@ export function PassbookUpload({ conversationId, onUploaded, onSkip, busy }: {
 
   async function send(content: Content) {
     setState("sending");
-    const r = await fetch("/api/passbook", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId, content }) });
+    const r = await fetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversationId, content }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { setState("idle"); setError(j.error ?? "沒傳上去，請再試一次"); return; }
     setState("idle"); setFile(null); setImages([]);

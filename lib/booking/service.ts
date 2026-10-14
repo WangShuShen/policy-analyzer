@@ -18,6 +18,7 @@ export const STYLES = ["先把數字算清楚再談", "慢慢來，不急著成�
 export interface AdvisorCard {
   id: string; name: string; initial: string; specialties: string[]; style: string | null; intro: string;
   licenseNo: string; modes: ("online" | "onsite")[]; onsiteArea: string | null; slotsThisWeek: number;
+  responseLabel: string | null;   // W2 w2-05：系統算的回應速度標籤（新加入或太慢＝null，不顯示）
 }
 
 const parseSpecs = (s: string | null) => { try { const a = JSON.parse(s ?? "[]"); return Array.isArray(a) ? a.filter(x => typeof x === "string") : []; } catch { return []; } };
@@ -62,6 +63,7 @@ export async function listAdvisorCards(now = Date.now()): Promise<AdvisorCard[]>
     return [{
       id: a.id, name: a.name, initial: a.name.slice(0, 1), specialties: parseSpecs(a.specialties), style: a.style, intro: a.intro!,
       licenseNo: a.license_no!, modes: modesOf(a), onsiteArea: a.onsite_location ? a.onsite_location.slice(0, 12) : null, slotsThisWeek: slots.length,
+      responseLabel: a.response_label,
     }];
   });
   const day = Math.floor(now / 86_400_000);
@@ -143,6 +145,8 @@ export async function getProfile(advisorId: string) {
     meetingLink: a.meeting_link ?? "", onsiteLocation: a.onsite_location ?? "", licenseNo: a.license_no ?? "",
     rules: r.rules.sort((x, y) => x.weekday - y.weekday || x.start.localeCompare(y.start)),
     blocked: r.blocked.filter(d => d >= today).sort(),
+    // W2 w2-05：回應速度（系統每天重算，唯讀）
+    response: { label: a.response_label, medianMin: a.response_median_min, samples: a.response_samples ?? 0, on: a.response_on },
   };
 }
 export type AdvisorProfile = NonNullable<Awaited<ReturnType<typeof getProfile>>>;
