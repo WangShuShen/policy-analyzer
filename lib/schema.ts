@@ -520,3 +520,43 @@ export const loginEvents = pgTable("login_events", {
   user_agent: text("user_agent"),
   created_at: createdAt(),
 }, t => [index("login_events_actor").on(t.actor_id, t.created_at), index("login_events_created").on(t.created_at)]);
+
+// ── W3 保險快訊（卡 E）。跟 w1b-06 的 content_items／content_versions（AI 內容）是兩回事，不混用 ──
+// 一篇文章一列：上面是「編輯中的稿」，pub_* 是「審核通過、公開的那一版」。
+// 已發布的文章再修改，公開頁照樣顯示舊的 pub_*，直到新稿審核通過才換（N3：公開的內容一定審過）。
+export const newsArticles = pgTable("news_articles", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),            // 網址 /news/<slug>；發布過就不能改（Google 已經收錄）
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),               // 列表、搜尋結果、分享預覽用
+  body: text("body").notNull(),                     // Markdown（只支援小標、粗體、清單、表格、提示框、連結）
+  category: text("category").notNull(),
+  cover: text("cover").notNull().default("i-doc"),  // 封面圖示（RadiaIcons 的 id）
+  sources: text("sources"),                         // 資料來源（N17：出處＋年份）
+  status: text("status").notNull().default("draft"),  // 編輯稿的狀態：draft | pending | approved
+  author_id: text("author_id"),
+  visible: integer("visible").notNull().default(0),   // 1＝公開頁看得到（顯示 pub_*）；下架＝0
+  pub_title: text("pub_title"),
+  pub_summary: text("pub_summary"),
+  pub_body: text("pub_body"),
+  pub_category: text("pub_category"),
+  pub_cover: text("pub_cover"),
+  pub_sources: text("pub_sources"),
+  published_at: text("published_at"),               // 第一次公開的時間（文章日期）
+  pub_updated_at: text("pub_updated_at"),           // 最近一次審核通過換上新版的時間
+  reviewed_by: text("reviewed_by"),                 // 最近一次審核通過的人（advisors.id）
+  reviewed_at: text("reviewed_at"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("news_articles_public").on(t.visible, t.published_at)]);
+
+// 審核紀錄（N3：誰送審、誰審、結果、意見、時間）。只加不改
+export const newsReviews = pgTable("news_reviews", {
+  id: text("id").primaryKey(),
+  article_id: text("article_id").notNull().references(() => newsArticles.id, { onDelete: "cascade" }),
+  actor_id: text("actor_id").notNull(),             // advisors.id
+  action: text("action").notNull(),                 // create | edit | submit | withdraw | approve | reject | unpublish
+  note: text("note"),                               // 退回意見、下架原因
+  snapshot: text("snapshot"),                       // 送審／通過時的內容（JSON），之後查得到當時審的是哪一版
+  created_at: createdAt(),
+}, t => [index("news_reviews_article").on(t.article_id, t.created_at)]);

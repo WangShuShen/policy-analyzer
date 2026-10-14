@@ -99,6 +99,13 @@
       "when": 1791909920034,
       "tag": "0013_content_versions_effective",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791950139362,
+      "tag": "0014_news_articles",
+      "breakpoints": true
     }
   ]
 }
