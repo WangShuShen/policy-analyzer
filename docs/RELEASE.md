@@ -31,7 +31,7 @@
 | 3. 資料庫 | ①先確認上線版的 migration 紀錄（`drizzle.__drizzle_migrations`）**剛好 1 筆**（0000），不是就停 ②`DATABASE_URL="$(npx neonctl connection-string --project-id patient-cloud-70270601)" npx drizzle-kit migrate`（連線字串只在指令裡用，不寫進任何檔案）③確認紀錄筆數＝`migrations/meta/_journal.json` 的筆數（v1.0 是 15：0000～0014）。`migrations/` 只加不刪，舊版程式照常能跑；唯一改到既有資料的是 0002（只把商品的銷售起訖日從 NULL 補上值，不覆蓋任何東西） | 不推 main，回報 |
 | 4. 程式 | `git checkout main && git merge --ff-only dev && git push origin main` → GitHub 自動部署（看 Actions 的 Deploy to Vercel 變綠）。同時 `booking-cron.yml` 也會開始每 10 分鐘跑 | 用 Vercel「Promote」切回上一個部署 |
 | 5. 冒煙 | `node scripts/smoke.mjs --env prod` 全過；顧問用真帳號登入看待辦、客戶端看同意書（舊客戶會被請求同意 2026-10-13 新版） | 立刻 Promote 回上一版，再查 |
-| 5a. 開門前設定 | 上線版剛搬完**沒有任何可約時段**，客戶會卡在「這位顧問沒有可約的時段」：每位顧問到個人設定填自介、專長、登錄字號、視訊連結／面談地點，並開好時段；管理者看一下 AI 用量警報門檻（預設每月 20 美元、單人每天 0.15 美元） | 不影響已上線的程式，補完再對外公告 |
+| 5a. 開門前設定 | 上線版剛搬完**沒有任何可約時段**，客戶會卡在「這位顧問沒有可約的時段」：每位顧問到個人設定填自介、專長、登錄字號、視訊連結／面談地點，並開好時段；管理者看一下 AI 用量警報門檻（預設每月 20 美元、每人每天 0.5 美元；超過當天 AI 就暫停〔N7〕，台灣 0 點恢復） | 不影響已上線的程式，補完再對外公告 |
 | 5b. 開發版排程（v1.0 這次）| 跟著這次進 main：新增 `.github/workflows/dev-cron.yml`，每 10 分鐘打開發版的 `/api/cron/bookings`、`/api/cron/ai-usage`，用**開發版專用**的 GitHub secrets（`DEV_APP_URL`、`DEV_CRON_SECRET`），跟上線版的 `APP_URL`／`CRON_SECRET` 分開；之後 `dev-cron.mjs` 只留給手動測試 | 不影響上線版，可下一版再補 |
 | 6. 收尾 | 打版本號 `git tag v1.x`；CHANGELOG 的「開發版（尚未上線）」改成「v1.x（日期）」；通知顧問 | — |
 
