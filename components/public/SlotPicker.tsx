@@ -47,7 +47,7 @@ export function SlotPicker({ advisor, slots, reschedule }: { advisor: AdvisorCar
     <div className="cols"><div className="main">
       <div className="titlerow"><svg className="ill i34" viewBox="0 0 48 48" aria-hidden="true"><use href="#i-cal" /></svg>
         <div><h2 className="t" style={{ marginBottom: 4 }}>什麼時候方便？</h2>
-          <p className="sub">{advisor.name} 顧問 · 一次大約 40 分鐘{reschedule && <><br />改時間：原本約在 <b>{new Date(reschedule.startsAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })}</b>，挑一個新的</>}</p></div></div>
+          <p className="sub">{advisor.name} 顧問 · 最長約 2 小時{reschedule && <><br />改時間：原本約在 <b>{new Date(reschedule.startsAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })}</b>，挑一個新的</>}</p></div></div>
 
       {days.length === 0 ? (
         <div className="anzempty" style={{ marginTop: 16 }}><div className="aet">{advisor.name} 顧問接下來兩週都約滿了</div>

@@ -3,7 +3,7 @@ import { runResponseSpeedDaily } from "@/lib/crm/responseSpeed";
 import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import db, { nowText } from "@/lib/db";
 import { bookings } from "@/lib/schema";
-import { advisorSlotsFor, bookingDetailById, type BookingDetail } from "./service";
+import { advisorSlotsFor, BookingError, bookingDetailById, insertBooking, type BookingDetail } from "./service";
 import { fmtTaipei } from "./slots";
 import { sendBookingEmails } from "./mail";
 import { advisorCancelledMails, clientCancelledMails, reminderMails, rescheduledMails } from "./notices";
@@ -57,14 +57,15 @@ export async function rescheduleByClient(userId: string, id: string, input: { st
   if (startsAt === old.startsAt) throw new LifecycleError("這就是原本的時間", "same_slot");
   const mode = input.mode ?? old.mode;
   if (mode === "online" ? !old.advisor.meetingLink : !old.advisor.onsiteLocation) throw new LifecycleError("這位顧問沒有提供這種面談方式", "mode");
-  const slot = (await advisorSlotsFor(old.advisor.id, now)).find(s => s.startsAt === startsAt);
+  // 自己原本那場不算衝突（4-ar：改到同一天前後一點也行）
+  const slot = (await advisorSlotsFor(old.advisor.id, now, old.id)).find(s => s.startsAt === startsAt);
   if (!slot) throw new LifecycleError("這個時段剛剛被約走了，請換一個", "slot_taken");
   const newId = crypto.randomUUID(), count = old.rescheduleCount + 1;
   try {
-    await db.insert(bookings).values({ id: newId, user_id: userId, advisor_id: old.advisor.id, conversation_id: old.conversationId, starts_at: startsAt, ends_at: slot.endsAt,
-      mode, rescheduled_from: old.id, reschedule_count: count });
+    await insertBooking({ id: newId, user_id: userId, advisor_id: old.advisor.id, conversation_id: old.conversationId, starts_at: startsAt, ends_at: slot.endsAt,
+      mode, rescheduled_from: old.id, reschedule_count: count }, old.id);
   } catch (e) {
-    if (String((e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code) === "23505") throw new LifecycleError("這個時段剛剛被約走了，請換一個", "slot_taken");
+    if (e instanceof BookingError && e.code === "slot_taken") throw new LifecycleError(e.message, "slot_taken");
     throw e;
   }
   await db.update(bookings).set({ status: "rescheduled", status_by: userId, status_at: nowText, rescheduled_to: newId, updated_at: nowText })

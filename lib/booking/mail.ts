@@ -117,7 +117,7 @@ export function buildBookingEmails(b: BookingDetail, opts: { hasPassbook: boolea
         preheader: `${when}，${adv}${opts.hasPassbook ? "會先看過你的保單" : "。面談前上傳保險存摺，分析會更準"}`,
         rows: [
           ["顧問", `${esc(b.advisor.name)}${b.advisor.licenseNo ? `<br><span style="color:${MUTED};font-size:12px">登錄字號 ${esc(b.advisor.licenseNo)}</span>` : ""}`],
-          ["時間", `${when}<br><span style="color:${MUTED};font-size:13px">約 40 分鐘</span>`],
+          ["時間", `${when}<br><span style="color:${MUTED};font-size:13px">最長約 2 小時</span>`],
           ["方式", where.html],
         ],
         intro: opts.hasPassbook
@@ -143,7 +143,7 @@ export function buildBookingEmails(b: BookingDetail, opts: { hasPassbook: boolea
         preheader: `${when} ${b.client.name ?? "客戶"}`,
         rows: [
           ["客戶", esc(b.client.name ?? "（未提供姓名）")],
-          ["時間", `${when}<br><span style="color:${MUTED};font-size:13px">約 40 分鐘</span>`],
+          ["時間", `${when}<br><span style="color:${MUTED};font-size:13px">最長約 2 小時</span>`],
           ["方式", where.html],
           ["保單", opts.hasPassbook ? "已上傳保險存摺" : `<span style="color:${AMBER}">還沒上傳存摺</span>`],
         ],

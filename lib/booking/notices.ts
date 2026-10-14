@@ -21,7 +21,7 @@ function ics(b: BookingDetail, who: "client" | "advisor", cancelled = false): Ic
   };
 }
 const link = (path: string, text: string) => `<a href="${appUrl()}${path}" style="${linkStyle}">${text}</a>`;
-const timeCell = (when: string) => `${when}<br><span style="color:${MUTED};font-size:13px">約 40 分鐘</span>`;
+const timeCell = (when: string) => `${when}<br><span style="color:${MUTED};font-size:13px">最長約 2 小時</span>`;
 const struck = (when: string) => `<s style="color:${MUTED}">${when}</s>`;
 const cancelFoot = "附件會把這場面談從你的日曆移除。";
 
