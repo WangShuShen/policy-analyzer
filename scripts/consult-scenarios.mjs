@@ -29,6 +29,10 @@ const KEY = arg("key", /localhost|127\.0\.0\.1/.test(BASE) ? "" : process.env.DE
 fs.mkdirSync(OUT, { recursive: true });
 
 // 劇本：{opt:"選項文字片段"} 點選項｜{text:"..."} 打字｜{any:true} 點第一個選項
+// 真 AI 自己寫選項，同樣意思字會不一樣：劇本寫的字在這裡列同義詞，任一個對上就算（10/15 真 AI 回歸 T06 遇過「就是想確認一下」）
+const OPT_SYNONYMS = {
+  "沒什麼": ["沒什麼", "就是想確認", "單純想確認", "只是想確認", "沒特別", "單純"],
+};
 // facts：最後右欄該記成什麼｜expect：[第幾步, 那一步的 AI 回覆要符合]
 // bad 只比對 AI 回覆本文（不含選項）：「老了要人照顧」這種擔心選項是正常的，10/12 的 bug 是追問照顧費
 const TOOL_WORDS = /投資型|變額|利變|利率變動|儲蓄險|儲蓄型|月配息|類全委|萬能/;
@@ -137,8 +141,9 @@ async function runOne(id, round) {
     let body;
     if (step.text) { body = { text: step.text }; log.push(`客戶: ${step.text}`); }
     else {
-      const i = step.any ? 0 : opts.findIndex(o => o.includes(step.opt));
-      if (i < 0) { broken = `找不到選項「${step.opt}」，畫面上是：${opts.join("／") || "（沒有選項）"}`; break; }
+      const words = OPT_SYNONYMS[step.opt] ?? [step.opt];
+      const i = step.any ? 0 : opts.findIndex(o => words.some(w => o.includes(w)));
+      if (i < 0) { broken = `找不到選項「${words.join("｜")}」，AI 實際給的選項：${opts.join("／") || "（沒有選項）"}`; break; }
       body = { option: i }; log.push(`(點) ${opts[i]}`);
     }
     const t0 = Date.now();
