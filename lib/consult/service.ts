@@ -8,6 +8,7 @@ import { buildAnalysis, publicView, saveSnapshotIfChanged, type AnalysisView } f
 import { liveContent } from "@/lib/content/store";
 import { liveSlot, liveStep } from "./live";
 import { view as passbookView } from "@/lib/passbook/service";
+import { capReached } from "@/lib/admin/usage";
 
 /*
  * 一輪對話（實作設計 I1）：
@@ -28,6 +29,7 @@ export interface Snapshot {
   pending: Pending;
   analysis: AnalysisView;          // 右欄計算區塊（鎖住的內容不在裡面）
   phase: number;                   // 原型上方三階段：0 聊出需求｜1 看現況｜2 補強建議
+  paused: boolean;                 // N7：今天的 AI 用量到上限了，先停（講過的都留著，台灣時間 0 點自動恢復）
 }
 
 /** 目前走到第幾階段：游標之前、屬於這個分支的最後一個 ph 步驟 */
@@ -125,6 +127,7 @@ async function snapshot(userId: string, convId: string): Promise<Snapshot> {
     pending: withChips(await pendingAt(st), messages),
     analysis: publicView(analysis),
     phase: phaseAt({ ...st, cursor: advance({ ...st }).cursor }),
+    paused: await capReached(userId),
   };
 }
 
@@ -157,6 +160,9 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
   st = { ...st, cursor: advance(st).cursor };
   const cur = stepAt(st.cursor);
   if (!cur || cur.id !== input.stepId) throw new StaleTurnError();   // 連點兩下、或開了兩個分頁
+  // N7：今天用到上限就不再呼叫 AI（整理員、說話、第二層審查都在這一輪裡）。什麼都不動、不存這句，回目前的畫面
+  // 點固定題目的選項本身不用 AI，但接著可能進需求點引導，一律先停，畫面也只剩約顧問（上傳存摺不受影響）
+  if (("text" in input || "option" in input) && await capReached(userId)) return snapshot(userId, convId);
 
   if ("skipUpload" in input || "uploaded" in input) {
     if (cur.t !== "up") throw new StaleTurnError();

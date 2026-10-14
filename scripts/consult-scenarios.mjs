@@ -55,6 +55,9 @@ const S = {
   T20: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
     { any: true }, { any: true }, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼要補？看數據",
     customerSees: [/對著條款跟你說才準/], customerNot: [/這是規定/] },
+  // N7：每人每天 AI 用量上限。暫時把上限調到 0.000001 美元（模擬模式每次呼叫記 1 微美元），測完一定還原。
+  // 改的是全站設定，所以 T21 等其他情境都跑完才一輪一輪單獨跑（exclusive）
+  T21: { mockOnly: true, exclusive: true, run: runCap },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
@@ -77,6 +80,7 @@ const strip = h => String(h ?? "").replace(/<[^>]+>/g, "");
 
 async function runOne(id, round) {
   const sc = S[id];
+  if (sc.run) return sc.run(id, round);
   const login = await fetch(`${BASE}/api/dev-login?as=new-customer${KEY ? `&key=${encodeURIComponent(KEY)}` : ""}`, { redirect: "manual" });
   const cookie = login.headers.get("set-cookie")?.split(";")[0];
   if (!cookie) throw new Error(`測試登入失敗（HTTP ${login.status}）：確認 dev server 開著、DEV_LOGIN=1`);
@@ -202,6 +206,84 @@ async function runOne(id, round) {
   return out;
 }
 
+async function login(as, id) {
+  const r = await fetch(`${BASE}/api/dev-login?as=${as}${id ? `&id=${id}` : ""}${KEY ? `&key=${encodeURIComponent(KEY)}` : ""}`, { redirect: "manual" });
+  const c = r.headers.get("set-cookie")?.split(";")[0];
+  if (!c) throw new Error(`測試登入失敗（${as}，HTTP ${r.status}）`);
+  return c;
+}
+
+async function runCap(id, round) {
+  const log = [], fails = [], ms = [];
+  const admin = { cookie: await login("admin", arg("advisor", "dev-adv-b")), "content-type": "application/json" };
+  const getUsage = async () => (await (await fetch(`${BASE}/api/admin/monitor`, { headers: admin })).json()).usage;
+  const putTh = (t) => fetch(`${BASE}/api/admin/monitor`, { method: "PUT", headers: admin, body: JSON.stringify(t) });
+  const saved = (await getUsage()).thresholds;
+  const H = { cookie: await login("new-customer"), "content-type": "application/json" };
+  let snap = await (await fetch(`${BASE}/api/consult`, { method: "POST", headers: H, body: "{}" })).json();
+  const turn = async (body) => {
+    const t0 = Date.now();
+    const r = await fetch(`${BASE}/api/consult/turn`, { method: "POST", headers: H, body: JSON.stringify({ conversationId: snap.conversation.id, stepId: snap.pending?.ask?.stepId, ...body }) });
+    ms.push(Date.now() - t0);
+    const j = await r.json();
+    if (!r.ok) throw new Error(`HTTP ${r.status} ${JSON.stringify(j).slice(0, 150)}`);
+    return j;
+  };
+  try {
+    if (!(await putTh({ ...saved, userDailyUsd: 0.000001 })).ok) throw new Error("調低上限失敗");
+    log.push(`上限暫時調成 0.000001（原本 ${saved.userDailyUsd}）`);
+    if (snap.paused) fails.push("還沒用 AI 就被暫停了");
+    // 照常聊，直到被暫停（模擬模式每次呼叫 1 微美元，兩三輪內就會超過）
+    for (let i = 0; i < 6 && !snap.paused; i++) {
+      const opts = snap.pending?.ask?.options ?? [];
+      if (snap.pending?.kind !== "ask" || !opts.length) { fails.push(`還沒被暫停就走不下去（pending=${snap.pending?.kind}）`); break; }
+      const pick = i === 0 ? Math.max(0, opts.findIndex(o => o.includes("想看看我的保單夠不夠"))) : Math.max(0, opts.findIndex(o => !/直接約|去約顧問|現在去約/.test(o)));
+      log.push(`使用者：${opts[pick]}`);
+      snap = await turn({ option: pick });
+    }
+    if (!snap.paused) fails.push("聊了 6 輪都沒有被暫停");
+    else {
+      log.push(`第 ${ms.length} 輪後暫停`);
+      const before = { msgs: snap.messages.length, facts: snap.facts.length };
+      // 暫停後打字、點選項：伺服器什麼都不收、不呼叫 AI，回原本的畫面
+      const t = await turn({ text: "我還想再問一下" });
+      if (!t.paused) fails.push("暫停後打字，回應沒有標 paused");
+      if (t.messages.length !== before.msgs) fails.push(`暫停後打字，訊息從 ${before.msgs} 變成 ${t.messages.length}（不該收、不該回）`);
+      if (t.facts.length !== before.facts) fails.push(`暫停後右欄從 ${before.facts} 項變成 ${t.facts.length} 項（講過的要留著）`);
+      const o = await turn({ option: 0 });
+      if (o.messages.length !== before.msgs) fails.push("暫停後點選項，對話還是往下走了");
+      // 重新打開：還是暫停、講過的都在
+      const re = await (await fetch(`${BASE}/api/consult?id=${snap.conversation.id}`, { headers: H })).json();
+      if (!re.paused) fails.push("重新打開對話，沒有維持暫停");
+      if (re.facts.length !== before.facts) fails.push("重新打開對話，右欄少了東西");
+      // 衛教也停，而且話要軟：不提上限、費用
+      const e = await fetch(`${BASE}/api/consult/edu`, { method: "POST", headers: H, body: JSON.stringify({ text: "實支實付是什麼？" }) });
+      const ej = await e.json();
+      if (e.status !== 429 || ej.code !== "paused") fails.push(`衛教沒有暫停（HTTP ${e.status}）`);
+      if (!/今天先聊到這裡/.test(ej.error ?? "")) fails.push(`暫停的話不對：${ej.error}`);
+      if (/上限|費用|額度|美元/.test(ej.error ?? "")) fails.push(`暫停的話提到上限或費用：${ej.error}`);
+      log.push(`暫停的話：${ej.error}`);
+    }
+  } catch (e) { fails.push(String(e.message ?? e)); }
+  finally {
+    const r = await putTh(saved);
+    const now = r.ok ? (await getUsage()).thresholds : null;
+    if (!now || now.userDailyUsd !== saved.userDailyUsd || now.monthlyBudgetUsd !== saved.monthlyBudgetUsd) {
+      console.error(`\n⚠️⚠️ T21 沒有把上限還原！請馬上到 /admin/monitor 改回 ${JSON.stringify(saved)}\n`);
+      fails.push("上限沒有還原");
+    } else log.push(`上限已還原成 ${saved.userDailyUsd}`);
+  }
+  // 後台：今天被暫停的人數要算到他（還原後才看，看的時候會順便跑一次全站警報檢查）
+  if (snap.paused) {
+    const u = await getUsage();
+    if (!(u.blockedToday >= 1)) fails.push(`後台「今天被暫停」是 ${u.blockedToday}`);
+    log.push(`後台今天被暫停 ${u.blockedToday} 人`);
+  }
+  const out = { id, round, ok: fails.length === 0, deferred: false, fails, ms, log };
+  fs.writeFileSync(path.join(OUT, `${id}-${round}.json`), JSON.stringify(out, null, 1));
+  return out;
+}
+
 // --mock：先確認伺服器真的在模擬模式（諮詢頁上方有「AI 為模擬回覆」），不然等於拿真 AI 在跑
 if (MOCK) {
   const l = await fetch(`${BASE}/api/dev-login?as=new-customer${KEY ? `&key=${encodeURIComponent(KEY)}` : ""}`, { redirect: "manual" });
@@ -210,15 +292,16 @@ if (MOCK) {
 }
 const ids = arg("only")?.split(",") ?? Object.keys(S).filter(id => MOCK || !S[id].mockOnly);
 for (const id of ids) if (!S[id]) { console.error(`沒有情境 ${id}`); process.exit(2); }
-const jobs = ids.flatMap(id => Array.from({ length: ROUNDS }, (_, r) => [id, r + 1]));
+const jobsOf = (pred) => ids.filter(pred).flatMap(id => Array.from({ length: ROUNDS }, (_, r) => [id, r + 1]));
+const jobs = jobsOf(id => !S[id].exclusive);
 const results = [];
-await Promise.all(Array.from({ length: CONC }, async () => {
-  while (jobs.length) {
-    const [id, r] = jobs.shift();
-    try { results.push(await runOne(id, r)); }
-    catch (e) { results.push({ id, round: r, ok: false, fails: [String(e)], ms: [] }); }
-  }
-}));
+const runJob = async ([id, r]) => {
+  try { results.push(await runOne(id, r)); }
+  catch (e) { results.push({ id, round: r, ok: false, fails: [String(e)], ms: [] }); }
+};
+await Promise.all(Array.from({ length: CONC }, async () => { while (jobs.length) await runJob(jobs.shift()); }));
+// 會改全站設定的情境，等其他都跑完再一輪一輪單獨跑
+for (const j of jobsOf(id => S[id].exclusive)) await runJob(j);
 
 const allMs = results.flatMap(r => r.ms);
 let failed = 0;

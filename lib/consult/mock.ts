@@ -23,7 +23,8 @@ export function aiMock(): boolean {
   }
 }
 
-export const mockUsage = (): Usage => ({ model: "mock", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 });
+// 每次記 1 微美元（0.000001）：小到不影響開發版的費用統計，但讓 N7 上限測得到（T21 把上限調到 0.000001）
+export const mockUsage = (): Usage => ({ model: "mock", tokensIn: 0, tokensOut: 0, costMicroUsd: 1 });
 
 // ── 舊步驟的整理器（開場、財務路線的題目）─────────────────────────
 

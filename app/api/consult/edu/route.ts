@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eduReply } from "@/lib/consult/ai";
+import { requireIdentity } from "@/lib/auth";
+import { roleOf } from "@/lib/jwt";
+import { capReached } from "@/lib/admin/usage";
+import { PAUSED_TEXT } from "@/lib/consult/paused";
 
 /*
  * 衛教模式（4-z、N22）：不用登入、一個字都不記——不寫資料庫、不寫 log 內容。
@@ -28,6 +32,11 @@ export async function POST(req: NextRequest) {
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "格式不正確" }, { status: 400 });
+  // N7：有登入的客戶今天 AI 用到上限，衛教也先停（衛教本身不記用量；沒登入的只有上面的限流）
+  const who = await requireIdentity(req);
+  if (!(who instanceof NextResponse) && roleOf(who) === "customer" && await capReached(who.advisorId)) {
+    return NextResponse.json({ error: PAUSED_TEXT, code: "paused" }, { status: 429 });
+  }
   try {
     const r = await eduReply(parsed.data.history, parsed.data.text);
     return NextResponse.json({ html: r.html });

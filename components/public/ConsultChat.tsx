@@ -5,6 +5,7 @@ import { safeHtml } from "@/lib/consult/safeHtml";
 import type { Snapshot } from "@/lib/consult/service";
 import { AnalysisPanels } from "./AnalysisPanels";
 import { PassbookUpload } from "./PassbookUpload";
+import { PAUSED_TEXT } from "@/lib/consult/paused";
 
 /*
  * AI 諮詢畫面（原型 v37 的 chat：左對話／右「我的保障」、4-t／4-v）。
@@ -86,6 +87,8 @@ export function ConsultChat({ name }: { name: string }) {
       setTyping(false);
       if (r.status === 409 && j.snapshot) { setSnap(j.snapshot); setShown(j.snapshot.messages.length); return; }
       if (!r.ok) { setError(j.error ?? "沒送出去，請再試一次"); setSnap(snap); setShown(before); return; }
+      // N7：今天先停——伺服器沒收這一句，直接換成目前的畫面（只剩約顧問）
+      if (j.paused && j.messages.length <= before) { setSnap(j); setShown(j.messages.length); return; }
       await reveal(j, optimistic ? before + 1 : before);
     } catch {
       setTyping(false); setError("連線失敗，請再試一次"); setSnap(snap); setShown(before);
@@ -144,7 +147,8 @@ export function ConsultChat({ name }: { name: string }) {
     headlines: snap.analysis.headlines.filter(h => shownPanels.has(h.key)),
   };
   const animating = shown < snap.messages.length || typing;
-  const ask = !animating && snap.pending.kind === "ask" ? snap.pending.ask : null;
+  const paused = !animating && snap.paused && snap.pending.kind === "ask";
+  const ask = !animating && !snap.paused && snap.pending.kind === "ask" ? snap.pending.ask : null;
   const hasPanel = snap.facts.length > 0 || analysis.open.length > 0 || analysis.locked.length > 0;
   const done = snap.pending.kind === "done";
   const lastActive = snap.conversation.status === "done" ? "聊完了" : "進行中";
@@ -194,13 +198,15 @@ export function ConsultChat({ name }: { name: string }) {
               )}
               {ask && <div className="dopts">{ask.options.map((o, i) => <button key={i} className="dopt" onClick={() => pick(i)} disabled={busy}>{o}</button>)}</div>}
               {error && <div className="rd-err">{error}</div>}
+              {/* N7：今天 AI 用量到上限——選項和輸入先收起來，只留約顧問；講過的都在，台灣時間 0 點自動恢復 */}
+              {paused && <div className="askadv"><span>{PAUSED_TEXT}</span><a className="askadvb" href="/advisors">預約顧問</a></div>}
               {/* 4-y：預約入口全程常駐，不用聊完；前面講的一起帶給顧問 */}
-              <div className="askadv"><span><b>想直接問人？</b>不用聊完也可以先約——你到目前講的都會一起帶給顧問。</span><a className="askadvb" href="/advisors">約顧問</a></div>
+              {!paused && <div className="askadv"><span><b>想直接問人？</b>不用聊完也可以先約——你到目前講的都會一起帶給顧問。</span><a className="askadvb" href="/advisors">約顧問</a></div>}
             </>
           )}
           <form className="dinp" onSubmit={submitText} autoComplete="off" hidden={!!list}>
             <input className="dinf" value={text} onChange={e => setText(e.target.value)} maxLength={1000}
-              placeholder={ask ? "上面挑一個，或自己打" : done ? "這段聊完了" : "等我說完…"} disabled={!ask || busy} aria-label="輸入你的回答" />
+              placeholder={ask ? "上面挑一個，或自己打" : paused ? "明天再來接著聊" : done ? "這段聊完了" : "等我說完…"} disabled={!ask || busy} aria-label="輸入你的回答" />
             <button className="dins" type="submit" disabled={!ask || busy || !text.trim()}>送出</button>
           </form>
           <div className="dinn" hidden={!!list}>{done ? "這段聊完了。右邊是整理出來的結果，也可以到上方「我的分析」看。" : `嗨 ${name}，這裡的對話只有你和你之後選的顧問看得到。`}</div>

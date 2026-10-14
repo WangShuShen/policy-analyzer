@@ -16,6 +16,7 @@ interface Usage {
   byModel: { model: string; usd: number; calls: number; tokensIn: number; tokensOut: number }[];
   topUsersToday: { userId: string; name: string; usd: number; calls: number; over: boolean }[];
   alerts: { kind: string; period: string; userId: string; usd: number; thresholdUsd: number; at: string }[];
+  blockedToday: number;
 }
 
 const BRAND = "#2F7A6B";
@@ -83,7 +84,7 @@ function ThresholdEditor({ value, onSaved }: { value: Usage["thresholds"]; onSav
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm text-stone-600">
       <label>每月預算 $<input className={inp} inputMode="decimal" value={v.m} onChange={e => setV({ ...v, m: e.target.value })} /></label>
-      <label>單人每天 $<input className={inp} inputMode="decimal" value={v.d} onChange={e => setV({ ...v, d: e.target.value })} /></label>
+      <label title="超過就暫停這個人今天的 AI（明天 0 點恢復），同時通知管理者">每人每天上限 $<input className={inp} inputMode="decimal" value={v.d} onChange={e => setV({ ...v, d: e.target.value })} /></label>
       <button onClick={save} className="px-3 py-1.5 rounded-xl text-xs font-medium text-white" style={{ background: BRAND }}>儲存門檻</button>
       {msg && <span className="text-xs text-stone-400">{msg}</span>}
     </div>
@@ -112,18 +113,19 @@ export default function MonitorPage() {
         <button onClick={load} disabled={busy} className="flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700"><RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />重新整理</button>
       </div>
 
-      {u.alerts.some(a => a.period === u.month || a.period === u.today) && (
+      {u.alerts.some(a => a.kind !== "user_blocked" && (a.period === u.month || a.period === u.today)) && (
         <div className="flex gap-2 items-start rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-          <div>{u.alerts.filter(a => a.period === u.month || a.period === u.today).map((a, i) => (
-            <div key={i}>{a.kind === "monthly_budget" ? `本月費用 ${money(a.usd)} 超過預算 ${money(a.thresholdUsd)}` : `有使用者今天用了 ${money(a.usd)}，超過單人門檻 ${money(a.thresholdUsd)}`}</div>
-          ))}<div className="text-xs text-red-500 mt-1">觀察期（I6）：警報第一次觸發，就該回頭定每人用量上限（N7）。</div></div>
+          <div>{u.alerts.filter(a => a.kind !== "user_blocked" && (a.period === u.month || a.period === u.today)).map((a, i) => (
+            <div key={i}>{a.kind === "monthly_budget" ? `本月費用 ${money(a.usd)} 超過預算 ${money(a.thresholdUsd)}` : `有使用者今天用了 ${money(a.usd)}，超過每人每天上限 ${money(a.thresholdUsd)}`}</div>
+          ))}<div className="text-xs text-red-500 mt-1">超過每人上限的，今天的 AI 已先暫停（N7），明天 0 點自動恢復。</div></div>
         </div>
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Tile label="現在在線" value={`${d.online.length} 人`} sub={`顧問 ${advisorsOnline}・客戶 ${d.online.length - advisorsOnline}`} />
-        <Tile label="今天 AI 費用" value={money(u.todayUsd)} sub={`${u.todayCalls} 次呼叫`} />
+        <Tile label="今天 AI 費用" value={money(u.todayUsd)} warn={u.blockedToday > 0}
+          sub={`${u.todayCalls} 次呼叫・今天被暫停 ${u.blockedToday} 人`} />
         <Tile label={`${u.month} 累計`} value={money(u.monthUsd)} warn={budgetPct > 1}
           sub={<span>預算 {money(u.thresholds.monthlyBudgetUsd)}・用了 {Math.round(budgetPct * 100)}%</span>} />
         <Tile label="本月 AI 呼叫" value={`${u.monthCalls} 次`} sub={u.monthCalls ? `平均每次 ${money(u.monthUsd / u.monthCalls)}` : "—"} />
@@ -153,7 +155,7 @@ export default function MonitorPage() {
             <table className="w-full text-sm"><tbody>
               {u.topUsersToday.map(t => (
                 <tr key={t.userId} className="border-b border-[#DFE4E1]/60 last:border-0">
-                  <td className={td}>{t.name}{t.over && <span className="ml-1 inline-flex items-center gap-0.5 text-xs text-red-600"><AlertTriangle className="h-3 w-3" />超過門檻</span>}</td>
+                  <td className={td}>{t.name}{t.over && <span className="ml-1 inline-flex items-center gap-0.5 text-xs text-red-600"><AlertTriangle className="h-3 w-3" />已暫停 AI</span>}</td>
                   <td className={`${td} text-right`}>{money(t.usd)}</td>
                   <td className={`${td} text-right text-xs text-stone-400`}>{t.calls} 次</td>
                 </tr>
