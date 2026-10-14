@@ -20,6 +20,11 @@ export async function proxy(req: NextRequest) {
     pathname === "/welcome" ||
     pathname.startsWith("/welcome/") ||
     pathname === "/consult/edu" ||
+    // 保險快訊（W3）：公開頁＋搜尋引擎用的 sitemap／robots。/news/preview/<id> 也在這底下，頁面自己檢查管理者、不是就 404
+    pathname === "/news" ||
+    pathname.startsWith("/news/") ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/robots.txt" ||
     pathname === "/api/consult/edu" ||   // 衛教模式 API：不用登入、不記任何資料
     pathname === "/api/dev-login" ||     // 本機測試登入（DEV_LOGIN=1＋localhost 才有作用）
     pathname === "/api/dev/feedback" ||  // 開發版回饋：沒登入的頁面也要能送；非開發版一律 404（權限在 route 內判斷）
