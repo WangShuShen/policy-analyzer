@@ -354,7 +354,7 @@ export const bookings = pgTable("bookings", {
   reschedule_count: integer("reschedule_count").notNull().default(0),   // 累計第幾次改期；第 3 次起通知顧問（B5）
   reminded_24h_at: text("reminded_24h_at"),         // 面談前一天提醒寄出時間（B3；有值就不再寄）
   reminded_1h_at: text("reminded_1h_at"),           // 面談前 1 小時提醒
-  passbook_reminded_at: text("passbook_reminded_at"),   // W2 w2-06：預約後 24 小時還沒傳存摺的提醒，寄過就記時間（防重複寄）
+  passbook_reminded_at: text("passbook_reminded_at"),   // W2 w2-06：預約後 24 小時還沒傳存摺的提醒，寄過就記時間（防重複寄）；功能上線前的預約是 'skipped:before-w2'（migration 0018，不補寄）
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [

@@ -127,6 +127,13 @@
       "when": 1791955678377,
       "tag": "0017_advisor_response_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791997976013,
+      "tag": "0018_skip_passbook_reminder_existing",
+      "breakpoints": true
     }
   ]
 }

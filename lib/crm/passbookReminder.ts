@@ -10,6 +10,7 @@ import { view as passbookView } from "@/lib/passbook/service";
 /*
  * 存摺提醒（W2 w2-06）：預約後 24 小時還沒上傳保險存摺，寄一次提醒（客戶信件版型，lib/booking/mail.ts layout）。
  *   ・只寄一次：先把 bookings.passbook_reminded_at 標上再寄（兩個排程同時跑也不會寄兩封）
+ *   ・只寄功能上線之後才建立的預約：migration 0018 把既有預約填成 'skipped:before-w2'，排程只找空的（主管 10/15：上線時真客戶不會突然收到）
  *   ・離面談不到 24 小時就不寄——面談前一天的提醒信已經會叫他上傳，不要連續兩封
  *   ・傳過了（任何狀態，含解析中）就不寄（4-w：不要要求做過的事）
  *   ・手動客戶沒有預約，不會進來；.invalid 信箱寄信佇列也會跳過
