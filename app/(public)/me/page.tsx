@@ -7,12 +7,13 @@ import { getFacts } from "@/lib/consult/store";
 import { view as passbookView } from "@/lib/passbook/service";
 import { fmtTaipei } from "@/lib/booking/slots";
 import { MeBookingActions } from "@/components/public/MeBookingActions";
+import { MyData } from "@/components/public/MyData";
 
 /*
- * 我的頁面（原型 SCREENS.me）：客戶端唯一的家。四個分頁：預約與進度｜我的規劃｜我的保單｜我的顧問。
+ * 我的頁面（原型 SCREENS.me）：客戶端唯一的家。分頁：預約與進度｜我的規劃｜我的保單｜我的顧問｜我的資料（4-ap：同意書第六條寫的入口）。
  * W1a 都是準客戶（還沒有「成交」狀態）；規劃書由顧問送出是 W4，這裡先放鎖住／面談時打開的狀態。
  */
-const METABS = [["book", "預約與進度"], ["plan", "我的規劃"], ["pol", "我的保單"], ["adv", "我的顧問"]] as const;
+const METABS = [["book", "預約與進度"], ["plan", "我的規劃"], ["pol", "我的保單"], ["adv", "我的顧問"], ["data", "我的資料"]] as const;
 const parseSpecs = (s: string | null) => { try { const a = JSON.parse(s ?? "[]"); return Array.isArray(a) ? a as string[] : []; } catch { return []; } };
 
 export default async function MePage({ searchParams }: { searchParams: Promise<{ tab?: string; booked?: string; rescheduled?: string; cancelled?: string }> }) {
@@ -144,11 +145,13 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         </div>
       )}
 
+      {tab === "data" && <MyData />}
+
       <div className="ccsoon">
         <div className="cct">之後會有（還沒做）</div>
         <div className="ccsl">
           {[["線上理賠進度", "送件後看得到審核到哪一關，不用一直問"], ["保單變更線上辦", "地址、受益人、繳費方式"], ["繳費提醒", "到期前通知，避免失效"],
-            ["家庭保障地圖", "把配偶小孩的保障放在同一張圖上看"], ["理賠試算", "發生什麼事、這些保單加起來會賠多少"], ["資料查詢與刪除", "個資法第 3 條的當事人權利"]].map(([t, d]) => (
+            ["家庭保障地圖", "把配偶小孩的保障放在同一張圖上看"], ["理賠試算", "發生什麼事、這些保單加起來會賠多少"]].map(([t, d]) => (
             <div key={t} className="ccsi"><b>{t}</b><br />{d}</div>
           ))}
         </div>

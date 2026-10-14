@@ -240,3 +240,14 @@
 @container vp (max-width:959.98px){.rd .nw-adm{grid-template-columns:1fr}.rd .nw-2{grid-template-columns:1fr}}
 .rd .nw-body ol{list-style:decimal}.rd .nw-body ul{list-style:disc}
 .rd .nw-b:disabled,.rd .nw-cv:disabled{opacity:.45;cursor:not-allowed}
+
+/* ── 我的資料（4-ap，卡 E）── */
+.rd .md-opt b{font-weight:700}
+.rd .md-ta{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:15px;line-height:1.7;resize:vertical;background:var(--surface);color:var(--ink)}
+.rd .md-ta:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+.rd .md-row{padding:11px 0;border-top:1px solid var(--line)}
+.rd .md-row:first-of-type{border-top:0}
+.rd .md-st{font-family:var(--ui);font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;margin-left:8px;vertical-align:2px;background:var(--sunk);color:var(--ink-2)}
+.rd .md-st.processing{background:var(--amber-soft);color:var(--amber)}
+.rd .md-st.done{background:var(--brand-soft);color:var(--brand-ink)}
+.rd .md-note{background:var(--sunk);border-radius:9px;padding:9px 11px}

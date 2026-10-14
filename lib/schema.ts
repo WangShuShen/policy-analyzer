@@ -560,3 +560,20 @@ export const newsReviews = pgTable("news_reviews", {
   snapshot: text("snapshot"),                       // 送審／通過時的內容（JSON），之後查得到當時審的是哪一版
   created_at: createdAt(),
 }, t => [index("news_reviews_article").on(t.article_id, t.created_at)]);
+
+// ── 我的資料：當事人權利申請（4-ap、N5、N21，卡 E）。簡單版：客戶送出 → 管理者人工處理、留紀錄；自動刪除留到 W7 ──
+// user_id 不設外鍵：之後真的刪除帳號，這筆申請紀錄要留著（證明有依請求處理）
+export const dataRequests = pgTable("data_requests", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull(),
+  email: text("email").notNull(),                   // 送出當下的信箱（回覆用；帳號刪除後還找得到人）
+  kind: text("kind").notNull(),                     // access 查詢／閱覽／複製本 | correct 補充／更正 | delete 刪除／停止利用／撤回同意
+  message: text("message").notNull(),               // 客戶的一句說明
+  status: text("status").notNull().default("received"),  // received | processing | done
+  due_date: text("due_date").notNull(),             // 回覆期限（台灣日期 YYYY-MM-DD）：同意書承諾 15 日內（個資法第 13 條：查詢 15 日、更正刪除 30 日）
+  handled_by: text("handled_by"),                   // advisors.id
+  handled_note: text("handled_note"),               // 處理說明（客戶看得到）
+  handled_at: text("handled_at"),
+  created_at: createdAt(),
+  updated_at: updatedAt(),
+}, t => [index("data_requests_user").on(t.user_id, t.created_at), index("data_requests_status").on(t.status, t.created_at)]);
