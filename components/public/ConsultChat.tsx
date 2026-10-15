@@ -6,7 +6,7 @@ import type { Snapshot } from "@/lib/consult/service";
 import { AnalysisPanels } from "./AnalysisPanels";
 import { PassbookUpload } from "./PassbookUpload";
 import { PAUSED_TEXT } from "@/lib/consult/paused";
-import { useVisualViewport } from "./useVisualViewport";
+import { useDockHeight, useVisualViewport } from "./useVisualViewport";
 
 /*
  * AI 諮詢畫面（原型 v37 的 chat：左對話／右「我的保障」、4-t／4-v）。
@@ -87,13 +87,7 @@ export function ConsultChat({ name }: { name: string }) {
     return () => { el.removeEventListener("scroll", onScroll); ro.disconnect(); };
   }, [snap === null, list]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 底部輸入列的高度給開發版回饋鈕用（放在輸入列上面，不擋「送出」）
-  useEffect(() => {
-    const el = dockRef.current, root = document.documentElement; if (!el) return;
-    const ro = new ResizeObserver(() => root.style.setProperty("--ddock-h", `${el.offsetHeight}px`));
-    ro.observe(el);
-    return () => { ro.disconnect(); root.style.removeProperty("--ddock-h"); };
-  }, [snap === null, list]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useDockHeight(dockRef, [snap === null, list]);   // 開發版回饋鈕放在輸入列上面
 
   useVisualViewport();   // 手機鍵盤彈出：輸入框貼在鍵盤上面
 

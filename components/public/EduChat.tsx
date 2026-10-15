@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { safeHtml } from "@/lib/consult/safeHtml";
 import { EDU_OPENING, EDU_SUGGESTIONS } from "@/lib/consult/script";
-import { useVisualViewport } from "./useVisualViewport";
+import { useDockHeight, useVisualViewport } from "./useVisualViewport";
 
 /*
  * 衛教模式（4-z、N22）：沒有同意個資蒐集時走這條。不用登入、一個字都不記——
@@ -18,7 +18,9 @@ export function EduChat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   useVisualViewport();   // 手機鍵盤彈出：輸入框貼在鍵盤上面
+  useDockHeight(dockRef, []);   // 開發版回饋鈕放在輸入列上面
   useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" }); }, [lines, busy]);
 
   const ask = async (q: string) => {
@@ -55,7 +57,7 @@ export function EduChat() {
           : <div key={i} className="acm ai" dangerouslySetInnerHTML={{ __html: safeHtml(l.text) }} />)}
         {busy && <div className="acm ai tp"><span className="aitype"><i /><i /><i /></span></div>}
       </div>
-      <div className="ddock">
+      <div className="ddock" ref={dockRef}>
         {lines.length === 0 && <div className="dopts">{EDU_SUGGESTIONS.map(s => <button key={s} className="dopt" onClick={() => ask(s)} disabled={busy}>{s}</button>)}</div>}
         {error && <div className="rd-err">{error}</div>}
         <form className="dinp" onSubmit={e => { e.preventDefault(); ask(text); }} autoComplete="off">
