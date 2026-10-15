@@ -17,6 +17,12 @@
   - 密碼是開發版專用的 CRON_SECRET，放在 `~/.config/radia/dev-cron.env`（權限 600），腳本只讀不印；打上線版會直接拒絕
 - 驗收「前一天提醒信」：約一個明天的時段 → 跑 `dev-cron.mjs --only bookings` → 看信箱與顧問鈴鐺（重複跑不會重寄）
 - 測試帳號（`@example.invalid`）的信只進寄信佇列、不會真的寄出；要收真信請用自己的 Google 帳號約
+- **驗收截圖**（每次部署開發版後重拍）：`scripts/shots.mjs` 對開發版拍每個驗收項目，手機／平板／電腦三種尺寸，輸出到 `100_Todo/projects/RADIA-驗收截圖/`（jpg＋`manifest.json`，驗收清單頁讀這份），約 13 分鐘
+  - 第一次先在暫存資料夾裝 playwright（**不要**加進 repo 的 dependencies）：`mkdir -p /tmp/radia-pw && cd /tmp/radia-pw && npm init -y && npm i playwright@1.60.0 && npx playwright install chromium`
+  - 跑：`DEV_DB_URL="$(npx -y neonctl connection-string main --project-id lingering-rain-26998425)" node scripts/shots.mjs --pw /tmp/radia-pw --out ../../100_Todo/projects/RADIA-驗收截圖`
+  - 用獨立的 headless 瀏覽器，**不碰 Playwright MCP 共用瀏覽器**（卡 B 的三商登入）；測試登入鑰匙讀 `~/.config/radia/dev-login.env`（權限 600，不印）；上線版網址會直接拒絕
+  - 會現做測試資料（測試客戶、模擬存摺、預約、一位手動客戶「截圖測試客戶（手動）」、互動紀錄），拍完把這次建的預約改成 `cancelled_by_advisor`（不刪、不寄信）；w1b-10 會暫時把每人每天上限調到 0.000001 美元，拍完自動還原（沒還原會大字提醒）
+  - 每張自動檢查：橫向捲動、超出畫面右邊、手機可點元件小於 40×40（頂部導覽列分開記）、客戶端出現「三商」（存摺確認畫面除外）、主控台錯誤——只記錄在 manifest 的 issues，不修
 
 ## 上線（顧問說「上線」之後）
 
