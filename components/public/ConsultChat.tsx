@@ -29,6 +29,8 @@ export function ConsultChat({ name }: { name: string }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const streamRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);                      // 使用者沒往上翻 → 版面變動時保持在最下面
 
   // 新訊息一則一則出來；使用者自己的訊息立刻出現
   const reveal = useCallback(async (next: Snapshot, from: number) => {
@@ -67,9 +69,39 @@ export function ConsultChat({ name }: { name: string }) {
     return () => window.removeEventListener("passbook:changed", onChange);
   }, [convId]);
 
+  // 新訊息、選項出現、從紀錄切回來 → 捲到最下面
+  const pendingKey = snap ? `${snap.pending.kind}:${snap.pending.ask?.stepId ?? ""}` : "";
   useEffect(() => {
+    stickRef.current = true;
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" });
-  }, [shown, typing]);
+  }, [shown, typing, pendingKey, list]);
+
+  // 一屏版面（10/15 顧問實測：電腦要捲整頁才找得到輸入框）：
+  // 對話區高度會跟著底部輸入列、手機鍵盤變；原本在最下面就維持在最下面
+  useEffect(() => {
+    const el = streamRef.current; if (!el) return;
+    const onScroll = () => { stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60; };
+    const ro = new ResizeObserver(() => { if (stickRef.current) el.scrollTop = el.scrollHeight; });
+    el.addEventListener("scroll", onScroll, { passive: true }); ro.observe(el);
+    return () => { el.removeEventListener("scroll", onScroll); ro.disconnect(); };
+  }, [snap === null, list]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 底部輸入列的高度給開發版回饋鈕用（放在輸入列上面，不擋「送出」）
+  useEffect(() => {
+    const el = dockRef.current, root = document.documentElement; if (!el) return;
+    const ro = new ResizeObserver(() => root.style.setProperty("--ddock-h", `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => { ro.disconnect(); root.style.removeProperty("--ddock-h"); };
+  }, [snap === null, list]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 手機鍵盤彈出：iOS 的 100dvh 不會扣掉鍵盤 → 用 visualViewport 的高度，輸入框才會貼在鍵盤上面
+  useEffect(() => {
+    const vv = window.visualViewport, root = document.documentElement; if (!vv) return;
+    const fit = () => { root.style.setProperty("--vvh", `${Math.round(vv.height)}px`); if (vv.offsetTop > 0) window.scrollTo(0, 0); };
+    fit();
+    vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit);
+    return () => { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); root.style.removeProperty("--vvh"); };
+  }, []);
 
   const send = async (body: Record<string, unknown>, optimistic?: string) => {
     if (!snap || busy) return;
@@ -155,12 +187,16 @@ export function ConsultChat({ name }: { name: string }) {
 
   return (
     <div className="dmo">
-      <div className="eyebrow">AI 諮詢</div>
-      <h2 className="t" style={{ marginBottom: 6 }}>我們先聊聊</h2>
-      <p className="sub">我不賣東西，只幫你把狀況弄清楚。<br />想到哪講到哪，<b>不用先準備什麼</b>。</p>
-      <div className="dsteps">{DPH.map((t, i) => (
-        <span key={t} className={`dst ${i < snap.phase || (done && i === snap.phase) ? "ok" : i === snap.phase ? "on" : ""}`}><i />{["①", "②", "③"][i]} {t}</span>
-      ))}</div>
+      {/* 一屏：標題縮成一行、步驟條放旁邊，把高度留給對話 */}
+      <div className="dhead">
+        <div className="dhead-t">
+          <h2 className="t">我們先聊聊</h2>
+          <p className="sub">我不賣東西，只幫你把狀況弄清楚。想到哪講到哪，<b>不用先準備什麼</b>。</p>
+        </div>
+        <div className="dsteps">{DPH.map((t, i) => (
+          <span key={t} className={`dst ${i < snap.phase || (done && i === snap.phase) ? "ok" : i === snap.phase ? "on" : ""}`}><i />{["①", "②", "③"][i]} {t}</span>
+        ))}</div>
+      </div>
       <div className="dtabs">
         <button className="dtb" aria-pressed={tab === "chat"} onClick={() => setTab("chat")}>對話</button>
         <button className="dtb" aria-pressed={tab === "panel"} onClick={() => setTab("panel")}>我的保障{snap.facts.length ? <span className="dbadge">{snap.facts.length}</span> : null}</button>
@@ -168,12 +204,13 @@ export function ConsultChat({ name }: { name: string }) {
 
       <div className={`dsplit ${hasPanel ? "has" : ""} ${panelOpen ? "open" : ""}`}>
         <div className={`dleft ${tab === "chat" ? "" : "dhide"}`}>
-          <div className="dpill"><button className="dpillb" onClick={() => setPanelOpen(true)}>⟨ 我的保障{snap.facts.length ? `（${snap.facts.length}）` : ""}</button></div>
           <div className="cvbar">
             <div style={{ minWidth: 0 }}>
               <div className="cvt">{snap.conversation.title}</div>
               <div className="cvd">{lastActive}</div>
             </div>
+            {/* 右欄收起來時，打開的按鈕跟「過去的對話」放同一列（原型的 dpill 是浮在對話右上角） */}
+            {hasPanel && !panelOpen && <button className="dpillb" onClick={() => setPanelOpen(true)}>⟨ 我的保障{snap.facts.length ? `（${snap.facts.length}）` : ""}</button>}
             <button className="cvb" onClick={openList}>{list ? "收起紀錄" : "過去的對話"}</button>
           </div>
           {list ? (
@@ -191,25 +228,31 @@ export function ConsultChat({ name }: { name: string }) {
               <div className="dchat" ref={streamRef} aria-live="polite">
                 {visible.map(m => <Bubble key={m.id} m={m} />)}
                 {typing && <div className="acm ai tp"><span className="aitype"><i /><i /><i /></span></div>}
+                {/* 上傳框是對話的一部分，放在對話區裡跟著捲，不佔底部輸入列 */}
+                {snap.pending.kind === "upload" && !animating && (
+                  <PassbookUpload conversationId={snap.conversation.id} busy={busy} onSkip={skipUpload}
+                    onUploaded={() => { if (snap.pending.uploadStepId) void send({ stepId: snap.pending.uploadStepId, uploaded: true }); }} />
+                )}
               </div>
-              {snap.pending.kind === "upload" && !animating && (
-                <PassbookUpload conversationId={snap.conversation.id} busy={busy} onSkip={skipUpload}
-                  onUploaded={() => { if (snap.pending.uploadStepId) void send({ stepId: snap.pending.uploadStepId, uploaded: true }); }} />
-              )}
-              {ask && <div className="dopts">{ask.options.map((o, i) => <button key={i} className="dopt" onClick={() => pick(i)} disabled={busy}>{o}</button>)}</div>}
-              {error && <div className="rd-err">{error}</div>}
-              {/* N7：今天 AI 用量到上限——選項和輸入先收起來，只留約顧問；講過的都在，台灣時間 0 點自動恢復 */}
-              {paused && <div className="askadv"><span>{PAUSED_TEXT}</span><a className="askadvb" href="/advisors">預約顧問</a></div>}
-              {/* 4-y：預約入口全程常駐，不用聊完；前面講的一起帶給顧問 */}
-              {!paused && <div className="askadv"><span><b>想直接問人？</b>不用聊完也可以先約——你到目前講的都會一起帶給顧問。</span><a className="askadvb" href="/advisors">約顧問</a></div>}
+              {/* 底部輸入列：選項＋輸入框＋送出永遠在畫面底部 */}
+              <div className="ddock" ref={dockRef}>
+                {ask && <div className="dopts">{ask.options.map((o, i) => <button key={i} className="dopt" onClick={() => pick(i)} disabled={busy}>{o}</button>)}</div>}
+                {error && <div className="rd-err">{error}</div>}
+                {/* N7：今天 AI 用量到上限——選項和輸入先收起來，只留約顧問；講過的都在，台灣時間 0 點自動恢復 */}
+                {paused && <div className="askadv"><span>{PAUSED_TEXT}</span><a className="askadvb" href="/advisors">預約顧問</a></div>}
+                <form className="dinp" onSubmit={submitText} autoComplete="off">
+                  <input className="dinf" value={text} onChange={e => setText(e.target.value)} maxLength={1000} enterKeyHint="send"
+                    placeholder={ask ? "上面挑一個，或自己打" : paused ? "明天再來接著聊" : done ? "這段聊完了" : "等我說完…"} disabled={!ask || busy} aria-label="輸入你的回答" />
+                  <button className="dins" type="submit" disabled={!ask || busy || !text.trim()}>送出</button>
+                </form>
+                <div className="dinn">
+                  <span>{done ? "這段聊完了，整理出來的結果在「我的保障」，也可以到上方「我的分析」看。" : `嗨 ${name}，這裡的對話只有你和你之後選的顧問看得到。`}</span>
+                  {/* 4-y：預約入口全程常駐，不用聊完；前面講的一起帶給顧問（10/15 縮成一行小字，不佔對話高度） */}
+                  {!paused && <a className="dadv" href="/advisors" title="不用聊完也可以先約——你到目前講的都會一起帶給顧問">想直接問人？<b>約顧問</b> ›</a>}
+                </div>
+              </div>
             </>
           )}
-          <form className="dinp" onSubmit={submitText} autoComplete="off" hidden={!!list}>
-            <input className="dinf" value={text} onChange={e => setText(e.target.value)} maxLength={1000}
-              placeholder={ask ? "上面挑一個，或自己打" : paused ? "明天再來接著聊" : done ? "這段聊完了" : "等我說完…"} disabled={!ask || busy} aria-label="輸入你的回答" />
-            <button className="dins" type="submit" disabled={!ask || busy || !text.trim()}>送出</button>
-          </form>
-          <div className="dinn" hidden={!!list}>{done ? "這段聊完了。右邊是整理出來的結果，也可以到上方「我的分析」看。" : `嗨 ${name}，這裡的對話只有你和你之後選的顧問看得到。`}</div>
         </div>
 
         <aside className={`dright ${tab === "panel" ? "" : "dhide"}`}>

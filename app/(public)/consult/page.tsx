@@ -5,6 +5,10 @@ import { hasAnyRequiredConsent, hasRequiredConsent } from "@/lib/consents";
 import { ConsultChat } from "@/components/public/ConsultChat";
 import { aiMock } from "@/lib/consult/mock";
 import { MockBanner } from "@/components/public/MockBanner";
+import type { Viewport } from "next";
+
+// 一屏聊天：手機底部輸入列要避開 iPhone 主畫面指示條（viewport-fit=cover，env(safe-area-inset-bottom) 才有值）
+export const viewport: Viewport = { viewportFit: "cover" };
 
 /*
  * AI 諮詢入口。proxy 只做樂觀的 cookie 檢查，這裡在伺服器端再確認兩件事：

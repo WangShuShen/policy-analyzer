@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * 驗收截圖（派工 10/15）：對開發版拍每個驗收項目的畫面，手機 390×844／平板 820×1180／電腦 1440×900，整頁 JPEG 70。
- * 每張自動檢查：橫向捲動、超出畫面右邊、手機可點元件小於 40×40、客戶端出現「三商」、主控台錯誤。只記錄不修。
+ * 每張自動檢查：橫向捲動、超出畫面右邊、手機可點元件小於 40×40、客戶端出現「三商」、主控台錯誤、/consult 第一屏（不捲動）看不到輸入框。只記錄不修。
  * 輸出 <驗收ID>-<序號>-<mobile|tablet|desktop>.jpg ＋ manifest.json（驗收清單頁讀這份）。
  *
  * 用法（跑法也寫在 docs/RELEASE.md）：開發版是真 AI，存摺讀取要真檔案，所以平常對本機（模擬 AI＋wt-a 資料庫）拍：
@@ -128,6 +128,19 @@ function hiddenByScrollers() {
   return extra;
 }
 
+// 諮詢頁（10/15 顧問實測）：不捲動的第一屏就要看得到輸入框和送出，不然客戶找不到在哪裡打字
+function consultFirstScreen() {
+  const out = [], H = window.innerHeight;
+  for (const [sel, name] of [[".dinf", "輸入框"], [".dins", "送出鈕"]]) {
+    const el = document.querySelector(sel);
+    if (!el) { out.push(`諮詢頁找不到${name}`); continue; }
+    const r = el.getBoundingClientRect();
+    if (!r.height || getComputedStyle(el).visibility === "hidden") out.push(`諮詢頁的${name}沒顯示`);
+    else if (r.top < 0 || r.bottom > H) out.push(`諮詢頁第一屏看不到${name}（在 ${Math.round(r.top)}–${Math.round(r.bottom)}px，畫面高 ${H}px，要捲動才找得到）`);
+  }
+  return out;
+}
+
 // ── 每張的自動檢查（在頁面裡跑） ──
 function pageChecks({ mobile, customer, allowSanshang }) {
   const W = document.documentElement.clientWidth, out = [];
@@ -204,6 +217,7 @@ async function shoot(id, label, spec) {
       if (spec.print) await page.emulateMedia({ media: "print" });
       await sleep(300);
       issues.push(...await page.evaluate(pageChecks, { mobile: vp === "mobile", customer: spec.role === "客戶" || spec.role === "未登入", allowSanshang: !!spec.allowSanshang }));
+      if (/^\/consult(\?|$)/.test(spec.path ?? "")) issues.push(...await page.evaluate(consultFirstScreen));
       // 內層捲動的區塊：把視窗拉高讓它長開（版面照原本的 CSS 排，只是螢幕變長），檢查在拉高前就做完了
       const extra = spec.noExpand ? 0 : await page.evaluate(hiddenByScrollers);
       if (extra > 4) { await page.setViewportSize({ width: size.width, height: Math.min(size.height + extra, 8000) }); await sleep(600); }
