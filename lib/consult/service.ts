@@ -8,6 +8,7 @@ import { buildAnalysis, publicView, saveSnapshotIfChanged, type AnalysisView } f
 import { liveContent } from "@/lib/content/store";
 import { liveSlot, liveStep } from "./live";
 import { view as passbookView } from "@/lib/passbook/service";
+import { UPLOAD_PATH } from "./paths";
 import { capReached } from "@/lib/admin/usage";
 
 /*
@@ -98,7 +99,7 @@ function historyOf(msgs: store.StoredMessage[]): Line[] {
 async function persistEvents(convId: string, events: FlowEvent[], tag: string): Promise<void> {
   // content_version_id 記「哪一組後台內容＋哪一步」（I3：每段對話記錄它用的內容版本）
   for (const e of events) {
-    if (e.type === "ai") await store.addMessage(convId, "assistant", { kind: "ai", html: e.html }, { stepId: e.stepId, versionTag: tag });
+    if (e.type === "ai") await store.addMessage(convId, "assistant", { kind: "ai", html: e.html, ...(e.link ? { link: e.link } : {}) }, { stepId: e.stepId, versionTag: tag });
     else if (e.type === "trend") await store.addMessage(convId, "assistant", { kind: "trend", title: e.title, body: e.body, forYou: e.forYou }, { stepId: e.stepId, versionTag: tag });
     else if (e.type === "panel") await store.addMessage(convId, "assistant", { kind: "panel", key: e.key }, { stepId: e.stepId, versionTag: tag });
   }
@@ -107,11 +108,27 @@ async function persistEvents(convId: string, events: FlowEvent[], tag: string): 
 /** 往下走到下一個需要使用者的地方，存事件與進度 */
 async function runForward(userId: string, convId: string, st: FlowState): Promise<FlowState> {
   const lc = await liveContent();
-  const r = advance(st, lc);
-  await persistEvents(convId, r.events, lc.tag);
-  const next = { ...st, cursor: r.cursor };
-  await store.saveState(userId, convId, next, r.pending.kind === "done");
-  return next;
+  let next = st;
+  for (;;) {
+    const r = advance(next, lc);
+    await persistEvents(convId, r.events, lc.tag);
+    next = { ...next, cursor: r.cursor };
+    // 已經傳過存摺（例如先在我的分析傳了）→ 不再叫他傳一次，直接往下（4-at）
+    if (r.pending.kind === "upload" && await skipUploadIfDone(userId, convId)) { next = passUpload(next); continue; }
+    await store.saveState(userId, convId, next, r.pending.kind === "done");
+    return next;
+  }
+}
+
+/** 傳過存摺（沒讀失敗）就記一句「你已經傳過了」＋「要換一份重新上傳」，回傳 true 讓對話跳過上傳那一步 */
+async function skipUploadIfDone(userId: string, convId: string): Promise<boolean> {
+  const { upload, counts } = await passbookView(userId);
+  if (!upload || upload.status === "failed") return false;
+  const n = counts.total - counts.removed - counts.others;
+  await store.addMessage(convId, "assistant", { kind: "note",
+    text: upload.status === "done" ? `📎 你已經傳過保險存摺了（${n} 張），我們直接看現況` : "📎 你已經傳過保險存摺了，還在整理，我們直接看現況",
+    link: { href: UPLOAD_PATH, text: "要換一份重新上傳" } });
+  return true;
 }
 
 async function snapshot(userId: string, convId: string): Promise<Snapshot> {
@@ -142,6 +159,12 @@ export async function open(userId: string, convId?: string | null): Promise<Snap
   if (convId) {
     const conv = await store.getConversation(userId, convId);
     if (!conv) throw new Error("找不到這段對話");
+    // 停在上傳那一步、但已經從別的地方傳過了（4-at：我的分析）→ 回來時直接往下
+    if (conv.status !== "done") {
+      const st = await store.loadState(conv);
+      const at = advance(st, await liveContent());
+      if (at.pending.kind === "upload" && await skipUploadIfDone(userId, conv.id)) await runForward(userId, conv.id, passUpload({ ...st, cursor: at.cursor }));
+    }
     return snapshot(userId, conv.id);
   }
   const conv = await store.createConversation(userId);

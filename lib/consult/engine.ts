@@ -23,7 +23,7 @@ export interface FlowState {
 }
 
 export type FlowEvent =
-  | { type: "ai"; html: string; stepId: string }
+  | { type: "ai"; html: string; stepId: string; link?: { href: string; text: string } }
   | { type: "trend"; title: string; body: string; forYou: string; stepId: string }
   | { type: "panel"; key: string; stepId: string }
   | { type: "phase"; index: number }
@@ -47,7 +47,7 @@ export function advance(state: FlowState, lc?: LiveContent): { events: FlowEvent
     const s = lc ? liveStep(lc, STEPS[i]) : STEPS[i];      // 有後台發布版就用發布版（w1b-06）
     if (!applies(s, state)) continue;
     switch (s.t) {
-      case "ai": events.push({ type: "ai", html: s.h, stepId: s.id }); break;
+      case "ai": events.push({ type: "ai", html: s.h, stepId: s.id, ...(s.link ? { link: s.link } : {}) }); break;
       case "trd": {
         const t = lc ? liveTrend(lc, String(s.k), TRENDS[String(s.k)]) : TRENDS[String(s.k)];
         if (t) events.push({ type: "trend", title: t[0], body: t[1], forYou: t[2], stepId: s.id });

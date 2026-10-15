@@ -15,10 +15,13 @@ export type ConversationRow = typeof conversations.$inferSelect;
 /** 對話內容的種類（加密後存在 messages.content_enc） */
 export type MessageContent =
   | { kind: "user"; text: string }
-  | { kind: "ai"; html: string; chips?: string[]; ask?: string; mark?: "clarify" | "want_ask" }   // chips：4-ai 需求點引導時 AI 產生的選項（可能含健康資訊，跟著內容一起加密）；ask：這一句在問哪個需求點；mark：開場這類固定題，這一句是「聽不懂」或「你想問什麼」（下一句要接著處理）
+  | { kind: "ai"; html: string; chips?: string[]; ask?: string; mark?: "clarify" | "want_ask"; link?: MessageLink }   // chips：4-ai 需求點引導時 AI 產生的選項（可能含健康資訊，跟著內容一起加密）；ask：這一句在問哪個需求點；mark：開場這類固定題，這一句是「聽不懂」或「你想問什麼」（下一句要接著處理）
   | { kind: "trend"; title: string; body: string; forYou: string }
   | { kind: "panel"; key: string }
-  | { kind: "note"; text: string };
+  | { kind: "note"; text: string; link?: MessageLink };
+
+/** 訊息下面的按鈕／小連結（4-at：去上傳保險存摺、要換一份重新上傳）；只放站內固定路徑，不放使用者或 AI 給的網址 */
+export interface MessageLink { href: string; text: string }
 
 export interface StoredMessage { id: string; role: string; content: MessageContent; createdAt: string }
 export interface StoredFact { key: string; display: string; number: number | null; confidence: string; health: boolean; updatedAt: string }

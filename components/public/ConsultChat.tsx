@@ -268,7 +268,9 @@ const DPH = ["聊出需求", "看現況", "補強建議"];
 function Bubble({ m }: { m: Msg }) {
   const c = m.content;
   if (c.kind === "user") return <div className="acm me">{c.text}</div>;
-  if (c.kind === "ai") return <div className="acm ai" dangerouslySetInnerHTML={{ __html: safeHtml(c.html) }} />;
+  if (c.kind === "ai") return c.link
+    ? <div className="acm ai"><span dangerouslySetInnerHTML={{ __html: safeHtml(c.html) }} /><br /><a className="askadvb" href={c.link.href} style={{ display: "inline-flex", marginTop: 8 }}>{c.link.text}</a></div>
+    : <div className="acm ai" dangerouslySetInnerHTML={{ __html: safeHtml(c.html) }} />;
   if (c.kind === "trend") return (
     <div className="trd dfx">
       <div className="trdh">📈 醫療現況</div>
@@ -277,7 +279,7 @@ function Bubble({ m }: { m: Msg }) {
       <div className="trdp" dangerouslySetInnerHTML={{ __html: safeHtml(c.forYou) }} />
     </div>
   );
-  if (c.kind === "note") return <div className="dnote">{c.text}</div>;
+  if (c.kind === "note") return <div className="dnote">{c.text}{c.link && <> · <a href={c.link.href} style={{ color: "var(--brand-ink)", display: "inline-flex", alignItems: "center", minHeight: 40 }}>{c.link.text}</a></>}</div>;
   return null;   // panel 顯示在右欄
 }
 

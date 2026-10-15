@@ -76,11 +76,17 @@ const S = {
     expect: [[1, /約顧問/]], differ: [0, 1] },
   // 4-at：財務路線走到底——面談前就看得到「下一步」（去挑顧問），我的分析有上傳存摺的區塊
   T26: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "退休" }, ...Array.from({ length: 11 }, () => ({ any: true }))], bad: [],
-    panels: ["fsum"], customerSees: [/id="upload"/, /上傳你的保險存摺/, /去挑顧問/] },
+    panels: ["fsum"], customerSees: [/id="upload"/, /上傳你的保險存摺/, /去挑顧問/], expect: [[12, /我的分析」就能傳/]], links: ["/analysis#upload"] },
   // 4-at：健康路線跳過上傳 → 我的頁「去上傳」連到我的分析 → 從我的分析傳（不帶對話）→ 確認清單 → 結果出現在我的分析
   T27: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
     { any: true }, { any: true }, { skipUpload: true }], bad: [], customerSees: [/id="upload"/, /上傳你的保險存摺/], meSees: [/href="\/analysis#upload"/],
     analysisUpload: true },
+  // 4-at（主管 10/15）：先在我的分析傳了存摺，對話走到上傳那一步就跳過——說「你已經傳過了（N 張）」＋「要換一份重新上傳」
+  T28: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { preUpload: true }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
+    { any: true }, { any: true }], bad: [], expect: [[8, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
+  // 對話停在上傳那一步 → 跑去我的分析傳 → 回到對話：直接往下，不再叫他傳
+  T29: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
+    { any: true }, { any: true }, { preUpload: true }, { reopen: true }], bad: [], expect: [[9, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
@@ -114,6 +120,22 @@ async function runOne(id, round) {
   for (const m of snap.messages) log.push(`AI: ${strip(m.content.html ?? m.content.text)}`);
   for (const step of sc.steps) {
     const p = snap.pending;
+    if (step.reopen) {
+      log.push("(回到對話)");
+      snap = await (await fetch(`${BASE}/api/consult?id=${snap.conversation.id}`, { headers: H })).json();
+      const turn = [];
+      for (const m of snap.messages.slice(seen)) if (m.role === "assistant") { const text = strip(m.content.html ?? m.content.text ?? ""); turn.push({ text, chips: [] }); log.push(`AI: ${text}`); }
+      replies.push(turn);
+      seen = snap.messages.length;
+      continue;
+    }
+    if (step.preUpload) {
+      // 不經過對話、直接像在我的分析那樣傳（不帶對話 id），等確認清單、按確認、等讀完
+      log.push("(從我的分析上傳存摺)");
+      try { await uploadAndConfirm(H, null); } catch (e) { broken = String(e.message ?? e); break; }
+      replies.push([]);
+      continue;
+    }
     if (step.skipUpload) {
       if (p?.kind !== "upload") { broken = `走不到上傳存摺那一步（pending=${p?.kind}）`; break; }
       log.push("(先不傳)");
@@ -219,6 +241,10 @@ async function runOne(id, round) {
     log.push(`客戶端我的分析：${miss.length + hit.length ? "不符" : "符合"}`);
     if (miss.length + hit.length) customerFail = [...miss, ...hit].join("；");
   }
+  // 訊息下面的按鈕／小連結（4-at）
+  const links = snap.messages.flatMap(m => m.content.link ? [m.content.link.href] : []);
+  const linkFail = !broken && (sc.links ?? []).filter(h => !links.includes(h)).map(h => `對話裡沒有連到 ${h} 的按鈕`).join("；") || null;
+  const pendFail = !broken && sc.notPending && snap.pending?.kind === sc.notPending ? `對話還停在 ${sc.notPending}` : null;
   // 我的頁：上傳存摺的連結要連到我的分析的上傳區塊（4-at）
   let meFail = null;
   if (sc.meSees && !broken) {
@@ -231,25 +257,10 @@ async function runOne(id, round) {
   let anzUpFail = null;
   if (sc.analysisUpload && !broken) {
     try {
-      const up = await fetch(`${BASE}/api/passbook`, { method: "POST", headers: H,
-        body: JSON.stringify({ conversationId: null, content: { kind: "text", pages: ["情境測試用存摺：模擬模式下內容不會被讀，讀取會回固定的示範保單。上傳端要求至少 30 個字。"] } }) });
-      if (!up.ok) throw new Error(`從我的分析上傳失敗 HTTP ${up.status}`);
-      const waitFor = async (want) => {
-        for (let i = 0; i < 60; i++) {
-          const v = await (await fetch(`${BASE}/api/passbook`, { headers: H })).json();
-          if (v.upload?.status === want) return v;
-          if (v.upload?.status === "failed") throw new Error(`存摺讀取失敗：${v.upload.error}`);
-          await new Promise(r => setTimeout(r, 1000));
-        }
-        throw new Error(`等不到存摺狀態 ${want}`);
-      };
-      const v = await waitFor("confirming");
-      const mid = await (await fetch(`${BASE}/analysis`, { headers: { cookie } })).text();
-      if (!/我讀到|對嗎|確認/.test(mid)) throw new Error("我的分析沒有出現存摺確認清單");
-      const c = await fetch(`${BASE}/api/passbook/confirm`, { method: "POST", headers: H,
-        body: JSON.stringify({ uploadId: v.upload.id, items: v.policies.map(x => ({ id: x.id, keep: true })) }) });
-      if (!c.ok) throw new Error(`確認清單失敗 HTTP ${c.status}`);
-      await waitFor("done");
+      const v = await uploadAndConfirm(H, async () => {
+        const mid = await (await fetch(`${BASE}/analysis`, { headers: { cookie } })).text();
+        if (!/我讀到|對嗎|確認/.test(mid)) throw new Error("我的分析沒有出現存摺確認清單");
+      });
       const html = await (await fetch(`${BASE}/analysis`, { headers: { cookie } })).text();
       if (/上傳你的保險存摺/.test(html)) throw new Error("上傳完，我的分析還在叫他上傳");
       if (!/張保單合併/.test(html)) throw new Error("上傳完，我的分析看不到「你現在的保障」的結果");
@@ -286,6 +297,8 @@ async function runOne(id, round) {
     ...(sc.panels ?? []).filter(k => !shownPanels.includes(k)).map(k => `右欄沒有出現 ${k}`),
     ...(customerFail ? [customerFail] : []),
     ...(meFail ? [meFail] : []),
+    ...(linkFail ? [linkFail] : []),
+    ...(pendFail ? [pendFail] : []),
     ...(anzUpFail ? [anzUpFail] : []),
     ...(snapFail ? [snapFail] : []),
     ...(finFail ? [finFail] : []),
@@ -296,6 +309,29 @@ async function runOne(id, round) {
   const out = { id, round, ok: fails.length === 0 || deferred, deferred, fails, ms, log };
   fs.writeFileSync(path.join(OUT, `${id}-${round}.json`), JSON.stringify(out, null, 1));
   return out;
+}
+
+// 像在我的分析那樣上傳存摺（不帶對話）：等確認清單 →（beforeConfirm 檢查畫面）→ 全部保留 → 等讀完。模擬模式讀取回固定的示範保單
+async function uploadAndConfirm(H, beforeConfirm) {
+  const up = await fetch(`${BASE}/api/passbook`, { method: "POST", headers: H,
+    body: JSON.stringify({ conversationId: null, content: { kind: "text", pages: ["情境測試用存摺：模擬模式下內容不會被讀，讀取會回固定的示範保單。上傳端要求至少 30 個字。"] } }) });
+  if (!up.ok) throw new Error(`從我的分析上傳失敗 HTTP ${up.status}`);
+  const waitFor = async (want) => {
+    for (let i = 0; i < 60; i++) {
+      const v = await (await fetch(`${BASE}/api/passbook`, { headers: H })).json();
+      if (v.upload?.status === want) return v;
+      if (v.upload?.status === "failed") throw new Error(`存摺讀取失敗：${v.upload.error}`);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    throw new Error(`等不到存摺狀態 ${want}`);
+  };
+  const v = await waitFor("confirming");
+  if (beforeConfirm) await beforeConfirm();
+  const c = await fetch(`${BASE}/api/passbook/confirm`, { method: "POST", headers: H,
+    body: JSON.stringify({ uploadId: v.upload.id, items: v.policies.map(x => ({ id: x.id, keep: true })) }) });
+  if (!c.ok) throw new Error(`確認清單失敗 HTTP ${c.status}`);
+  await waitFor("done");
+  return v;
 }
 
 // 約顧問：同時跑好幾輪（T20、T22）會搶同一個時段，隨機挑一個；被搶走（409 slot_taken）就重新拿時段再約，最多 5 次。

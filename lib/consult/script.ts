@@ -8,11 +8,11 @@
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
  * skipIfSub：已經決定子路線就跳過（4-ai 10/13 顧問定案：財務版「最擔心」直接決定子路線，答「說不上來」才回頭問「從哪一塊開始看」）
  */
-export const SCRIPT_VERSION = "seed-v40-4ai-lock5";
+export const SCRIPT_VERSION = "seed-v41-4at-upload";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
-  | { id: string; t: "ai"; br?: string; sub?: string; skipIfSub?: boolean; h: string }
+  | { id: string; t: "ai"; br?: string; sub?: string; skipIfSub?: boolean; h: string; link?: { href: string; text: string } }   // link：句子下面放一個按鈕（4-at）
   | { id: string; t: "ask"; br?: string; sub?: string; skipIfSub?: boolean; keys: string[]; o: Option[] }   // keys：這題可能存的需求點（空＝反應題，不存）
   | { id: string; t: "trd" | "panel" | "ph" | "hl"; br?: string; sub?: string; k: string | number }
   | { id: string; t: "up"; br?: string; sub?: string }
@@ -1411,7 +1411,8 @@ export const STEPS: Step[] = [
   "id": "s135",
   "t": "ai",
   "br": "finance",
-  "h": "都可以。<b>面談前上傳也來得及</b>。<br>另外提醒一下：<b>我只給方向和數字，不推薦商品</b>——商品要有登錄的顧問對著條款跟你說，<b>你才知道它到底保什麼、不保什麼</b>。"
+  "h": "都可以。<b>面談前上傳也來得及</b>，在「我的分析」就能傳。<br>另外提醒一下：<b>我只給方向和數字，不推薦商品</b>——商品要有登錄的顧問對著條款跟你說，<b>你才知道它到底保什麼、不保什麼</b>。",
+  "link": { "href": "/analysis#upload", "text": "去上傳保險存摺" }
  },
  {
   "id": "s136",
