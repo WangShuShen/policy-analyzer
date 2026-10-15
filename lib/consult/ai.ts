@@ -37,7 +37,7 @@ const client = () => (_client ??= new Anthropic());
 // ── 抽取 ──────────────────────────────────────────────────────────
 
 const ExtractSchema = z.object({
-  kind: z.enum(["answer", "question", "book", "unclear"]),
+  kind: z.enum(["answer", "question", "book", "greeting", "want_to_ask", "unclear"]),
   option_index: z.number().int().nullable(),
   value_number: z.number().nullable(),
   display: z.string().nullable(),
@@ -48,7 +48,7 @@ export type Extraction = z.infer<typeof ExtractSchema>;
 const EXTRACT_SYSTEM = `你是保險需求訪談的資料整理員。使用者剛回答了一個問題，請判斷他的回答並結構化。
 
 規則：
-- kind：回答了這題 → "answer"；反過來問了一個保險知識問題 → "question"；想約顧問、想直接問真人 → "book"；看不出在回答什麼 → "unclear"
+- kind：回答了這題 → "answer"；反過來問了一個保險知識問題 → "question"；想約顧問、想直接問真人 → "book"；只是打招呼（你好、哈囉、嗨）→ "greeting"；說想自己問問題、但還沒講要問什麼（「我想問問題」「我有問題」「可以問你嗎」）→ "want_to_ask"；看不出在回答什麼 → "unclear"
 - 若回答明顯對應某個選項，option_index 填該選項的索引（從 0 開始），否則填 null
 - 若問題有數值（選項帶 n），且使用者講了具體數字，value_number 填換算後的數字（單位同選項的 n，例如「兩萬」→ 20000、「三十幾歲」→ 35），display 用跟選項 v 相同的寫法（例如「約 2 萬／月」）
 - 回答模糊、是範圍或自己猜的（「兩三萬吧」「差不多」「大概」）→ confidence "estimated"，數字取中間值；明確的 → "clear"
@@ -98,10 +98,14 @@ const CHAT_SYSTEM = `你是 RADIA 的 AI 諮詢小幫手，正在跟一位民眾
 客戶看到的畫面：對話框下方有選項按鈕，也可以自己打字；畫面底部固定有「約顧問」按鈕，任何時候都能約，不用聊完；右邊「你說的事」每一項都能點「改」。
 只輸出要給他看的話。你考慮過什麼、決定不說什麼，都不要寫出來。不要提到「系統」「下一題」「這一題」「最後問」「回到剛剛」——對他來說這是聊天，不是問卷。`;
 
+/** 他說想自己問、但還沒講問題（顧問 10/15：不能只叫他點選項）：固定句，下一句當成問題處理 */
+export const WANT_ASK_LINE = "好，你想問什麼？直接打就好。";
+
 export type ReplyMode =
   | { kind: "bridge"; question: string; userText: string; recorded: string; estimated: boolean }   // 回答了題目
   | { kind: "answer_question"; question: string; userText: string }                               // 岔題問知識
-  | { kind: "clarify"; question: string; userText: string; options: string[] }                    // 聽不懂
+  | { kind: "clarify"; question: string; userText: string; options: string[]; again: boolean }    // 聽不懂（again：連續第二次以上）
+  | { kind: "greet"; question: string; userText: string; options: string[] }                      // 只是打招呼
   | { kind: "book"; question: string; userText: string };                                          // 想約顧問
 
 function instruction(m: ReplyMode): string {
@@ -113,7 +117,11 @@ function instruction(m: ReplyMode): string {
     case "book":
       return `剛剛在聊：「${m.question}」\n他說：「${m.userText}」——他想約顧問。\n請說可以，下面的「約顧問」隨時都能約，他講過的都會一起帶給顧問。最多兩句，不要再問問題。`;
     case "clarify":
-      return `目前正在問：「${m.question}」\n可選的回答：${m.options.join("／")}\n他回答：「${m.userText}」，看不太出來是哪一種。請用一句話溫和地請他再說清楚一點，或從選項挑一個。`;
+      return m.again
+        ? `目前正在問：「${m.question}」\n可選的回答：${m.options.join("／")}\n他回答：「${m.userText}」，還是看不太出來。你上一句已經請他說清楚過，這次不要說「沒聽懂」、不要重複上一句：換個說法，請他用自己的話說說最近在意的事（或點選項），並提醒他也可以直接按下面的「約顧問」跟真人聊。最多兩句。`
+        : `目前正在問：「${m.question}」\n可選的回答：${m.options.join("／")}\n他回答：「${m.userText}」，看不太出來是哪一種。請用一句話溫和地請他再說清楚一點，或從選項挑一個。`;
+    case "greet":
+      return `目前正在問：「${m.question}」\n可選的回答：${m.options.join("／")}\n他只是打招呼：「${m.userText}」。\n請先回他招呼，再用一句話說可以從這幾個方向開始聊（用自己的話帶過選項），也可以直接打字說。不要說「沒聽懂」，最多兩句。`;
   }
 }
 

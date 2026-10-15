@@ -30,6 +30,8 @@ export const mockUsage = (): Usage => ({ model: "mock", tokensIn: 0, tokensOut: 
 
 const BOOK = /約顧問|找顧問|預約|真人|直接約/;
 const KNOWLEDGE = /是什麼|什麼是|差在哪|什麼意思|怎麼算/;
+const GREETING = /^(你好|妳好|您好|哈囉|嗨|hi|hello|hey|安安|早安|午安|晚安)[\s!！。.~～,，啊呀喔哦囉]*$/i;
+const WANT_ASK = /想(自己)?(詢)?問(一些|幾個|個)?問題|有(些|幾個|個)?問題|想自己問|自己詢問|可以問你|能問你|想問你/;
 const ESTIMATED = /大概|左右|差不多|吧|約/;
 
 /** 跟選項文字共有幾個雙字詞——判斷他打的字比較像哪個選項 */
@@ -54,6 +56,9 @@ export function mockExtractAnswer(ask: AskStep, text: string): Extraction {
   const none: Extraction = { kind: "unclear", option_index: null, value_number: null, display: null, confidence: "clear" };
   if (BOOK.test(text)) return { ...none, kind: "book" };
   if (KNOWLEDGE.test(text)) return { ...none, kind: "question" };
+  if (GREETING.test(text.trim())) return { ...none, kind: "greeting" };
+  if (WANT_ASK.test(text)) return { ...none, kind: "want_to_ask" };
+  if (/[？?]\s*$/.test(text) && !/\d/.test(text)) return { ...none, kind: "question" };   // 問句（「那投資型保單呢？」）不要被選項關鍵字吃掉
   const confidence = ESTIMATED.test(text) ? "estimated" : "clear";
   // 數字＋歲 → 年齡；數字＋萬 → 金額
   const age = text.match(/(\d{2})\s*歲/);
@@ -191,7 +196,10 @@ export function mockReply(m: ReplyMode): string {
   switch (m.kind) {
     case "bridge": return "了解，我記下來了。";
     case "answer_question": return `${ADVISOR_LINE}我們接著聊。`;
-    case "clarify": return "我沒有完全聽懂，可以從上面的選項挑一個嗎？";
+    case "clarify": return m.again
+      ? "可能是我問得不夠清楚。你可以用自己的話說說最近在意的事，或點下面的選項；想直接跟真人聊，下面的「約顧問」隨時都能約。"
+      : "我沒有完全聽懂，可以從上面的選項挑一個嗎？";
+    case "greet": return `你好！我們可以從這幾個開始聊：${m.options.join("、")}。點下面的選項，或直接打字跟我說都可以。`;
     case "book": return BOOK_LINE;
   }
 }
