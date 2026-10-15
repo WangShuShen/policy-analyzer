@@ -332,10 +332,10 @@
 /* ── 手機的點擊範圍（10/15 驗收截圖 #5）：可點的東西至少 40×40。外觀盡量不變，只撐高度與最小寬度 ── */
 @media (max-width: 640px) {
   .rd button, .rd select, .rd input:not([type=checkbox]):not([type=radio]):not([type=hidden]),
-  .rd a.brand, .rd a.cnb, .rd a.anb, .rd a.cvb, .rd a.askadvb, .rd a.abtn, .rd a.ccbtn, .rd a.actb, .rd a.lvt {
+  .rd a.brand, .rd a.cnb, .rd a.anb, .rd a.cvb, .rd a.askadvb, .rd a.abtn, .rd a.ccbtn, .rd a.actb, .rd a.lvt, .rd a.dadv {
     min-height: 40px !important; min-width: 40px; box-sizing: border-box;   /* !important：原型的 .rd .abtn／.ccbtn 等寫了 min-height 34～38，權重比這裡高 */
   }
-  .rd a.brand, .rd a.anb, .rd a.cvb, .rd a.askadvb, .rd a.abtn, .rd a.ccbtn, .rd a.actb { display: inline-flex; align-items: center; justify-content: center; }
+  .rd a.brand, .rd a.anb, .rd a.cvb, .rd a.askadvb, .rd a.abtn, .rd a.ccbtn, .rd a.actb, .rd a.dadv { display: inline-flex; align-items: center; justify-content: center; }
   .rd summary { padding-block: 11px; min-height: 40px; box-sizing: border-box; }
   .rd .upwhy { padding: 10px 6px; }
   .rd .alink, .rd .astar { padding: 8px 6px; }

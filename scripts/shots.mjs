@@ -217,7 +217,8 @@ async function shoot(id, label, spec) {
       if (spec.print) await page.emulateMedia({ media: "print" });
       await sleep(300);
       issues.push(...await page.evaluate(pageChecks, { mobile: vp === "mobile", customer: spec.role === "客戶" || spec.role === "未登入", allowSanshang: !!spec.allowSanshang }));
-      if (/^\/consult(\?|$)/.test(spec.path ?? "")) issues.push(...await page.evaluate(consultFirstScreen));
+      // 手機／平板點進「我的保障」分頁時輸入框本來就收起來，不做一屏檢查
+      if (/^\/consult(\?|$)/.test(spec.path ?? "") && !(spec.panelTab && vp !== "desktop")) issues.push(...await page.evaluate(consultFirstScreen));
       // 內層捲動的區塊：把視窗拉高讓它長開（版面照原本的 CSS 排，只是螢幕變長），檢查在拉高前就做完了
       const extra = spec.noExpand ? 0 : await page.evaluate(hiddenByScrollers);
       if (extra > 4) { await page.setViewportSize({ width: size.width, height: Math.min(size.height + extra, 8000) }); await sleep(600); }
@@ -294,7 +295,7 @@ try {
   s1 = await api(C1, "POST", "/api/consult/turn", { conversationId: conv1, stepId: s1.pending?.uploadStepId, uploaded: true }).catch(e => (console.log(`⚠️ 送出「上傳好了」失敗：${e.message}`), s1));
   const pv = await waitPassbook(C1, "confirming");
   const pbNote = "模擬示範保單；客戶自己的保單出現保險公司名稱不算問題";
-  await shoot("w1-05", `「我讀到 ${pv.policies.length} 張，對嗎？」確認畫面（諮詢右欄；${pbNote}）`, { path: `/consult?id=${conv1}`, role: "客戶", who: C1, allowSanshang: true, expect: /對嗎/,
+  await shoot("w1-05", `「我讀到 ${pv.policies.length} 張，對嗎？」確認畫面（諮詢右欄；${pbNote}）`, { path: `/consult?id=${conv1}`, role: "客戶", who: C1, allowSanshang: true, expect: /對嗎/, panelTab: true,
     act: async (page, vp) => { if (vp !== "desktop") await clickText(/我的保障/)(page); } });   // 手機、平板右欄收在「我的保障」分頁
   await shoot("w1-05", `「我讀到 ${pv.policies.length} 張，對嗎？」確認畫面（/analysis；${pbNote}）`, { path: "/analysis", role: "客戶", who: C1, allowSanshang: true, expect: /對嗎/ });
   await api(C1, "POST", "/api/passbook/confirm", { uploadId: pv.upload.id, items: pv.policies.map(x => ({ id: x.id, keep: true })) });
@@ -367,6 +368,8 @@ try {
   await api(A, "POST", `/api/advisor/clients/${C1.id}/crm`, { action: "follow_up", day: next, note: "驗收截圖：面談後一週追蹤" });
   await shoot("w2-02", "客戶頁互動紀錄、下次追蹤日", { path: `/clients/${C1.id}?tab=sum`, role: "顧問", who: A, expect: /驗收截圖/ });
   if (manual?.id ?? manual?.userId) await shoot("w2-02", "手動客戶的客戶頁", { path: `/clients/${manual.id ?? manual.userId}`, role: "顧問", who: A });
+  // 保證待辦有可以延後／關掉的項目（只有「提示」的話沒有 ⋯）：手動客戶的追蹤日設今天
+  await api(A, "POST", `/api/advisor/clients/${manual.userId}/crm`, { action: "follow_up", day: today, note: "驗收截圖：今天要追蹤" });
   await shoot("w2-03", "/todo 三組待辦", { path: "/todo", role: "顧問", who: A });
   await shoot("w2-03", "/todo ⋯ 選單展開", { path: "/todo", role: "顧問", who: A, act: async page => {
     const b = page.locator("button[data-menu]:visible").first(); await b.scrollIntoViewIfNeeded(); await b.click(); await sleep(600);
@@ -440,7 +443,15 @@ try {
   } else if (madeBookings.length) console.log(`\n⚠️ 沒有 DEV_DB_URL，這次建的測試預約沒有取消：${madeBookings.join(", ")}`);
   await db?.end();
   await browser?.close();
-  fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify(manifest, null, 2));
+  // --only：只換掉這幾項，其他項目沿用上一次的 manifest
+  const mf = path.join(OUT, "manifest.json");
+  if (ONLY && fs.existsSync(mf)) {
+    const prev = JSON.parse(fs.readFileSync(mf, "utf8"));
+    for (const id of Object.keys(manifest.items)) if (!ONLY.includes(id) && prev.items?.[id]) manifest.items[id] = prev.items[id];
+    for (const [id, v] of Object.entries(prev.items ?? {})) manifest.items[id] ??= v;
+    manifest.partial = { only: ONLY, at: manifest.takenAt, previousTakenAt: prev.takenAt };
+  }
+  fs.writeFileSync(mf, JSON.stringify(manifest, null, 2));
   const all = Object.values(manifest.items).flat().flatMap(x => Object.values(x.issues).flat());
   console.log(`\n拍了 ${shots} 張，manifest：${path.join(OUT, "manifest.json")}；自動檢查共 ${all.length} 個問題${failures.length ? `；拍攝失敗 ${failures.length} 張` : ""}`);
 }

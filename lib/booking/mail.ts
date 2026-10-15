@@ -61,7 +61,7 @@ export function layout(m: MailLayout): string {
   const sec = (html: string, top = 18) => `<tr><td style="padding:${top}px 28px 0">${html}</td></tr>`;
   const label = (t: string) => `<div style="font-size:12px;line-height:1.4;font-weight:600;letter-spacing:.04em;color:${C.muted};margin:0 0 4px">${t}</div>`;
   const btn = (href: string, text: string, full: boolean, solid = true) => `<table role="presentation" ${full ? 'width="100%" ' : ""}cellpadding="0" cellspacing="0" border="0"><tr><td align="center" ${solid ? `bgcolor="${C.brand}" ` : ""}style="border-radius:10px;${solid ? `background:${C.brand}` : `border:1.5px solid ${C.brand}`}">
-<a href="${href}" target="_blank" style="display:${full ? "block" : "inline-block"};padding:${full ? "16px 20px" : "10px 18px"};font-family:${FONT};font-size:${full ? 17 : 15}px;font-weight:700;line-height:1.2;color:${solid ? "#ffffff" : C.brandInk};text-decoration:none;border-radius:10px;text-align:center">${text}</a></td></tr></table>`;
+<a href="${href}" target="_blank" style="display:${full ? "block" : "inline-block"};padding:${full ? "16px 20px" : "12px 20px"};font-family:${FONT};font-size:${full ? 17 : 15}px;font-weight:700;line-height:1.2;color:${solid ? "#ffffff" : C.brandInk};text-decoration:none;border-radius:10px;text-align:center">${text}</a></td></tr></table>`;
 
   const adv = m.advisor ? (() => {
     const a = m.advisor;
