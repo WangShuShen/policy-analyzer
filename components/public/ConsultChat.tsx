@@ -6,6 +6,7 @@ import type { Snapshot } from "@/lib/consult/service";
 import { AnalysisPanels } from "./AnalysisPanels";
 import { PassbookUpload } from "./PassbookUpload";
 import { PAUSED_TEXT } from "@/lib/consult/paused";
+import { useVisualViewport } from "./useVisualViewport";
 
 /*
  * AI 諮詢畫面（原型 v37 的 chat：左對話／右「我的保障」、4-t／4-v）。
@@ -94,14 +95,7 @@ export function ConsultChat({ name }: { name: string }) {
     return () => { ro.disconnect(); root.style.removeProperty("--ddock-h"); };
   }, [snap === null, list]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 手機鍵盤彈出：iOS 的 100dvh 不會扣掉鍵盤 → 用 visualViewport 的高度，輸入框才會貼在鍵盤上面
-  useEffect(() => {
-    const vv = window.visualViewport, root = document.documentElement; if (!vv) return;
-    const fit = () => { root.style.setProperty("--vvh", `${Math.round(vv.height)}px`); if (vv.offsetTop > 0) window.scrollTo(0, 0); };
-    fit();
-    vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit);
-    return () => { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); root.style.removeProperty("--vvh"); };
-  }, []);
+  useVisualViewport();   // 手機鍵盤彈出：輸入框貼在鍵盤上面
 
   const send = async (body: Record<string, unknown>, optimistic?: string) => {
     if (!snap || busy) return;

@@ -61,6 +61,8 @@
 @container vp (max-width:599.98px){
   .rd .pad:has(> .dmo){padding-top:8px}
   .rd .dmo .dhead-t{display:none}
+  .rd .dmo .dhead.edu .dhead-t{display:flex}   /* 衛教模式：說明要看得到（沒有步驟條） */
+  .rd .dmo .dhead.edu h2.t{display:none}
   .rd .ddock .dopts{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;max-height:none;margin:0 -20px 8px;padding:0 20px 2px;scrollbar-width:none;overscroll-behavior-x:contain}
   .rd .ddock .dopts::-webkit-scrollbar{display:none}
   .rd .ddock .dopt{flex:none;max-width:78%;padding:9px 14px}
