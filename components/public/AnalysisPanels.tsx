@@ -1,6 +1,7 @@
 import { safeHtml } from "@/lib/consult/safeHtml";
 import type { AnalysisView, PanelData } from "@/lib/consult/analysis";
 import { PassbookConfirm, PassbookPoller, PassbookRetry } from "./PassbookParts";
+import { UPLOAD_PATH } from "@/lib/consult/paths";
 import { Evidence } from "./GapEvidence";
 
 /*
@@ -229,7 +230,7 @@ export function Panel({ d }: { d: PanelData }) {
         <div className="dsr"><span>還需要</span><b style={d.hasPolicies ? undefined : { color: "var(--amber)" }}>{d.hasPolicies ? "保單已整理" : "你的保單"}</b></div>
         <a className="btn dsbtn" href="/advisors">去挑顧問</a>
       </div>
-        <div className="dmark" style={{ marginTop: 11 }}>{d.hasPolicies ? <>顧問會先看過你的保單，面談就能直接談<b>補強前後的差異</b>。</> : <>面談前上傳保險存摺也來得及。<br />顧問會先看過，面談就能直接談<b>補強前後的差異</b>。</>}</div></div>
+        <div className="dmark" style={{ marginTop: 11 }}>{d.hasPolicies ? <>顧問會先看過你的保單，面談就能直接談<b>補強前後的差異</b>。</> : <>面談前<a href={UPLOAD_PATH} style={{ color: "var(--brand-ink)" }}>上傳保險存摺</a>也來得及。<br />顧問會先看過，面談就能直接談<b>補強前後的差異</b>。</>}</div></div>
     );
   }
 }
@@ -264,7 +265,7 @@ function GapsPanel({ rows }: { rows: Extract<PanelData, { key: "gaps"; rows: unk
 }
 
 /** 你現在的保障（原型 SEC.now 的十格）＋存摺的各個階段（讀取、確認、對版本） */
-function NowPanel({ d }: { d: Extract<PanelData, { key: "now" }> }) {
+export function NowPanel({ d }: { d: Extract<PanelData, { key: "now" }> }) {
   const pb = d.passbook;
   if (!pb?.upload) return <Pan t="你現在的保障"><div className="gprn">要有你的保單才算得出來。<b>上傳保險存摺</b>後，這裡會列出你現在有哪些保障。</div></Pan>;
   const st = pb.upload.status;

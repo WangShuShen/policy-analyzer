@@ -74,6 +74,13 @@ const S = {
   // 連續兩次聽不懂：第二次不能重複同一句，要提醒可以直接約顧問
   T25: { steps: [{ text: "嗯" }, { text: "隨便" }, { opt: "想看看我的保單夠不夠" }], bad: [],
     expect: [[1, /約顧問/]], differ: [0, 1] },
+  // 4-at：財務路線走到底——面談前就看得到「下一步」（去挑顧問），我的分析有上傳存摺的區塊
+  T26: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "退休" }, ...Array.from({ length: 11 }, () => ({ any: true }))], bad: [],
+    panels: ["fsum"], customerSees: [/id="upload"/, /上傳你的保險存摺/, /去挑顧問/] },
+  // 4-at：健康路線跳過上傳 → 我的頁「去上傳」連到我的分析 → 從我的分析傳（不帶對話）→ 確認清單 → 結果出現在我的分析
+  T27: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
+    { any: true }, { any: true }, { skipUpload: true }], bad: [], customerSees: [/id="upload"/, /上傳你的保險存摺/], meSees: [/href="\/analysis#upload"/],
+    analysisUpload: true },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
@@ -107,6 +114,20 @@ async function runOne(id, round) {
   for (const m of snap.messages) log.push(`AI: ${strip(m.content.html ?? m.content.text)}`);
   for (const step of sc.steps) {
     const p = snap.pending;
+    if (step.skipUpload) {
+      if (p?.kind !== "upload") { broken = `走不到上傳存摺那一步（pending=${p?.kind}）`; break; }
+      log.push("(先不傳)");
+      const r = await fetch(`${BASE}/api/consult/turn`, { method: "POST", headers: H,
+        body: JSON.stringify({ conversationId: snap.conversation.id, stepId: p.uploadStepId, skipUpload: true }) });
+      const j = await r.json();
+      if (!r.ok) { broken = `跳過上傳 HTTP ${r.status} ${JSON.stringify(j).slice(0, 200)}`; break; }
+      snap = j;
+      const turn = [];
+      for (const m of snap.messages.slice(seen)) if (m.role === "assistant") { const text = strip(m.content.html ?? m.content.text ?? ""); turn.push({ text, chips: [] }); log.push(`AI: ${text}`); }
+      replies.push(turn);
+      seen = snap.messages.length;
+      continue;
+    }
     if (step.upload) {
       if (p?.kind !== "upload") { broken = `走不到上傳存摺那一步（pending=${p?.kind}）`; break; }
       log.push("(上傳存摺)");
@@ -198,6 +219,43 @@ async function runOne(id, round) {
     log.push(`客戶端我的分析：${miss.length + hit.length ? "不符" : "符合"}`);
     if (miss.length + hit.length) customerFail = [...miss, ...hit].join("；");
   }
+  // 我的頁：上傳存摺的連結要連到我的分析的上傳區塊（4-at）
+  let meFail = null;
+  if (sc.meSees && !broken) {
+    const html = await (await fetch(`${BASE}/me`, { headers: { cookie } })).text();
+    const miss = sc.meSees.filter(re => !re.test(html));
+    log.push(`我的頁：${miss.length ? "不符" : "符合"}`);
+    if (miss.length) meFail = miss.map(re => `我的頁看不到 ${re}`).join("；");
+  }
+  // 從我的分析上傳（不帶對話）→ 確認清單 → 讀完後上傳區塊換成「你現在的保障」的結果（4-at）
+  let anzUpFail = null;
+  if (sc.analysisUpload && !broken) {
+    try {
+      const up = await fetch(`${BASE}/api/passbook`, { method: "POST", headers: H,
+        body: JSON.stringify({ conversationId: null, content: { kind: "text", pages: ["情境測試用存摺：模擬模式下內容不會被讀，讀取會回固定的示範保單。上傳端要求至少 30 個字。"] } }) });
+      if (!up.ok) throw new Error(`從我的分析上傳失敗 HTTP ${up.status}`);
+      const waitFor = async (want) => {
+        for (let i = 0; i < 60; i++) {
+          const v = await (await fetch(`${BASE}/api/passbook`, { headers: H })).json();
+          if (v.upload?.status === want) return v;
+          if (v.upload?.status === "failed") throw new Error(`存摺讀取失敗：${v.upload.error}`);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        throw new Error(`等不到存摺狀態 ${want}`);
+      };
+      const v = await waitFor("confirming");
+      const mid = await (await fetch(`${BASE}/analysis`, { headers: { cookie } })).text();
+      if (!/我讀到|對嗎|確認/.test(mid)) throw new Error("我的分析沒有出現存摺確認清單");
+      const c = await fetch(`${BASE}/api/passbook/confirm`, { method: "POST", headers: H,
+        body: JSON.stringify({ uploadId: v.upload.id, items: v.policies.map(x => ({ id: x.id, keep: true })) }) });
+      if (!c.ok) throw new Error(`確認清單失敗 HTTP ${c.status}`);
+      await waitFor("done");
+      const html = await (await fetch(`${BASE}/analysis`, { headers: { cookie } })).text();
+      if (/上傳你的保險存摺/.test(html)) throw new Error("上傳完，我的分析還在叫他上傳");
+      if (!/張保單合併/.test(html)) throw new Error("上傳完，我的分析看不到「你現在的保障」的結果");
+      log.push(`從我的分析上傳：確認 ${v.policies.length} 張 → 結果出現`);
+    } catch (e) { anzUpFail = String(e.message ?? e); }
+  }
   // 顧問端：客戶約了顧問之後，顧問的客戶頁「保障分析」要看得到案例區塊
   let advisorFail = null;
   if (sc.advisorSees && !broken) {
@@ -227,6 +285,8 @@ async function runOne(id, round) {
       ? [`第 ${sc.differ[0] + 1}、${sc.differ[1] + 1} 步回了一模一樣的話`] : []),
     ...(sc.panels ?? []).filter(k => !shownPanels.includes(k)).map(k => `右欄沒有出現 ${k}`),
     ...(customerFail ? [customerFail] : []),
+    ...(meFail ? [meFail] : []),
+    ...(anzUpFail ? [anzUpFail] : []),
     ...(snapFail ? [snapFail] : []),
     ...(finFail ? [finFail] : []),
     ...(advisorFail ? [advisorFail] : []),

@@ -13,6 +13,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { roleOf, verifyJWT } from "@/lib/jwt";
 import { hasRequiredConsent } from "@/lib/consents";
+import { UPLOAD_PATH } from "@/lib/consult/paths";
 
 /*
  * 我的頁面（原型 SCREENS.me）：客戶端唯一的家。分頁：預約與進度｜我的規劃｜我的保單｜我的顧問｜我的資料（4-ap：同意書第六條寫的入口）。
@@ -93,7 +94,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
             <div className="cct">面談前要做的</div>
             <div className="ccpl">
               <div className="ccpr"><div><b>{pbDone ? "✅ 已上傳保險存摺" : "⬜ 上傳保險存摺"}</b><span className="ccpn">{pbDone ? `${pb.upload!.createdAt.slice(0, 10)} 上傳 · ${n} 張整理完成` : "有你的保單，顧問才做得出專屬你的分析"}</span></div>
-                <Link className="ccbtn" style={{ padding: "5px 10px", minHeight: 0 }} href={pbDone ? "/me?tab=pol" : conv ? `/consult?id=${conv.id}` : "/consult"}>{pbDone ? "看結果" : "去上傳"}</Link></div>
+                <Link className="ccbtn" style={{ padding: "5px 10px", minHeight: 0 }} href={pbDone ? "/me?tab=pol" : UPLOAD_PATH}>{pbDone ? "看結果" : "去上傳"}</Link></div>
               <div className="ccpr"><div><b>{facts.length ? `✅ 已聊出 ${facts.length} 項狀況` : "⬜ 跟 AI 聊聊你的狀況"}</b><span className="ccpn">{conv?.status === "done" ? "都聊完了，顧問拿到的是完整的一份" : facts.length ? "聊到一半也沒關係，顧問會接著問剩下的" : "聊到哪、整理到哪"}</span></div>
                 <Link className="ccbtn" style={{ padding: "5px 10px", minHeight: 0 }} href={facts.length ? "/analysis" : "/consult"}>{facts.length ? "看我的分析" : "去聊聊"}</Link></div>
             </div>
@@ -131,7 +132,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         <div className="ccg">
           <div className="ccc wide">
             <div className="cct">你給我們的保單</div>
-            {!pb.upload ? <div className="ccd">還沒上傳。<Link href={conv ? `/consult?id=${conv.id}` : "/consult"} style={{ color: "var(--brand-ink)" }}>去上傳保險存摺</Link></div> : (
+            {!pb.upload ? <div className="ccd">還沒上傳。<Link href={UPLOAD_PATH} style={{ color: "var(--brand-ink)" }}>去上傳保險存摺</Link></div> : (
               <>
                 <div className="ccpl">{pb.policies.filter(p => p.matchStatus !== "removed").map(p => (
                   <div key={p.id} className="ccpr"><div><b>{p.productName}</b><span className="ccpn">{[p.amountText, p.effectiveDate && `${p.effectiveDate} 生效`, p.forOther && `被保險人：${p.forOther}`, p.matchStatus === "ai_read" ? "AI 初步讀取" : p.matchStatus === "pending" ? "還在確認" : null].filter(Boolean).join(" · ")}</span></div></div>

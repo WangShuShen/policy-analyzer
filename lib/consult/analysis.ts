@@ -19,7 +19,8 @@ import type { FinalGapRow } from "@/lib/calc/gaps";
 
 export type PanelKey = "now" | "gaps" | "sum" | "route" | "exp" | "retgap" | "taxest" | "proc" | "taxsrc" | "survgap" | "xfer" | "edugap" | "fsum";
 
-const OPEN = new Set<PanelKey>(["now", "route", "exp", "taxest", "proc"]);
+// fsum（財務路線的「下一步」，有「去挑顧問」）是引導預約用的，面談前就開放（4-at）
+const OPEN = new Set<PanelKey>(["now", "route", "exp", "taxest", "proc", "fsum"]);
 // 我的分析：依「事實 → 判讀」排；鎖住的永遠在下面
 export const PAGE_ORDER: PanelKey[] = ["now", "route", "exp", "taxest", "proc", "gaps", "retgap", "taxsrc", "survgap", "xfer", "edugap", "sum", "fsum"];
 

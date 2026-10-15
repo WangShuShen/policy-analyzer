@@ -7,7 +7,9 @@ import { hasAnyRequiredConsent, hasRequiredConsent } from "@/lib/consents";
 import { getConversation, getFacts, getMessages, listConversations } from "@/lib/consult/store";
 import { buildAnalysis, publicView } from "@/lib/consult/analysis";
 import { view as passbookView } from "@/lib/passbook/service";
-import { AnalysisPanels } from "@/components/public/AnalysisPanels";
+import { AnalysisPanels, NowPanel } from "@/components/public/AnalysisPanels";
+import { AnalysisUpload } from "@/components/public/AnalysisUpload";
+import type { PassbookView } from "@/lib/passbook/service";
 import { ViewTracker } from "@/components/public/ViewTracker";
 
 /*
@@ -37,6 +39,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
   const cur = (id && withPanels.find(c => c.id === id)) || withPanels[0];
 
   if (!cur) {
+    const { stuck: _s, ...pb0 } = await passbookView(userId);
     return (
       <div className="cols"><div className="main">
         <div className="anzhd"><div style={{ flex: 1, minWidth: 0 }}>
@@ -46,6 +49,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
         <div className="anzempty"><div className="aet">還沒有分析</div>
           <p>先去跟 AI 聊聊你的狀況——<b>聊到哪、這裡就整理到哪</b>，不用一次聊完。</p>
           <div className="ccacts"><Link className="ccbtn pri" href="/consult">去諮詢</Link></div></div>
+        <UploadSection pb={pb0} conversationId={null} hasNow={false} />
       </div></div>
     );
   }
@@ -75,6 +79,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
         {conv.status !== "done" && <> · <span style={{ color: "var(--amber)" }}>還沒聊完</span></>}</span>
         <Link className="cvb" href={`/consult?id=${conv.id}`}>{conv.status !== "done" ? "回去接著聊" : "回到對話"}</Link></div>
 
+      <UploadSection pb={pb} conversationId={conv.id} hasNow={cur.shown.includes("now")} />
       <div className="anzbody">
         {facts.length > 0 && (
           <div className="dpan"><div className="dph"><span className="dpt">你說的事</span><span className="dpn">{facts.length} 項</span></div>
@@ -89,3 +94,22 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
 }
 
 const labelOf = factLabel;
+
+/**
+ * 上傳保險存摺（4-at）：信件、我的頁的「上傳保險存摺」都連到這裡（/analysis#upload）。
+ * 還沒傳或沒讀成功 → 上傳元件；傳了但這段對話沒有「你現在的保障」區塊（財務路線、還沒聊到）→ 在這裡顯示讀取／確認／結果；
+ * 對話有那個區塊 → 下面的區塊就是（沒讀成功的重傳也在裡面），這裡只留錨點
+ */
+function UploadSection({ pb, conversationId, hasNow }: { pb: Omit<PassbookView, "stuck">; conversationId: string | null; hasNow: boolean }) {
+  const st = pb.upload?.status;
+  if (!st || (st === "failed" && !hasNow)) return (
+    <div id="upload" className="dpan dfx" style={{ scrollMarginTop: 80 }}>
+      <div className="dph"><span className="dpt">上傳保險存摺</span>{st === "failed" && <span className="dpn">上次沒讀成功</span>}</div>
+      {st === "failed" && <div className="rd-err" style={{ marginTop: 0 }}>{pb.upload?.error ?? "存摺沒讀成功"}，可以再傳一次。</div>}
+      <AnalysisUpload conversationId={conversationId} />
+    </div>
+  );
+  if (hasNow) return <div id="upload" style={{ scrollMarginTop: 80 }} />;
+  const { lifeCover: _l, ...rest } = pb;
+  return <div id="upload" style={{ scrollMarginTop: 80 }}><NowPanel d={{ key: "now", passbook: rest }} /></div>;
+}
