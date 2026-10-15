@@ -1,6 +1,7 @@
 import { bookingIcs } from "./ics";
 import { sendNow, type OutMail } from "@/lib/notify/outbox";
 import { fmtRange, fmtTaipei } from "./slots";
+import { UPLOAD_PATH } from "@/lib/consult/paths";
 import type { BookingDetail } from "./service";
 
 /*
@@ -114,8 +115,8 @@ ${(m.foot ?? []).map(f => `<tr><td style="padding:12px 4px 0;font-size:12px;line
 </td></tr></table></body></html>`;
 }
 
-/** 信裡「上傳保險存摺」的連結（卡 F 之後改 /analysis#upload，改這裡就好） */
-export const UPLOAD_PATH = "/consult";
+/** 信裡「上傳保險存摺」的連結：跟網頁共用卡 F 的常數（決議 4-at：/analysis#upload） */
+export { UPLOAD_PATH };
 
 export const ICS_FOOT = "附件是日曆邀請（.ics），點開就能加入 Google／Apple／Outlook 日曆。";
 
