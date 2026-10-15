@@ -1,7 +1,7 @@
 import { advance, askAt, answerFromOption, applyAnswer, nearestOption, passUpload, stepAt,
   type Answer, type FlowEvent, type FlowState, type Pending } from "./engine";
 import { STEPS } from "./script";
-import { extractAnswer, reply, confirmLine, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction } from "./ai";
+import { extractAnswer, reply, confirmLine, WANT_ASK_LINE, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction } from "./ai";
 import { DECLINED, HEALTH_SLOTS, nextSlot, needsReady, slotOf, stillMissing } from "./needs";
 import * as store from "./store";
 import { buildAnalysis, publicView, saveSnapshotIfChanged, type AnalysisView } from "./analysis";
@@ -75,6 +75,12 @@ function lastChips(msgs: store.StoredMessage[]): string[] {
     if (c.kind === "ai") return c.chips ?? [];
   }
   return [];
+}
+
+/** 上一句 AI 是不是「聽不懂」或「你想問什麼」（他接著打的字要照這個處理）；中間隔了他的話或別的就不算 */
+function lastMark(msgs: store.StoredMessage[]): "clarify" | "want_ask" | undefined {
+  const m = msgs[msgs.length - 1];
+  return m?.role === "assistant" && m.content.kind === "ai" ? m.content.mark : undefined;
 }
 
 function withChips(p: Pending, msgs: store.StoredMessage[]): Pending {
@@ -198,6 +204,7 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
   const text = input.text.trim().slice(0, 1000);
   if (!text) throw new Error("請輸入內容");
   const question = lastQuestion(st.cursor, lc);
+  const prevMark = lastMark(await store.getMessages(convId));
   const { result: ex, usage: exUsage } = await extractAnswer(ask, question, text);
   const userMsgId = await store.addMessage(convId, "user", { kind: "user", text }, { usage: exUsage });
 
@@ -241,23 +248,31 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
     if (estimated && answer.fact) await store.addMessage(convId, "assistant", { kind: "ai", html: confirmLine(answer.fact.display) });
     await enterNeed(userId, convId, await runForward(userId, convId, applyAnswer(st, answer)), text,
       bookAtOpening ? { intent: "book" } : { extract: true, userMsgId });
+  } else if (ex.kind === "want_to_ask" && prevMark !== "want_ask") {
+    // 說想自己問、還沒講問題（顧問 10/15）：固定句，不用 AI；下一句當成問題
+    await store.addMessage(convId, "assistant", { kind: "ai", html: WANT_ASK_LINE, mark: "want_ask" });
+    await store.saveState(userId, convId, st, false);
   } else {
-    const mode = ex.kind === "question" ? { kind: "answer_question" as const, question, userText: text }
-      : ex.kind === "book" ? { kind: "book" as const, question, userText: text }
-      : { kind: "clarify" as const, question, userText: text, options: ask.o.map(o => o.x) };
+    const options = ask.o.map(o => o.x);
+    // 剛問過「你想問什麼」→ 這句就是他的問題（沒對到選項、也不是要約顧問的話）。衛教界線照舊，投資型照擋（reply 的審查）
+    const kind = prevMark === "want_ask" && ex.kind !== "book" ? "question" : ex.kind;
+    const mode = kind === "question" ? { kind: "answer_question" as const, question, userText: text }
+      : kind === "book" ? { kind: "book" as const, question, userText: text }
+      : kind === "greeting" ? { kind: "greet" as const, question, userText: text, options }
+      : { kind: "clarify" as const, question, userText: text, options, again: prevMark === "clarify" };
     const r = await reply(mode);
     await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
-    await saveReply(convId, r.html, r.usages, r.rewritten);
+    await saveReply(convId, r.html, r.usages, r.rewritten, undefined, undefined, mode.kind === "clarify" ? "clarify" : undefined);
     await store.saveState(userId, convId, st, false);   // 停在同一題，但更新最後互動時間
   }
   return snapshot(userId, convId);
 }
 
-async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean, chips?: string[], ask?: string) {
+async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean, chips?: string[], ask?: string, mark?: "clarify") {
   // 一句話可能重產過（合規攔截），用量加總記在這則訊息上（I6）
   const total = usages.reduce<Usage>((a, u) => ({ model: u.model, tokensIn: a.tokensIn + u.tokensIn, tokensOut: a.tokensOut + u.tokensOut, costMicroUsd: a.costMicroUsd + u.costMicroUsd }),
     { model: usages[0]?.model ?? "", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 });
-  await store.addMessage(convId, "assistant", chips ? { kind: "ai", html, chips, ...(ask ? { ask } : {}) } : { kind: "ai", html }, { usage: total, rewritten });
+  await store.addMessage(convId, "assistant", chips ? { kind: "ai", html, chips, ...(ask ? { ask } : {}) } : { kind: "ai", html, ...(mark ? { mark } : {}) }, { usage: total, rewritten });
 }
 
 // ── 需求點引導（4-ai）──────────────────────────────────────────────

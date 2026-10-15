@@ -66,6 +66,14 @@ const S = {
   // 4-ap：面談前客戶端不出現工具類型（投資型、變額……），只講路線；顧問端照樣看得到完整配置
   T22: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "說不上來" }, { opt: "30 幾" }, { opt: "願意承受波動" }], bad: [TOOL_WORDS],
     panels: ["route"], customerSees: [/建議路線/], customerNot: [TOOL_WORDS, /有時間漲回來|賺回來/], snapNot: TOOL_WORDS, advisorFin: TOOL_WORDS },
+  // 顧問 10/15 實測開場卡住：打「你好」「我想自己詢問問題」都只回「沒聽懂，從選項挑一個」。打完還要能接著點選項往下走
+  T23: { steps: [{ text: "你好" }, { opt: "想看看我的保單夠不夠" }], bad: [/聽懂|從上面的選項挑/],
+    expect: [[0, /保單|準備|錢|生病|照顧/]] },
+  T24: { steps: [{ text: "我想自己詢問問題" }, { text: "實支實付是什麼？" }, { text: "那投資型保單呢？" }, { opt: "想看看我的保單夠不夠" }],
+    bad: [/聽懂|從上面的選項挑/, TOOL_WORDS], expect: [[0, /你想問什麼/]] },
+  // 連續兩次聽不懂：第二次不能重複同一句，要提醒可以直接約顧問
+  T25: { steps: [{ text: "嗯" }, { text: "隨便" }, { opt: "想看看我的保單夠不夠" }], bad: [],
+    expect: [[1, /約顧問/]], differ: [0, 1] },
   // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
   T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
     facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
@@ -215,6 +223,8 @@ async function runOne(id, round) {
     ...sc.bad.filter(re => re.test(replyText)).map(re => `出現 ${re}`),
     ...COMMON_BAD.filter(re => re.test(allText)).map(re => `出現 ${re}`),
     ...(sc.expect ?? []).filter(([i, re]) => !re.test((replies[i] ?? []).map(x => x.text).join("\n"))).map(([i, re]) => `第 ${i + 1} 步的回覆應符合 ${re}`),
+    ...(sc.differ && !broken && strip((replies[sc.differ[0]] ?? []).map(x => x.text).join()) === strip((replies[sc.differ[1]] ?? []).map(x => x.text).join())
+      ? [`第 ${sc.differ[0] + 1}、${sc.differ[1] + 1} 步回了一模一樣的話`] : []),
     ...(sc.panels ?? []).filter(k => !shownPanels.includes(k)).map(k => `右欄沒有出現 ${k}`),
     ...(customerFail ? [customerFail] : []),
     ...(snapFail ? [snapFail] : []),
