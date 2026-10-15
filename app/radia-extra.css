@@ -45,9 +45,11 @@
 .rd .dadv{margin-left:auto;font-family:var(--ui);font-size:12px;color:var(--ink-2);text-decoration:none;white-space:nowrap;padding:8px 0}
 .rd .dadv b{color:var(--brand-ink);font-weight:700}
 .rd .dadv:hover b{text-decoration:underline;text-underline-offset:2px}
-/* 開發版回饋鈕：放在底部輸入列上面，不擋「送出」 */
-.rd:has(.ddock) .rd-fbbtn{bottom:calc(var(--ddock-h,0px) + 12px)!important}
-.rd:has(.ddock) .rd-fbbox{bottom:calc(var(--ddock-h,0px) + 60px)!important}
+/* 開發版回饋鈕：放在底部輸入列上面，不擋「送出」（手機照卡 A 的規則貼右邊中間，見檔尾） */
+@media (min-width:641px){
+  .rd:has(.ddock) .rd-fbbtn{bottom:calc(var(--ddock-h,0px) + 12px)!important}
+  .rd:has(.ddock) .rd-fbbox{bottom:calc(var(--ddock-h,0px) + 60px)!important}
+}
 @container vp (min-width:960px){
   .rd .pad:has(> .dmo){padding-top:18px}
   .rd .dmo .dsplit{flex-direction:row}
