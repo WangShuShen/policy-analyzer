@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Foot } from "@/components/radia/Foot";
 import type { AdvisorCard } from "@/lib/booking/service";
-import type { Slot } from "@/lib/booking/slots";
+import { fmtTaipei, type Slot } from "@/lib/booking/slots";
 
 /*
  * 選時段（原型 SCREENS.slots）。
@@ -47,7 +47,7 @@ export function SlotPicker({ advisor, slots, reschedule }: { advisor: AdvisorCar
     <div className="cols"><div className="main">
       <div className="titlerow"><svg className="ill i34" viewBox="0 0 48 48" aria-hidden="true"><use href="#i-cal" /></svg>
         <div><h2 className="t" style={{ marginBottom: 4 }}>什麼時候方便？</h2>
-          <p className="sub">{advisor.name} 顧問 · 最長約 2 小時{reschedule && <><br />改時間：原本約在 <b>{new Date(reschedule.startsAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })}</b>，挑一個新的</>}</p></div></div>
+          <p className="sub">{advisor.name} 顧問 · 最長約 2 小時{reschedule && <><br />改時間：原本約在 <b>{fmtTaipei(reschedule.startsAt)/* 不用 toLocaleString：伺服器與瀏覽器的格式不同會 React #418（10/15 #3） */}</b>，挑一個新的</>}</p></div></div>
 
       {days.length === 0 ? (
         <div className="anzempty" style={{ marginTop: 16 }}><div className="aet">{advisor.name} 顧問接下來兩週都約滿了</div>

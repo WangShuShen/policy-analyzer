@@ -3,6 +3,9 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import db from "@/lib/db";
 import { advisors, advisorApplications, nowText } from "@/lib/schema";
+import { adminAudit } from "@/lib/admin/audit";
+import { appUrl, esc, layout } from "@/lib/booking/mail";
+import { enqueue, type OutMail } from "@/lib/notify/outbox";
 
 /*
  * 顧問申請／核准（w1b-03、C4）。
@@ -94,8 +97,29 @@ export async function listApplications(status?: string): Promise<ApplicationRow[
 }
 
 /** 管理者核准：申請改成 approved，同一個交易裡建立顧問帳號（登錄字號一起帶過去；公司、手機、自介不帶） */
+/** 審核結果通知申請人（客戶信件版型）。退回的備註是管理者內部寫的，不放進信裡 */
+export function applicationMail(kind: "approved" | "rejected", app: { email: string; name: string }): OutMail {
+  const ok = kind === "approved";
+  return {
+    to: app.email, kind: ok ? "advisor_apply_approved" : "advisor_apply_rejected",
+    subject: ok ? "RADIA 顧問申請通過了" : "RADIA 顧問申請結果",
+    html: layout(ok ? {
+      title: "你的顧問申請通過了",
+      preheader: "用申請時的 Google 帳號登入，就能開始設定你的顧問頁",
+      rows: [["申請人", esc(app.name)], ["帳號", esc(app.email)]],
+      intro: ["歡迎加入 RADIA。用申請時的 Google 帳號登入後，先到「我的顧問頁」填好介紹、可約時段和面談方式，客戶才看得到你。"],
+      cta: { href: `${appUrl()}/login`, text: "登入顧問後台" },
+    } : {
+      title: "這次的顧問申請沒有通過",
+      preheader: "謝謝你申請成為 RADIA 顧問",
+      rows: [["申請人", esc(app.name)], ["帳號", esc(app.email)]],
+      intro: ["謝謝你申請成為 RADIA 顧問。這次的申請沒有通過審核。", "資料有更新的話，歡迎之後再申請；有疑問可以直接回覆這封信。"],
+    }),
+  };
+}
+
 export async function approveApplication(id: string, adminId: string, note?: string): Promise<{ advisorId: string }> {
-  return db.transaction(async tx => {
+  const r = await db.transaction(async tx => {
     const [app] = await tx.select().from(advisorApplications)
       .where(and(eq(advisorApplications.id, id), eq(advisorApplications.status, "pending"))).limit(1).for("update");
     if (!app) throw new ApplyError("找不到這筆待審申請（可能已經處理過）");
@@ -106,14 +130,20 @@ export async function approveApplication(id: string, adminId: string, note?: str
     await tx.update(advisorApplications)
       .set({ status: "approved", reviewed_by: adminId, reviewed_at: nowText, review_note: note ?? null, advisor_id: advisorId })
       .where(eq(advisorApplications.id, id));
-    return { advisorId };
+    return { advisorId, app };
   });
+  // 稽核與通知信在交易成功後才做（10/15 #14）
+  await adminAudit(adminId, "approve_application", "advisor_application", id);
+  await enqueue([applicationMail("approved", r.app)]);
+  return { advisorId: r.advisorId };
 }
 
 export async function rejectApplication(id: string, adminId: string, note?: string): Promise<void> {
   const rows = await db.update(advisorApplications)
     .set({ status: "rejected", reviewed_by: adminId, reviewed_at: nowText, review_note: note ?? null })
     .where(and(eq(advisorApplications.id, id), eq(advisorApplications.status, "pending")))
-    .returning({ id: advisorApplications.id });
+    .returning({ id: advisorApplications.id, email: advisorApplications.email, name: advisorApplications.name });
   if (!rows.length) throw new ApplyError("找不到這筆待審申請（可能已經處理過）");
+  await adminAudit(adminId, "reject_application", "advisor_application", id);
+  await enqueue([applicationMail("rejected", rows[0])]);
 }

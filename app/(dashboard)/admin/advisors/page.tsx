@@ -160,7 +160,7 @@ export default function AdvisorsPage() {
             尚未新增任何顧問。點擊右上角「新增顧問」開始。
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-[#DFE4E1] bg-[#E2EFEB]/50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">姓名</th>
@@ -229,7 +229,7 @@ export default function AdvisorsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </div>
 

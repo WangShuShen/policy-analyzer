@@ -664,3 +664,17 @@ export const viewEvents = pgTable("view_events", {
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [index("view_events_user").on(t.user_id, t.page, t.created_at)]);
+
+// 對話以外的 AI 呼叫費用（10/15 #15：存摺讀取）。算進後台監控的全站費用、依模型統計；
+// 不算進客戶每人每天上限（N7 只看 messages）——讀存摺是平台要做的事，不該吃掉客戶的諮詢額度
+export const aiUsage = pgTable("ai_usage", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),                     // passbook_read
+  ref_id: text("ref_id"),                           // 哪一份（passbook_uploads.id）
+  user_id: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  model: text("model").notNull(),
+  tokens_in: integer("tokens_in").notNull().default(0),
+  tokens_out: integer("tokens_out").notNull().default(0),
+  cost_micro_usd: bigint("cost_micro_usd", { mode: "number" }).notNull().default(0),
+  created_at: createdAt(),
+}, t => [index("ai_usage_created").on(t.created_at)]);

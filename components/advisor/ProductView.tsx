@@ -25,6 +25,8 @@ export function ProductView({ planCode, isAdmin }: { planCode: string; isAdmin: 
   const [info, setInfo] = useState<Info | null>(null);
   const [docIds, setDocIds] = useState<Record<Doc, string | null>>({ clause: null, rate: null, spec: null });
   const [loaded, setLoaded] = useState(false);
+  const [catalogName, setCatalogName] = useState<string | null>(null);
+  const [unindexed, setUnindexed] = useState(false);   // 商品清單有、資料庫還沒有這張（沒條款、沒公式）
   const [g, setG] = useState<Grid | null>(null);
   const [gErr, setGErr] = useState("");
   const [amount, setAmount] = useState("");
@@ -39,11 +41,13 @@ export function ProductView({ planCode, isAdmin }: { planCode: string; isAdmin: 
 
   useEffect(() => {
     fetch(`/api/products?planCode=${encodeURIComponent(planCode)}`).then(r => r.json()).then(d => {
-      setMeta(d.product ?? null); setInfo(d.analysis ?? null);
+      setMeta(d.product ?? null); setInfo(d.analysis ?? null); setCatalogName(d.catalog?.name ?? null);
       setDocIds({ clause: d.pdfDriveId ?? null, rate: d.rateDriveId ?? null, spec: d.specDriveId ?? null });
-    }).catch(() => {}).finally(() => setLoaded(true));
+      // 資料庫完全沒有這張：不打試算 API（只會 404），直接說還沒整理（10/15 #4）
+      if (!d.product && !d.analysis && !d.pdfDriveId && !d.rateDriveId && !d.specDriveId) setUnindexed(true);
+      else calc(true);
+    }).catch(() => calc(true)).finally(() => setLoaded(true));
     setFav(loadFav().some(f => f.planCode === planCode));
-    calc(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planCode]);
 
@@ -74,7 +78,7 @@ export function ProductView({ planCode, isAdmin }: { planCode: string; isAdmin: 
     return () => { if (url) URL.revokeObjectURL(url); };
   }, [loaded, doc, docIds, planCode]);
 
-  const name = g?.productName ?? meta?.product_name ?? planCode;
+  const name = g?.productName ?? meta?.product_name ?? catalogName ?? planCode;
   const company = g?.company ?? meta?.company ?? "";
 
   const toggleFav = () => {
@@ -123,7 +127,13 @@ export function ProductView({ planCode, isAdmin }: { planCode: string; isAdmin: 
       )}
       {reErr && <div className="rd-err">{reErr}</div>}
 
-      {g ? (
+      {unindexed ? (
+        <div className="gate" style={{ marginTop: 16 }}>
+          <svg className="ill i56" viewBox="0 0 48 48" style={{ margin: "0 auto" }} aria-hidden="true"><use href="#i-doc" /></svg>
+          <div className="gt">這張還沒整理</div>
+          <div className="gd">商品清單有這張，但條款、費率、說明還沒收進資料庫，也還沒有給付資料。<br />要馬上看十格全險圖，到<Link href="/analyze" style={{ color: "var(--brand-ink)" }}>保單分析</Link>上傳條款讓 AI 讀。</div>
+        </div>
+      ) : g ? (
         <>
           {!g.reviewed && <div className="anapend" style={{ marginTop: 12 }}><span className="dotp" />這份給付公式是 <b>AI 讀出來的，還沒審核</b>——送規劃書前要先核（P4）</div>}
           <div className="acnext">
@@ -152,6 +162,7 @@ export function ProductView({ planCode, isAdmin }: { planCode: string; isAdmin: 
         </div>
       )}
 
+      {!unindexed && <>
       <div className="rd-docbar">
         <div className="ah2" style={{ margin: 0 }}>條款原文</div>
         <div className="seg">{DOCS.map(([k, l]) => (
@@ -163,6 +174,7 @@ export function ProductView({ planCode, isAdmin }: { planCode: string; isAdmin: 
         {pdf.status === "none" && <div className="rd-docmsg">這張商品還沒有{DOCS.find(([k]) => k === doc)![1]} PDF。</div>}
         {pdf.status === "ok" && pdf.url && <iframe src={pdf.url} title={`${name} ${DOCS.find(([k]) => k === doc)![1]}`} />}
       </div>
+      </>}
       <div className="acsrc">本資料由 AI 分析、管理者人工審核，僅供參考；實際給付以保單條款為準。</div>
     </>
   );

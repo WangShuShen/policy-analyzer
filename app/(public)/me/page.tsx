@@ -44,7 +44,6 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
           <div className="eyebrow">我的頁面</div>
           <h2 className="t" style={{ marginBottom: 4 }}>{title}</h2>
         </div>
-        <span className="ccst pros">準客戶 · 尚未成交</span>
       </div>
       <div className="actabs" style={{ marginTop: 14 }}>
         {METABS.map(([k, t]) => <Link key={k} href={`/me?tab=${k}`} className={`actb ${tab === k ? "on" : ""}`} style={{ textDecoration: "none" }}>{t}</Link>)}
@@ -102,7 +101,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
               <div className="gate">
                 <svg className="ill i56" viewBox="0 0 48 48" style={{ margin: "0 auto" }} aria-hidden="true"><use href="#i-doc" /></svg>
                 <div className="gt">{met ? "顧問正在準備規劃書" : "面談時一起打開"}</div>
-                <div className="gd">{met ? <>{adv!.name} 顧問送出後就會出現在這裡。<br />保額和商品要由他當面說明。</> : <>顧問正在看你的保單、準備規劃書。<br /><b>面談時他會跟你一起看</b>——保額和商品要由他當面說明，談完就一直留在這裡。</>}</div>
+                <div className="gd">{met ? <><b>面談時 {adv!.name} 顧問會跟你一起看</b>，談完就一直留在這裡。<br />保額和商品要由他當面說明。</> : <>顧問正在看你的保單、準備規劃書。<br /><b>面談時他會跟你一起看</b>——保額和商品要由他當面說明，談完就一直留在這裡。</>}</div>
               </div>
             </>
           )}

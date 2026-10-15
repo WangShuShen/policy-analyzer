@@ -23,7 +23,8 @@ const BRAND = "#2F7A6B";
 const card = "bg-white border border-[#DFE4E1] rounded-2xl shadow-sm";
 const th = "text-left px-4 py-2.5 text-xs font-semibold text-stone-500";
 const td = "px-4 py-2 text-stone-700";
-const money = (u: number) => `$${u < 1 ? u.toFixed(3) : u.toFixed(2)}`;
+// 不到 0.001 的（測試時把上限調到 0.000001）照實顯示，不要變成「$0.000 超過 $0.000」（10/15 截圖 #7）
+const money = (u: number) => `$${u >= 1 ? u.toFixed(2) : u >= 0.001 || u === 0 ? u.toFixed(3) : u.toFixed(6)}`;
 const ago = (iso: string) => { const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 60 ? "剛剛" : s < 3600 ? `${Math.floor(s / 60)} 分鐘前` : `${Math.floor(s / 3600)} 小時前`; };
 const taipei = (utc: string) => new Date(utc.includes("T") ? utc : `${utc.replace(" ", "T")}Z`).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 const device = (ua: string | null) => !ua ? "—" : /iPhone|Android.*Mobile/.test(ua) ? "手機" : /iPad|Android/.test(ua) ? "平板" : "電腦";

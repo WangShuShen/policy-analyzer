@@ -60,7 +60,7 @@ export default function CatalogPage() {
       </div>
       {tab === "other"
         ? <div className="statusline" style={{ margin: "0 0 12px" }}><span className="dotp" /><span>別家商品<strong>只能查，不能提案</strong>——用途是看懂客戶手上那張。</span></div>
-        : <div className="statusline" style={{ margin: "0 0 12px" }}><span className="dotp" /><span>三商美邦的條款還在整理（W1b），<strong>目前只有商品清單與銷售期間</strong>。</span></div>}
+        : <div className="statusline" style={{ margin: "0 0 12px" }}><span className="dotp" /><span>我們家的條款還在整理（W1b），<strong>目前只有商品清單與銷售期間</strong>。</span></div>}
       <div className="ah2" style={{ margin: "0 0 8px" }}>{loading ? "搜尋中…" : `${total.toLocaleString()} 筆${total > rows.length ? `，先列出 ${rows.length} 筆（打更多字縮小範圍）` : ""}`}</div>
       <div className="acres">
         {rows.map(r => (

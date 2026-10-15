@@ -134,6 +134,13 @@
       "when": 1791998433083,
       "tag": "0018_skip_passbook_reminder_existing",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792054389278,
+      "tag": "0019_ai_usage",
+      "breakpoints": true
     }
   ]
 }

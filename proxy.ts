@@ -47,15 +47,16 @@ export async function proxy(req: NextRequest) {
 
   // 客戶端頁面沒登入時回同意書，不是回顧問登入頁
   const isConsult = pathname === "/consult" || pathname.startsWith("/consult/") || pathname === "/analysis" || pathname === "/advisors" || pathname.startsWith("/advisors/") || pathname.startsWith("/booked/") || pathname === "/me";
+  // 根網址沒登入：一般人是客戶，帶到落地頁；顧問從 /login 進（10/15 流程盤點 #13）
   if (!token) {
-    return NextResponse.redirect(isConsult ? new URL("/welcome/consent", req.url) : loginRedirect());
+    return NextResponse.redirect(pathname === "/" ? new URL("/welcome", req.url) : isConsult ? new URL("/welcome/consent", req.url) : loginRedirect());
   }
 
   const payload = await verifyJWT(token);
 
   if (!payload) {
     // 登入過期：客戶端頁面回客戶的入口，不要把客戶丟到「顧問專用」的登入頁
-    const res = NextResponse.redirect(isConsult ? new URL("/welcome/consent", req.url) : loginRedirect());
+    const res = NextResponse.redirect(pathname === "/" ? new URL("/welcome", req.url) : isConsult ? new URL("/welcome/consent", req.url) : loginRedirect());
     res.cookies.set("auth_token", "", { maxAge: 0, path: "/" });
     return res;
   }

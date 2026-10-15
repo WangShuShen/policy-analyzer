@@ -4,10 +4,12 @@
  * 每張自動檢查：橫向捲動、超出畫面右邊、手機可點元件小於 40×40、客戶端出現「三商」、主控台錯誤。只記錄不修。
  * 輸出 <驗收ID>-<序號>-<mobile|tablet|desktop>.jpg ＋ manifest.json（驗收清單頁讀這份）。
  *
- * 用法（跑法也寫在 docs/RELEASE.md）：
- *   DEV_DB_URL="$(npx -y neonctl connection-string main --project-id lingering-rain-26998425)" \
- *     node scripts/shots.mjs --pw <裝了 playwright 的資料夾> --out ../../100_Todo/projects/RADIA-驗收截圖
+ * 用法（跑法也寫在 docs/RELEASE.md）：開發版是真 AI，存摺讀取要真檔案，所以平常對本機（模擬 AI＋wt-a 資料庫）拍：
+ *   AI_MOCK=1 npx next start -p 3001   （先 npm run build）
+ *   DEV_DB_URL="$(node --env-file=.env.local -p process.env.DATABASE_URL)" \
+ *     node scripts/shots.mjs --base http://localhost:3001 --any-db --pw <裝了 playwright 的資料夾> --out ../../100_Todo/projects/RADIA-驗收截圖
  *   --base  預設 https://radia-dev-woad.vercel.app（上線版一律拒絕）
+ *   --env-label  manifest 的 env 欄位（預設：本機＝「本機（模擬 AI）」，其他＝「開發版」）
  *   --pw    playwright 不加進 repo 的 dependencies：在暫存資料夾 npm i playwright@1.60.0，這裡指那個資料夾
  *   --only  只拍某幾項，例：--only w1-04,w2-03（資料照樣全部現做）
  *
@@ -170,7 +172,8 @@ function pageChecks({ mobile, customer, allowSanshang }) {
 }
 
 // ── 拍一個畫面（三種尺寸） ──
-const manifest = { takenAt: new Date().toISOString(), commit: "", base: BASE, items: {} };
+// env：驗收清單上顯示，讓顧問知道對話內容是不是模擬的（主管 10/15：開發版是真 AI，截圖改對本機＋模擬 AI 拍）
+const manifest = { takenAt: new Date().toISOString(), commit: "", base: BASE, env: arg("env-label", LOCAL ? "本機（模擬 AI）" : "開發版"), items: {} };
 try { manifest.commit = execFileSync("git", ["rev-parse", "--short", "dev"], { encoding: "utf8" }).trim(); } catch { /* 不在 repo 裡跑 */ }
 const counters = {};
 let browser, shots = 0;
@@ -397,6 +400,8 @@ try {
     await shoot("w1b-10", `達到每日上限後的諮詢畫面（測試時暫時把上限調到 0.000001 美元，拍完已調回 ${saved.userDailyUsd}）`, { path: "/consult", role: "客戶", who: Ccap });
     await api(admin, "PUT", "/api/admin/monitor", saved);
     saved = null;
+    // 調低上限時這位測試客戶會留下「被擋／超過上限」的警報，後台監控會出現假警報（10/15 #7），拍完清掉
+    if (db) await db.query("delete from usage_alerts where user_id = $1", [Ccap.id]);
   }
   manifest.items["w1-10"] ??= [];
   manifest.items["w1b-08"] ??= [];

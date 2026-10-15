@@ -1,11 +1,11 @@
 import db, { nowText } from "@/lib/db";
+import { factLabel } from "@/lib/factLabel";
 import { auditLogs, bookings, conversations, users } from "@/lib/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getFacts, getMessages, titleOf, type StoredFact, type StoredMessage } from "@/lib/consult/store";
 import { view as passbookView } from "@/lib/passbook/service";
 import { buildAnalysis, publicView, type AnalysisView } from "@/lib/consult/analysis";
 import { audit, computeGapsForUser } from "@/lib/consult/gaps";
-import { STEPS } from "@/lib/consult/script";
 import type { FinalGapRow } from "@/lib/calc/gaps";
 import { ensurePlatformClients, isMyClient, lastInteractionDays, relationsOf } from "@/lib/crm/store";
 import { taipeiDay } from "@/lib/admin/usage";
@@ -92,10 +92,7 @@ export async function listClients(advisorId: string, now = Date.now()): Promise<
 /** 有預約過，或是手動建的（w2-01） */
 export const advisorHasClient = isMyClient;
 
-const labelOf = (key: string) => {
-  for (const s of STEPS) if (s.t === "ask" && s.keys.includes(key)) return s.o.find(o => o.key === key)?.label ?? key;
-  return key;
-};
+const labelOf = factLabel;
 
 export interface ClientDetail {
   user: { id: string; name: string; email: string; joinedAt: string };

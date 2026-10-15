@@ -285,3 +285,25 @@
 .rd .crm-tl li.cust::before{border-color:var(--amber)}
 .rd .crm-tl time{display:block;font-family:var(--ui);font-size:11.5px;color:var(--muted)}
 .rd .crm-panel .abtn:disabled,.rd .crm-new .abtn:disabled,.rd .amenu .ami:disabled{opacity:.45;cursor:not-allowed}
+
+/* ── 手機的點擊範圍（10/15 驗收截圖 #5）：可點的東西至少 40×40。外觀盡量不變，只撐高度與最小寬度 ── */
+@media (max-width: 640px) {
+  .rd button, .rd select, .rd input:not([type=checkbox]):not([type=radio]):not([type=hidden]),
+  .rd a.brand, .rd a.cnb, .rd a.anb, .rd a.cvb, .rd a.askadvb, .rd a.abtn, .rd a.ccbtn, .rd a.actb, .rd a.lvt {
+    min-height: 40px; min-width: 40px; box-sizing: border-box;
+  }
+  .rd a.brand, .rd a.anb, .rd a.cvb, .rd a.askadvb, .rd a.abtn, .rd a.ccbtn, .rd a.actb { display: inline-flex; align-items: center; justify-content: center; }
+  .rd summary { padding-block: 11px; }
+  .rd .upwhy { padding: 10px 6px; }
+  .rd .alink, .rd .astar { padding: 8px 6px; }
+  /* 勾選框：點旁邊的字也算（label 撐高） */
+  .rd label:has(> input[type=checkbox]), .rd label:has(> input[type=radio]) { min-height: 40px; }
+}
+
+/* 開發版回饋鈕（10/15 #6）：手機上不放右下角（會蓋住「預約顧問」這類按鈕），縮成只有圖示、貼在右邊中間 */
+@media (max-width: 640px) {
+  .rd .rd-fbbtn { top: 46%; bottom: auto !important; right: 0; width: 40px; height: 40px; padding: 0; justify-content: center;
+    border-radius: 10px 0 0 10px; border-right: 0; opacity: .85; }
+  .rd .rd-fbbtn span { display: none; }
+  .rd .rd-fbbox { bottom: auto !important; top: 12%; }
+}

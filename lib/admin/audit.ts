@@ -19,7 +19,23 @@ export const ACTION_LABEL: Record<string, string> = {
   undo_no_show: "撤銷沒出現",
   cancel_booking: "取消預約",
   view_audit_log: "查看查閱紀錄",
+  // 顧問管理（10/15 #14）：target_id 記顧問 id 或申請 id
+  create_advisor: "新增顧問",
+  delete_advisor: "刪除顧問",
+  update_advisor_license: "改登錄字號",
+  rename_advisor: "改顧問名稱",
+  grant_admin: "設為管理者",
+  revoke_admin: "取消管理者",
+  activate_advisor: "啟用顧問",
+  deactivate_advisor: "停用顧問",
+  approve_application: "核准顧問申請",
+  reject_application: "退回顧問申請",
 };
+
+/** 管理者的管理動作寫稽核（顧問管理、申請審核）。只記哪一筆，不記內容 */
+export async function adminAudit(adminId: string, action: string, targetType: string, targetId: string | null) {
+  await db.insert(auditLogs).values({ actor_id: adminId, actor_role: "admin", action, target_type: targetType, target_id: targetId });
+}
 
 export interface AuditFilter { actorId?: string; userId?: string; action?: string; from?: string; to?: string; limit?: number }
 

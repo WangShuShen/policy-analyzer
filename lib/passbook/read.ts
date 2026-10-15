@@ -76,7 +76,7 @@ const MOCK_PASSBOOK: ReadResult = {
 };
 
 export async function readPassbook(c: PassbookContent): Promise<{ result: ReadResult; usage: ReadUsage }> {
-  if (aiMock()) return { result: structuredClone(MOCK_PASSBOOK), usage: { model: "mock", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 } };
+  if (aiMock()) return { result: structuredClone(MOCK_PASSBOOK), usage: { model: "mock", tokensIn: 0, tokensOut: 0, costMicroUsd: 1 } };   // 1 微美元：同 consult 的 mockUsage，讓後台監控測得到
   const content: Anthropic.ContentBlockParam[] = c.kind === "text"
     ? [{ type: "text", text: c.pages.map((p, i) => `【第 ${i + 1} 頁】\n${p}`).join("\n\n") }]
     : c.images.map(img => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mime, data: img.data } }));

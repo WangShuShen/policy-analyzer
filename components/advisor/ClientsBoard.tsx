@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ClientRow } from "@/lib/advisor/clients";
+import { toTaipei } from "@/lib/booking/slots";
 
 /*
  * 客戶清單（原型 SCREENS.advclients 3383）。按狀態分組，不做大表格——新人一年二三十個客戶，不需要篩選排序。
@@ -14,17 +15,19 @@ const GROUPS: [string, string, ClientRow["group"][], string][] = [
   ["todo", "等我處理", ["todo"], "var(--dropped,var(--must))"], ["doing", "進行中", ["upcoming", "met"], "var(--brand)"],
   ["won", "已成交", ["won"], "var(--good,#0ca30c)"], ["lost", "沒成", ["lost", "closed"], "var(--muted)"],
 ];
-const ago = (s: string) => {
+// now 由伺服器傳進來、日期自己排版：用瀏覽器的 Date.now／toLocaleDateString 會跟伺服器算的不一樣 → React #418（10/15 #3）
+const md = (t: number) => { const [, m, d] = toTaipei(t).date.split("-").map(Number); return `${m}/${d}`; };
+const ago = (s: string, now: number) => {
   const t = Date.parse(s.length === 10 ? `${s}T00:00:00+08:00` : s.replace(" ", "T") + (s.includes("T") || s.endsWith("Z") ? "" : "Z"));
-  const d = (Date.now() - t) / 86400e3;
-  if (d < 0) return new Date(t).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric" });
+  const d = (now - t) / 86400e3;
+  if (d < 0) return md(t);
   if (d < 1) return "今天";
   if (d < 2) return "昨天";
   if (d < 30) return `${Math.floor(d)} 天前`;
-  return new Date(t).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric" });
+  return md(t);
 };
 
-export function ClientsBoard({ rows, newThisMonth }: { rows: ClientRow[]; newThisMonth: number }) {
+export function ClientsBoard({ rows, newThisMonth, now }: { rows: ClientRow[]; newThisMonth: number; now: number }) {
   const [q, setQ] = useState("");
   const [lostOpen, setLostOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -55,7 +58,7 @@ export function ClientsBoard({ rows, newThisMonth }: { rows: ClientRow[]; newThi
                 <div className="atx"><div className="at1"><b>{c.name}</b>　{c.status}</div>
                   {c.followUpOn && c.group !== "won" && c.group !== "lost" && <div className="at2">下次追蹤 {c.followUpOn.slice(5).replace("-", "/")}{c.followUpNote ? `：${c.followUpNote}` : ""}</div>}</div>
                 <span className="asrc">{c.source}</span>
-                <div className="ago">{ago(c.lastAt)}</div>
+                <div className="ago">{ago(c.lastAt, now)}</div>
                 <Link className="abtn" href={`/clients/${c.userId}`} style={{ textDecoration: "none" }}>開客戶頁</Link>
               </div>
             ))}

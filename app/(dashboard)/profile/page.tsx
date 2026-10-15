@@ -118,8 +118,8 @@ export default function ProfilePage() {
               <div><div className="nm">{p.name}</div><div className="sp">{p.specialties.length ? `擅長${p.specialties.join("、")}` : "保險顧問"}</div></div></div>
             <div className="quote">「{p.intro || "—"}」</div>
             <div className="advmeta">
-              <span className="chip hot">新加入</span>
-              <span className="chip">{p.rules.length ? "這週可約" : "未設定時段"}</span>
+              {p.response?.label && <span className="chip" title="系統依顧問實際回覆紀錄計算">{p.response.label}</span>}{/* 跟 AdvisorPicker 一樣：有標籤才顯示，新加入或太慢不顯示 */}
+              <span className="chip">{p.rules.length ? "未來 7 天可約" : "未設定時段"}</span>
               <span className="chip">{p.meetingLink && p.onsiteLocation ? "線上或面對面" : p.meetingLink ? "只接線上" : p.onsiteLocation ? "面對面" : "未設定面談方式"}</span>
               <span className="chip">{p.style}</span>
             </div>

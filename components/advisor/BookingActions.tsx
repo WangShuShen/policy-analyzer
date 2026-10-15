@@ -75,7 +75,7 @@ export function BookingActions({ bookingId, status, started, statusAt, when }: {
           <button className="abtn pri big" disabled={busy || !started} onClick={() => act("met")}>已面談，解鎖給客戶</button>
           <button className="abtn" disabled={busy || !started} onClick={() => act("no_show")}>客戶沒出現</button>
           {!started && <button className="abtn" disabled={busy} onClick={() => setCancelling(true)}>取消這次面談</button>}
-          {!started && <span className="pfhint" style={{ marginTop: 0, flexBasis: "100%" }}>面談開始後才能標記結果。客戶可以自己在面談前 2 小時以前改期或取消，改了你會收到通知。</span>}
+          {!started && <span className="pfhint" style={{ marginTop: 0, flexBasis: "100%" }}>面談開始前 15 分鐘起可以標記結果。客戶可以自己在面談前 2 小時以前改期或取消，改了你會收到通知。</span>}
         </>
       )}
       {msg && <span className="mtwarn" style={{ flexBasis: "100%" }}>{msg}</span>}

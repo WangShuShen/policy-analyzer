@@ -1,5 +1,5 @@
 import db, { nowText } from "@/lib/db";
-import { passbookUploads, clientPolicies, policies } from "@/lib/schema";
+import { aiUsage, passbookUploads, clientPolicies, policies } from "@/lib/schema";
 import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { encryptJson, decryptJson } from "@/lib/fieldCrypto";
 import { readPassbook, type PassbookContent, type PassbookPolicy, type ReadUsage } from "./read";
@@ -66,6 +66,9 @@ export async function processRead(uploadId: string): Promise<ReadUsage | null> {
   await setStatus(uploadId, "reading");
   try {
     const { result, usage } = await readPassbook(decryptJson<PassbookContent>(u.file_ref_enc));
+    // 費用記進 ai_usage：後台監控看得到，但不算進客戶每天上限（10/15 #15）。記失敗不影響讀存摺
+    await db.insert(aiUsage).values({ id: crypto.randomUUID(), kind: "passbook_read", ref_id: uploadId, user_id: u.user_id, model: usage.model,
+      tokens_in: usage.tokensIn, tokens_out: usage.tokensOut, cost_micro_usd: usage.costMicroUsd }).catch(e => console.error("[passbook] usage", e));
     if (!result.is_passbook) { await setStatus(uploadId, "failed", "這份檔案看起來不是保險存摺，要不要再確認一下？"); return usage; }
     if (!result.policies.length) { await setStatus(uploadId, "failed", "存摺裡沒有讀到任何保單，可能是頁面不完整"); return usage; }
     await db.delete(clientPolicies).where(eq(clientPolicies.upload_id, uploadId));    // 重跑時不重複

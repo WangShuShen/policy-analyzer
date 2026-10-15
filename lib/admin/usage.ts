@@ -71,13 +71,16 @@ export async function usageSummary(now = Date.now()): Promise<UsageSummary> {
   const th = await getThresholds();
 
   const day = sql`to_char((m.created_at::timestamp + interval '8 hours'), 'YYYY-MM-DD')`;
+  // 全站費用＝對話（messages）＋對話以外的 AI 呼叫（ai_usage：存摺讀取）。每人排行與每天上限只看 messages（10/15 #15）
+  const all = sql`(select created_at, cost_micro_usd, model, tokens_in, tokens_out from messages where cost_micro_usd > 0
+    union all select created_at, cost_micro_usd, model, tokens_in, tokens_out from ai_usage where cost_micro_usd > 0)`;
   const daily = await db.execute<{ day: string; c: Num; calls: Num }>(sql`
     select ${day} as day, sum(m.cost_micro_usd) as c, count(*) as calls
-    from messages m where m.cost_micro_usd > 0 and m.created_at >= ${since30}
+    from ${all} m where m.created_at >= ${since30}
     group by 1 order by 1`);
   const byModel = await db.execute<{ model: string; c: Num; calls: Num; tin: Num; tout: Num }>(sql`
     select coalesce(m.model, '（未記）') as model, sum(m.cost_micro_usd) as c, count(*) as calls, sum(m.tokens_in) as tin, sum(m.tokens_out) as tout
-    from messages m where m.cost_micro_usd > 0 and m.created_at >= ${monthStart}
+    from ${all} m where m.created_at >= ${monthStart}
     group by 1 order by 2 desc`);
   const top = await db.execute<{ user_id: string; name: string | null; email: string | null; c: Num; calls: Num }>(sql`
     select c.user_id, u.name, u.email, sum(m.cost_micro_usd) as c, count(*) as calls
@@ -93,7 +96,7 @@ export async function usageSummary(now = Date.now()): Promise<UsageSummary> {
   const monthRows = dailyRows.filter(r => r.day.startsWith(month));
   // 月初超過 30 天前的部分（30 天圖表外）另外補算
   const monthTotal = monthStart < since30
-    ? await db.execute<{ c: Num; calls: Num }>(sql`select sum(cost_micro_usd) as c, count(*) as calls from messages where cost_micro_usd > 0 and created_at >= ${monthStart}`)
+    ? await db.execute<{ c: Num; calls: Num }>(sql`select sum(m.cost_micro_usd) as c, count(*) as calls from ${all} m where m.created_at >= ${monthStart}`)
     : null;
   return {
     today, month, thresholds: th,
@@ -112,7 +115,9 @@ export async function usageSummary(now = Date.now()): Promise<UsageSummary> {
 export async function checkAlerts(now = Date.now()): Promise<{ kind: string; period: string; userId: string; usd: number }[]> {
   const today = taipeiDay(now), month = today.slice(0, 7);
   const th = await getThresholds();
-  const [m] = (await db.execute<{ c: Num }>(sql`select sum(cost_micro_usd) as c from messages where cost_micro_usd > 0 and created_at >= ${utcText(`${month}-01`)}`)).rows;
+  // 月預算看全站費用（含存摺讀取）；單人上限只看對話
+  const [m] = (await db.execute<{ c: Num }>(sql`select sum(c) as c from (select sum(cost_micro_usd) as c from messages where cost_micro_usd > 0 and created_at >= ${utcText(`${month}-01`)}
+    union all select sum(cost_micro_usd) from ai_usage where cost_micro_usd > 0 and created_at >= ${utcText(`${month}-01`)}) x`)).rows;
   const users = (await db.execute<{ user_id: string; c: Num; test: boolean }>(sql`
     select c.user_id, sum(m.cost_micro_usd) as c, coalesce(bool_or(u.email like '%.invalid'), false) as test
     from messages m join conversations c on c.id = m.conversation_id left join users u on u.id = c.user_id
@@ -142,12 +147,13 @@ async function recordAlerts(candidates: Candidate[], th: Thresholds) {
   return fired;
 }
 
+const usdText = (u: number) => u >= 0.01 || u === 0 ? u.toFixed(2) : String(Number(u.toPrecision(2)));
 async function sendAlerts(fired: { kind: string; period: string; usd: number }[], th: Thresholds) {
   const admins = await db.select({ id: advisors.id, email: advisors.email }).from(advisors).where(and(eq(advisors.is_admin, 1), eq(advisors.is_active, 1)));
   // 通知與信件只放金額與連結，不放客戶姓名（站內通知原則：點進去、登入、留紀錄才看得到）
   const lines = fired.map(f => f.kind === "monthly_budget"
-    ? `${f.period} 的 AI 費用已達 ${f.usd.toFixed(2)} 美元，超過每月預算 ${th.monthlyBudgetUsd} 美元`
-    : `有一位使用者 ${f.period} 的 AI 費用 ${f.usd.toFixed(2)} 美元，超過每人每天上限 ${th.userDailyUsd} 美元，今天的 AI 已暫停`);
+    ? `${f.period} 的 AI 費用已達 ${usdText(f.usd)} 美元，超過每月預算 ${th.monthlyBudgetUsd} 美元`
+    : `有一位使用者 ${f.period} 的 AI 費用 ${usdText(f.usd)} 美元，超過每人每天上限 ${th.userDailyUsd} 美元，今天的 AI 已暫停`);
   const title = fired.some(f => f.kind === "monthly_budget") ? "AI 費用超過每月預算" : "有使用者 AI 用量異常";
   const base = process.env.APP_URL ?? "";
   for (const a of admins) await notify({ type: "advisor", id: a.id }, { kind: "ai_usage_alert", title, body: lines.join("\n"), link: "/admin/monitor" });

@@ -6,6 +6,7 @@ import { companies, products as productsTable, policies } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { requireIdentity } from "@/lib/auth";
 import { consume } from "@/lib/entitlements";
+import { searchCatalog } from "@/lib/catalog/search";
 
 export async function GET(req: NextRequest) {
   const auth = await requireIdentity(req);
@@ -49,8 +50,9 @@ export async function GET(req: NextRequest) {
       const specDriveId = docIds.specId;
 
       if (result.length === 0) {
-        // products 表沒有，但 policies 可能有已審核分析
-        return NextResponse.json({ product: null, analysis, pdfDriveId, rateDriveId, specDriveId });
+        // products 表沒有，但 policies 可能有已審核分析。商品清單（保發中心）有收的話帶名稱，頁面標題才不會只是代號（10/15 #4）
+        const c = (["mine", "other"] as const).map(t => searchCatalog(planCode, t, 5).rows.find(r => r.planCode === planCode)).find(Boolean);
+        return NextResponse.json({ product: null, catalog: c ? { name: c.name, company: c.company } : null, analysis, pdfDriveId, rateDriveId, specDriveId });
       }
       const r = result[0];
       return NextResponse.json({

@@ -21,7 +21,7 @@ export function AdvisorPicker({ cards }: { cards: AdvisorCard[] }) {
               <div><div className="nm">{a.name}</div><div className="sp">{a.specialties.length ? `擅長${a.specialties.join("、")}` : "保險顧問"}</div></div></div>
             <div className="quote">「{a.intro}」</div>
             <div className="advmeta">
-              <span className={`chip ${a.slotsThisWeek > 0 ? "hot" : ""}`}>{a.slotsThisWeek > 0 ? `本週還有 ${a.slotsThisWeek} 個時段` : "本週已約滿"}</span>
+              <span className={`chip ${a.slotsThisWeek > 0 ? "hot" : ""}`}>{a.slotsThisWeek > 0 ? `未來 7 天還有 ${a.slotsThisWeek} 個時段` : "未來 7 天已約滿"}</span>
               <span className="chip">{a.modes.length === 2 ? "線上或面對面" : a.modes[0] === "online" ? "只接線上" : "面對面"}</span>
               {a.style && <span className="chip">{a.style}</span>}
               {a.responseLabel && <span className="chip" title="系統依顧問實際回覆紀錄計算">{a.responseLabel}</span>}{/* W2 w2-05：取代年資，保護新人（原型 2371） */}

@@ -149,7 +149,7 @@ export function buildBookingEmails(b: BookingDetail, opts: { hasPassbook: boolea
         ],
         intro: ["面談前請先看過客戶的諮詢紀錄與需求點（要登入 RADIA 顧問工作台）。"],
         cta: { href: `${appUrl()}/clients/${b.client.id}`, text: "打開客戶頁" },
-        notes: { title: "面談結束後", items: ["在客戶頁標記結果：已面談／沒出現／改期", "<b>標記「已面談」</b>，客戶端的完整分析才會解鎖"] },
+        notes: { title: "面談結束後", items: ["在客戶頁標記結果：已面談／沒出現（客戶可以自己在面談前 2 小時以前改期，改了你會收到通知）", "<b>標記「已面談」</b>，客戶端的完整分析才會解鎖"] },
         foot: [ICS_FOOT],
       }),
       attachments: [ics(`RADIA 面談：${b.client.name ?? "客戶"}`, `${when}｜${where.label}${where.plain ? `｜${where.plain}` : ""}`)],

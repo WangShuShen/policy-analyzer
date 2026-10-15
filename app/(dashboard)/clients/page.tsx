@@ -10,7 +10,7 @@ import { taipeiDay } from "@/lib/admin/usage";
 export default async function ClientsPage() {
   const { advisorId } = await requireAdvisorPage();
   const rows = await listClients(advisorId);
-  const month = taipeiDay(Date.now()).slice(0, 7);
+  const now = Date.now(), month = taipeiDay(now).slice(0, 7);
   const firstSeen = (r: (typeof rows)[number]) => taipeiDay(Date.parse(r.createdAt.replace(" ", "T") + "Z")).slice(0, 7);
-  return <ClientsBoard rows={rows} newThisMonth={rows.filter(r => firstSeen(r) === month).length} />;
+  return <ClientsBoard rows={rows} newThisMonth={rows.filter(r => firstSeen(r) === month).length} now={now} />;
 }

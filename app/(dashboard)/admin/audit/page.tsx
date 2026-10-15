@@ -69,7 +69,7 @@ export default function AuditPage() {
         ) : rows.length === 0 ? (
           <p className="p-6 text-sm text-stone-400 text-center">這個條件下沒有紀錄。</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-[#DFE4E1] bg-[#E2EFEB]/50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">時間（台灣）</th>
@@ -94,7 +94,7 @@ export default function AuditPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </div>
       {rows && rows.length >= 200 && <p className="text-xs text-stone-400">只列最新 200 筆，請用上面的條件縮小範圍。</p>}

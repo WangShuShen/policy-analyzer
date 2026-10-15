@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdvisor } from "@/lib/auth";
-import { advisorCanSee, audit, computeGapsForUser, overrideGap } from "@/lib/consult/gaps";
+import { audit, computeGapsForUser, overrideGap } from "@/lib/consult/gaps";
+import { isMyClient } from "@/lib/crm/store";
 
 /*
  * 顧問核對缺口分級（實作設計 G1）。
- * 只能看、只能改自己有預約的客戶；每次查看與改級都寫稽核紀錄（N12）。
+ * 只能看、只能改自己的客戶（isMyClient：預約過或手動建的；10/15 手動客戶按改級原本 403）；每次查看與改級都寫稽核紀錄（N12）。
  */
 type Params = { params: Promise<{ userId: string }> };
 
@@ -15,7 +16,7 @@ const LEVELS = ["must", "boost", "ok", "later"] as const;
 async function guard(req: NextRequest, userId: string) {
   const a = await requireAdvisor(req);
   if (a instanceof NextResponse) return a;
-  if (!(await advisorCanSee(a.advisorId, userId))) return NextResponse.json({ error: "這位客戶沒有預約你" }, { status: 403 });
+  if (!(await isMyClient(a.advisorId, userId))) return NextResponse.json({ error: "這位客戶不是你的客戶" }, { status: 403 });
   return a;
 }
 

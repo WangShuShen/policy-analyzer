@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { factLabel } from "@/lib/factLabel";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifyJWT, roleOf } from "@/lib/jwt";
@@ -7,7 +8,6 @@ import { getConversation, getFacts, getMessages, listConversations } from "@/lib
 import { buildAnalysis, publicView } from "@/lib/consult/analysis";
 import { view as passbookView } from "@/lib/passbook/service";
 import { AnalysisPanels } from "@/components/public/AnalysisPanels";
-import { STEPS } from "@/lib/consult/script";
 import { ViewTracker } from "@/components/public/ViewTracker";
 
 /*
@@ -88,7 +88,4 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
   );
 }
 
-const labelOf = (key: string) => {
-  for (const s of STEPS) if (s.t === "ask" && s.keys.includes(key)) return s.o.find(o => o.key === key)?.label ?? key;
-  return key;
-};
+const labelOf = factLabel;
