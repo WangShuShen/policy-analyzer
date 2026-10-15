@@ -114,3 +114,7 @@ export function fmtTaipei(iso: string): string {
   const t = toTaipei(iso); const [, mm, dd] = t.date.split("-").map(Number);
   return `${mm} 月 ${dd} 日（週${WEEKDAY[t.weekday]}）${t.time}`;
 }
+/** 「10 月 16 日（週五）12:00–14:00」（信件用起訖，顧問 10/15） */
+export function fmtRange(startsAt: string, endsAt: string): string {
+  return `${fmtTaipei(startsAt)}–${toTaipei(endsAt).time}`;
+}

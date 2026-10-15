@@ -355,6 +355,7 @@ export const bookings = pgTable("bookings", {
   reminded_24h_at: text("reminded_24h_at"),         // 面談前一天提醒寄出時間（B3；有值就不再寄）
   reminded_1h_at: text("reminded_1h_at"),           // 面談前 1 小時提醒
   passbook_reminded_at: text("passbook_reminded_at"),   // W2 w2-06：預約後 24 小時還沒傳存摺的提醒，寄過就記時間（防重複寄）；功能上線前的預約是 'skipped:before-w2'（migration 0018，不補寄）
+  unlock_mailed_at: text("unlock_mailed_at"),         // 決議 4-at #2：標「已面談」解鎖時寄客戶「完整分析已經打開」，寄過就記時間；撤銷後再解鎖不重寄
   created_at: createdAt(),
   updated_at: updatedAt(),
 }, t => [

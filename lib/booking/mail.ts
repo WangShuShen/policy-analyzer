@@ -1,6 +1,6 @@
 import { bookingIcs } from "./ics";
 import { sendNow, type OutMail } from "@/lib/notify/outbox";
-import { fmtTaipei } from "./slots";
+import { fmtRange, fmtTaipei } from "./slots";
 import type { BookingDetail } from "./service";
 
 /*
@@ -15,7 +15,7 @@ export const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<
 export const appUrl = () => (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
 // 色票照原型（app/radia.css 的 .rd 變數）；信件不能用 CSS 變數，只能寫死
-const C = { ground: "#f6f8f6", surface: "#ffffff", line: "#dfe4e1", ink: "#151a19", ink2: "#4e5755", muted: "#838c89", brand: "#2f7a6b", brandInk: "#1f5a4e", sunk: "#eef1ee", amber: "#a9712a" };
+const C = { ground: "#f3f5f3", surface: "#ffffff", line: "#e6eae7", brandSoft: "#e5f0ed", ink: "#151a19", ink2: "#4e5755", muted: "#838c89", brand: "#2f7a6b", brandInk: "#1f5a4e", sunk: "#eef1ee", amber: "#a9712a" };
 const FONT = `'PingFang TC','Noto Sans TC','Microsoft JhengHei','Helvetica Neue',Arial,sans-serif`;
 export const linkStyle = `color:${C.brandInk};text-decoration:underline`;
 export const MUTED = C.muted, AMBER = C.amber;
@@ -23,53 +23,99 @@ export const MUTED = C.muted, AMBER = C.amber;
 /** 名字本身有「顧問」就不再加（「林顧問（測試） 顧問」） */
 export const advisorTitle = (name: string) => /顧問/.test(name) ? name : `${name} 顧問`;
 
+export interface MailAdvisor { name: string; licenseNo?: string | null; photoUrl?: string | null }
+export interface MailMeeting {
+  startsAt: string; endsAt: string;
+  was?: { startsAt: string; endsAt: string };   // 改期：原本的時間（劃掉）
+  cancelled?: boolean;                          // 取消：時間劃掉、不顯示地點
+  mode: string; address?: string | null; meetingLink?: string | null;
+}
 export interface MailLayout {
   title: string;
   preheader?: string;                 // 收件匣預覽那一行（不顯示在信裡）
-  rows: [string, string][];           // 面談資訊：顧問／時間／方式…
+  advisor?: MailAdvisor;              // 客戶信：顧問區塊（姓名、登錄字號、照片或姓氏頭像）
+  meeting?: MailMeeting;              // 客戶信：時間地點卡片（起訖時間、地圖連結或進入會議）
+  rows?: [string, string][];          // 其他資訊列（顧問信的客戶／時間…、取消原因）
   intro?: string[];                   // 按鈕上面的說明，一段一個
-  cta?: { href: string; text: string };   // 唯一的主要動作
-  notes?: { title: string; items: string[] };   // 次要說明（改期、取消…），條列
+  cta?: { href: string; text: string };   // 唯一的主要動作（客戶信：滿版大按鈕，緊接在卡片下面）
+  notes?: { title: string; items: string[] };   // 次要說明（改期、取消…）：底部小字區
   outro?: string;                     // 卡片最後一句
   foot?: string[];                    // 卡片外的小字（日曆附件…）
 }
 
+/** 預約 → 信裡的顧問區塊與時間地點卡片 */
+export const mailAdvisor = (b: BookingDetail): MailAdvisor => ({ name: b.advisor.name, licenseNo: b.advisor.licenseNo });
+export const mailMeeting = (b: BookingDetail, extra: Partial<MailMeeting> = {}): MailMeeting =>
+  ({ startsAt: b.startsAt, endsAt: b.endsAt, mode: b.mode, address: b.advisor.onsiteLocation, meetingLink: b.advisor.meetingLink, ...extra });
+export const mapsUrl = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+
 /*
- * 所有預約信共用的版型（顧問 10/14：層次要清楚、只有一個主要動作）。
- * 標題 → 面談資訊 → 說明 → 主要按鈕 → 次要說明（條列）→ 卡片外小字。
- * 信件 HTML：全部 inline style、表格排版、按鈕用 table＋a（Outlook 也能顯示）。寬度用 100%＋max-width 560（手機才縮得下來），Outlook 不認 max-width，用條件註解包一層 560。
+ * 所有預約信共用的版型（顧問 10/14：層次要清楚、只有一個主要動作；10/15 第二版：起訖時間、地圖／進入會議、
+ * 上傳存摺緊接在時間地點下面、改期取消縮成底部小字、顧問區塊、手機 390 也好看、底色對比柔和）。
+ * 順序：標題 → 顧問 → 時間地點卡片 → 說明 → 主要按鈕（滿版）→ 其他資訊 → 底部小字（改期取消）→ 卡片外小字。
+ * 信件 HTML：全部 inline style、表格排版、按鈕用 table＋a（Outlook 也能顯示）。寬度 100%＋max-width 600，Outlook 用條件註解包一層 600。
  */
 export function layout(m: MailLayout): string {
-  const P = (html: string, last = false) => `<p style="margin:0 0 ${last ? 0 : 12}px;font-size:15px;line-height:1.7;color:${C.ink2}">${html}</p>`;
-  const rows = m.rows.map(([k, v]) => `<tr><td width="64" valign="top" style="padding:7px 0;font-size:14px;line-height:1.6;color:${C.muted};white-space:nowrap">${k}</td><td valign="top" style="padding:7px 0 7px 8px;font-size:15px;line-height:1.6;color:${C.ink}">${v}</td></tr>`).join("");
-  const cta = m.cta ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 0"><tr><td align="center" bgcolor="${C.brand}" style="border-radius:8px;background:${C.brand}">
-<a href="${m.cta.href}" target="_blank" style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:16px;font-weight:700;line-height:1.2;color:#ffffff;text-decoration:none;border-radius:8px;white-space:nowrap">${m.cta.text}</a></td></tr></table>` : "";
-  const notes = m.notes ? `<tr><td style="padding:20px 24px 0"><div style="border-top:1px solid ${C.line};font-size:0;line-height:0">&nbsp;</div></td></tr>
-<tr><td style="padding:16px 24px 0"><div style="font-size:14px;font-weight:700;color:${C.ink};margin:0 0 8px">${m.notes.title}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${m.notes.items.map(i => `<tr><td width="14" valign="top" style="padding:3px 0;font-size:14px;line-height:1.65;color:${C.brand}">•</td><td valign="top" style="padding:3px 0;font-size:14px;line-height:1.65;color:${C.ink2}">${i}</td></tr>`).join("")}</table></td></tr>` : "";
+  const P = (html: string, last = false) => `<p style="margin:0 0 ${last ? 0 : 12}px;font-size:15px;line-height:1.75;color:${C.ink2}">${html}</p>`;
+  const sec = (html: string, top = 18) => `<tr><td style="padding:${top}px 28px 0">${html}</td></tr>`;
+  const label = (t: string) => `<div style="font-size:12px;line-height:1.4;font-weight:600;letter-spacing:.04em;color:${C.muted};margin:0 0 4px">${t}</div>`;
+  const btn = (href: string, text: string, full: boolean, solid = true) => `<table role="presentation" ${full ? 'width="100%" ' : ""}cellpadding="0" cellspacing="0" border="0"><tr><td align="center" ${solid ? `bgcolor="${C.brand}" ` : ""}style="border-radius:10px;${solid ? `background:${C.brand}` : `border:1.5px solid ${C.brand}`}">
+<a href="${href}" target="_blank" style="display:${full ? "block" : "inline-block"};padding:${full ? "16px 20px" : "10px 18px"};font-family:${FONT};font-size:${full ? 17 : 15}px;font-weight:700;line-height:1.2;color:${solid ? "#ffffff" : C.brandInk};text-decoration:none;border-radius:10px;text-align:center">${text}</a></td></tr></table>`;
+
+  const adv = m.advisor ? (() => {
+    const a = m.advisor;
+    const pic = a.photoUrl
+      ? `<img src="${esc(a.photoUrl)}" width="48" height="48" alt="" style="display:block;width:48px;height:48px;border-radius:24px;object-fit:cover">`
+      : `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="48" height="48" align="center" valign="middle" bgcolor="${C.brandSoft}" style="width:48px;height:48px;border-radius:24px;background:${C.brandSoft};font-size:20px;font-weight:800;color:${C.brandInk};font-family:${FONT}">${esc(a.name.slice(0, 1))}</td></tr></table>`;
+    return sec(`${label("你的顧問")}<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td valign="middle" style="padding:0 12px 0 0">${pic}</td>
+<td valign="middle"><div style="font-size:17px;font-weight:700;line-height:1.4;color:${C.ink}">${esc(advisorTitle(a.name))}</div>${a.licenseNo ? `<div style="font-size:13px;line-height:1.5;color:${C.muted}">登錄字號 ${esc(a.licenseNo)}</div>` : ""}</td></tr></table>`, 20);
+  })() : "";
+
+  const meet = m.meeting ? (() => {
+    const t = m.meeting, range = fmtRange(t.startsAt, t.endsAt);
+    const time = t.cancelled
+      ? `<div style="font-size:17px;font-weight:700;line-height:1.5;color:${C.muted}"><s>${range}</s></div>`
+      : `<div style="font-size:17px;font-weight:700;line-height:1.5;color:${C.ink}">${range}</div>${t.was ? `<div style="font-size:13px;line-height:1.6;color:${C.muted}">原本 <s>${fmtRange(t.was.startsAt, t.was.endsAt)}</s></div>` : ""}`;
+    let place = "";
+    if (!t.cancelled) {
+      if (t.mode === "online") place = `${label("方式")}<div style="font-size:15px;line-height:1.6;color:${C.ink};margin:0 0 10px">線上視訊</div>${t.meetingLink ? btn(esc(t.meetingLink), "進入會議", false, false) : `<div style="font-size:14px;color:${C.muted}">會議連結顧問會另外提供</div>`}`;
+      else place = `${label("地點")}<div style="font-size:15px;line-height:1.6;color:${C.ink}">面對面${t.address ? `・${esc(t.address)}` : ""}</div>${t.address ? `<div style="margin:6px 0 0;font-size:14px"><a href="${mapsUrl(t.address)}" target="_blank" style="${linkStyle};font-weight:600">用 Google 地圖開啟 →</a></div>` : ""}`;
+    }
+    return sec(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.sunk}" style="background:${C.sunk};border-radius:12px"><tr><td style="padding:16px 18px">
+${label(t.cancelled ? "原本的時間" : "時間")}${time}${place ? `<div style="height:14px;line-height:14px;font-size:0">&nbsp;</div>${place}` : ""}</td></tr></table>`, 16);
+  })() : "";
+
+  const rows = m.rows?.length ? sec(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" ${m.meeting ? "" : `bgcolor="${C.sunk}" style="background:${C.sunk};border-radius:12px"`}><tr><td style="padding:${m.meeting ? "0" : "8px 18px"}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${m.rows.map(([k, v]) => `<tr><td width="72" valign="top" style="padding:7px 0;font-size:14px;line-height:1.6;color:${C.muted};white-space:nowrap">${k}</td><td valign="top" style="padding:7px 0 7px 8px;font-size:15px;line-height:1.6;color:${C.ink}">${v}</td></tr>`).join("")}</table></td></tr></table>`, 16) : "";
+
+  // 客戶信（有時間地點卡片）：說明＋滿版按鈕緊接在卡片下面；顧問信維持原本的位置與大小
+  const body = m.intro?.length || m.cta ? sec(`${(m.intro ?? []).map((x, i, arr) => P(x, !m.cta && i === arr.length - 1)).join("")}${m.cta ? `<div style="height:4px;line-height:4px;font-size:0">&nbsp;</div>${btn(m.cta.href, m.cta.text, !!m.meeting)}` : ""}`, 20) : "";
+  const notes = m.notes ? sec(`<div style="border-top:1px solid ${C.line};padding:14px 0 0"><div style="font-size:13px;font-weight:700;line-height:1.6;color:${C.ink2};margin:0 0 4px">${m.notes.title}</div>
+${m.notes.items.map(i => `<div style="font-size:13px;line-height:1.7;color:${C.muted}">・${i}</div>`).join("")}</div>`, 22) : "";
+
   return `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${m.title}</title></head>
 <body style="margin:0;padding:0;background:${C.ground};font-family:${FONT};color:${C.ink};-webkit-text-size-adjust:100%">
 ${m.preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${m.preheader}</div>` : ""}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.ground}" style="background:${C.ground}"><tr><td align="center" style="padding:28px 12px 32px">
-<!--[if mso]><table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px">
-<tr><td style="padding:0 0 14px;font-family:${FONT};font-size:20px;font-weight:800;letter-spacing:-.02em;color:${C.ink}">RAD<span style="color:${C.brand}">IA</span></td></tr>
-<tr><td bgcolor="${C.surface}" style="background:${C.surface};border:1px solid ${C.line};border-radius:14px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.ground}" style="background:${C.ground}"><tr><td align="center" style="padding:24px 10px 32px">
+<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px">
+<tr><td style="padding:0 4px 14px;font-family:${FONT};font-size:20px;font-weight:800;letter-spacing:-.02em;color:${C.ink}">RAD<span style="color:${C.brand}">IA</span></td></tr>
+<tr><td bgcolor="${C.surface}" style="background:${C.surface};border:1px solid ${C.line};border-radius:16px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-<tr><td style="padding:26px 24px 6px;font-family:${FONT};font-size:22px;font-weight:800;line-height:1.35;color:${C.ink}">${m.title}</td></tr>
-<tr><td style="padding:8px 24px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.sunk}" style="background:${C.sunk};border-radius:10px"><tr><td style="padding:8px 16px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows}</table></td></tr></table></td></tr>
-${m.intro?.length || m.cta ? `<tr><td style="padding:18px 24px 0">${(m.intro ?? []).map((x, i, arr) => P(x, !m.cta && i === arr.length - 1)).join("")}${cta}</td></tr>` : ""}
-${notes}
-${m.outro ? `<tr><td style="padding:16px 24px 0">${P(m.outro, true)}</td></tr>` : ""}
-<tr><td style="padding:0 0 24px;font-size:0;line-height:0">&nbsp;</td></tr>
+<tr><td style="padding:28px 28px 0;font-family:${FONT};font-size:24px;font-weight:800;line-height:1.35;color:${C.ink}">${m.title}</td></tr>
+${adv}${meet}${m.meeting ? body + rows : rows + body}${notes}
+${m.outro ? sec(P(m.outro, true), 16) : ""}
+<tr><td style="padding:0 0 28px;font-size:0;line-height:0">&nbsp;</td></tr>
 </table></td></tr>
-${(m.foot ?? []).map(f => `<tr><td style="padding:12px 2px 0;font-size:12px;line-height:1.6;color:${C.muted}">${f}</td></tr>`).join("")}
-<tr><td style="padding:12px 2px 0;font-size:12px;line-height:1.6;color:${C.muted}">RADIA · 保險這件事，先弄懂再決定</td></tr>
+${(m.foot ?? []).map(f => `<tr><td style="padding:12px 4px 0;font-size:12px;line-height:1.6;color:${C.muted}">${f}</td></tr>`).join("")}
+<tr><td style="padding:12px 4px 0;font-size:12px;line-height:1.6;color:${C.muted}">RADIA · 保險這件事，先弄懂再決定</td></tr>
 </table>
 <!--[if mso]></td></tr></table><![endif]-->
 </td></tr></table></body></html>`;
 }
+
+/** 信裡「上傳保險存摺」的連結（卡 F 之後改 /analysis#upload，改這裡就好） */
+export const UPLOAD_PATH = "/consult";
 
 export const ICS_FOOT = "附件是日曆邀請（.ics），點開就能加入 Google／Apple／Outlook 日曆。";
 
@@ -97,7 +143,7 @@ export function toOut(m: Mail, kind: string, bookingId: string): OutMail {
 
 /** 組出兩封信（不寄）。測試與預覽用同一份 */
 export function buildBookingEmails(b: BookingDetail, opts: { hasPassbook: boolean }): [Mail, Mail] {
-  const when = fmtTaipei(b.startsAt);
+  const when = fmtTaipei(b.startsAt), range = fmtRange(b.startsAt, b.endsAt);
   const where = whereText(b);
   const ics = (summary: string, description: string) => ({
     filename: "radia-meeting.ics",
@@ -115,15 +161,11 @@ export function buildBookingEmails(b: BookingDetail, opts: { hasPassbook: boolea
       html: layout({
         title: "約好了",
         preheader: `${when}，${adv}${opts.hasPassbook ? "會先看過你的保單" : "。面談前上傳保險存摺，分析會更準"}`,
-        rows: [
-          ["顧問", `${esc(b.advisor.name)}${b.advisor.licenseNo ? `<br><span style="color:${MUTED};font-size:12px">登錄字號 ${esc(b.advisor.licenseNo)}</span>` : ""}`],
-          ["時間", `${when}<br><span style="color:${MUTED};font-size:13px">最長約 2 小時</span>`],
-          ["方式", where.html],
-        ],
+        advisor: mailAdvisor(b), meeting: mailMeeting(b),
         intro: opts.hasPassbook
           ? ["你的保險存摺已經整理好了，顧問面談前會先看過，<b>不用再傳一次</b>。", "你在對話裡講過的狀況也會一起帶給顧問，<b>不用重講一次</b>。"]
-          : ["面談前<b>上傳保險存摺</b>，顧問才做得出專屬你的分析——現在有多少、還差多少。", "你在對話裡講過的狀況會一起帶給顧問，<b>不用重講一次</b>。"],
-        cta: opts.hasPassbook ? { href: `${appUrl()}/me`, text: "查看我的預約" } : { href: `${appUrl()}/consult`, text: "上傳保險存摺" },
+          : ["面談前<b>上傳保險存摺</b>，顧問才做得出專屬你的分析——現在有多少、還差多少。你在對話裡講過的狀況也會一起帶給顧問，<b>不用重講一次</b>。"],
+        cta: opts.hasPassbook ? { href: `${appUrl()}/me`, text: "查看我的預約" } : { href: `${appUrl()}${UPLOAD_PATH}`, text: "上傳保險存摺" },
         notes: { title: "要改時間或取消", items: [
           `要改時間：到 <a href="${appUrl()}/me" style="${linkStyle}">我的頁面</a> 自己改（面談前 2 小時以前）`,
           `2 小時內臨時有事：直接回覆這封信，會寄到 ${esc(adv)}`,
@@ -143,7 +185,7 @@ export function buildBookingEmails(b: BookingDetail, opts: { hasPassbook: boolea
         preheader: `${when} ${b.client.name ?? "客戶"}`,
         rows: [
           ["客戶", esc(b.client.name ?? "（未提供姓名）")],
-          ["時間", `${when}<br><span style="color:${MUTED};font-size:13px">最長約 2 小時</span>`],
+          ["時間", range],
           ["方式", where.html],
           ["保單", opts.hasPassbook ? "已上傳保險存摺" : `<span style="color:${AMBER}">還沒上傳存摺</span>`],
         ],

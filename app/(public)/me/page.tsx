@@ -9,6 +9,10 @@ import { fmtTaipei } from "@/lib/booking/slots";
 import { MeBookingActions } from "@/components/public/MeBookingActions";
 import { MyData } from "@/components/public/MyData";
 import { supportEmail } from "@/lib/support";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { roleOf, verifyJWT } from "@/lib/jwt";
+import { hasRequiredConsent } from "@/lib/consents";
 
 /*
  * 我的頁面（原型 SCREENS.me）：客戶端唯一的家。分頁：預約與進度｜我的規劃｜我的保單｜我的顧問｜我的資料（4-ap：同意書第六條寫的入口）。
@@ -18,8 +22,23 @@ const METABS = [["book", "預約與進度"], ["plan", "我的規劃"], ["pol", "
 const parseSpecs = (s: string | null) => { try { const a = JSON.parse(s ?? "[]"); return Array.isArray(a) ? a as string[] : []; } catch { return []; } };
 
 export default async function MePage({ searchParams }: { searchParams: Promise<{ tab?: string; booked?: string; rescheduled?: string; cancelled?: string }> }) {
-  const { userId, name } = await requireConsultPage();
   const { tab = "book", booked, rescheduled, cancelled } = await searchParams;
+  // 「我的資料」只要登入就能用：撤回同意或同意書改版還沒重新同意的人，也要能查詢、申請刪除（決議 4-at #4）。其他分頁照舊要同意
+  if (tab === "data") {
+    const token = (await cookies()).get("auth_token")?.value;
+    const s = token ? await verifyJWT(token) : null;
+    if (!s) redirect("/welcome/consent");
+    if (roleOf(s) !== "customer") redirect("/");
+    if (!(await hasRequiredConsent(s.advisorId))) return (
+      <div className="cols"><div className="main">
+        <div className="eyebrow">我的頁面</div>
+        <h2 className="t" style={{ marginBottom: 4 }}>我的資料</h2>
+        <p className="sub">你目前沒有同意最新版的個資告知書，其他功能先暫停；查詢、更正或刪除你的資料照樣可以在這裡申請。</p>
+        <MyData supportEmail={supportEmail()} />
+      </div></div>
+    );
+  }
+  const { userId, name } = await requireConsultPage();
 
   const [bRow] = await db.select({ b: bookings, a: advisors }).from(bookings).innerJoin(advisors, eq(advisors.id, bookings.advisor_id))
     .where(eq(bookings.user_id, userId)).orderBy(desc(bookings.created_at)).limit(1);

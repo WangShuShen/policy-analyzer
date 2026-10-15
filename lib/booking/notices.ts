@@ -1,6 +1,7 @@
 import { bookingIcs } from "./ics";
 import { fmtTaipei } from "./slots";
-import { advisorTitle, appUrl, AMBER, esc, ICS_FOOT, layout, linkStyle, MUTED, whereText } from "./mail";
+import { advisorTitle, appUrl, AMBER, esc, ICS_FOOT, layout, linkStyle, mailAdvisor, mailMeeting, MUTED, UPLOAD_PATH, whereText } from "./mail";
+import { fmtRange } from "./slots";
 import type { OutMail, IcsFile } from "@/lib/notify/outbox";
 import type { BookingDetail } from "./service";
 
@@ -21,7 +22,6 @@ function ics(b: BookingDetail, who: "client" | "advisor", cancelled = false): Ic
   };
 }
 const link = (path: string, text: string) => `<a href="${appUrl()}${path}" style="${linkStyle}">${text}</a>`;
-const timeCell = (when: string) => `${when}<br><span style="color:${MUTED};font-size:13px">最長約 2 小時</span>`;
 const struck = (when: string) => `<s style="color:${MUTED}">${when}</s>`;
 const cancelFoot = "附件會把這場面談從你的日曆移除。";
 
@@ -32,7 +32,7 @@ export function rescheduledMails(oldB: BookingDetail, newB: BookingDetail, count
     { to: newB.client.email, replyTo: newB.advisor.email, kind: "rescheduled", bookingId: newB.id,
       subject: `改好了：${now} 跟 ${adv}聊聊`,
       html: layout({ title: "時間改好了", preheader: `新時間：${now}`,
-        rows: [["顧問", esc(newB.advisor.name)], ["新時間", timeCell(now)], ["原本", struck(was)], ["方式", w.html]],
+        advisor: mailAdvisor(newB), meeting: mailMeeting(newB, { was: { startsAt: oldB.startsAt, endsAt: oldB.endsAt } }),
         intro: ["附件已經更新你的日曆：舊時間會取消、新時間會加上。"],
         cta: { href: `${appUrl()}/me`, text: "查看我的預約" },
         notes: { title: "還要再改", items: [`到 ${link("/me", "我的頁面")} 自己改（面談前 2 小時以前）`, "2 小時內臨時有事：直接回覆這封信"] },
@@ -41,7 +41,7 @@ export function rescheduledMails(oldB: BookingDetail, newB: BookingDetail, count
     { to: newB.advisor.email, replyTo: newB.client.email, kind: count >= 3 ? "reschedule_often" : "rescheduled", bookingId: newB.id,
       subject: `${count >= 3 ? `第 ${count} 次改期` : "客戶改期"}：${clientName(newB)} 改到 ${now}`,
       html: layout({ title: "客戶改了時間", preheader: `${clientName(newB)} 改到 ${now}`,
-        rows: [["客戶", esc(clientName(newB))], ["新時間", now], ["原本", struck(was)], ["方式", w.html]],
+        rows: [["客戶", esc(clientName(newB))], ["新時間", fmtRange(newB.startsAt, newB.endsAt)], ["原本", struck(fmtRange(oldB.startsAt, oldB.endsAt))], ["方式", w.html]],
         intro: count >= 3 ? [`<b>這是這位客戶第 ${count} 次改期</b>，可能意願在降，面談前可以先關心一下。`] : undefined,
         cta: { href: `${appUrl()}/clients/${newB.client.id}`, text: "打開客戶頁" },
         foot: [ICS_FOOT] }),
@@ -56,7 +56,7 @@ export function clientCancelledMails(b: BookingDetail): OutMail[] {
     { to: b.client.email, replyTo: b.advisor.email, kind: "cancelled_by_client", bookingId: b.id,
       subject: `已取消：${when} 跟 ${adv}的面談`,
       html: layout({ title: "已經幫你取消了", preheader: `${when} 的面談已取消`,
-        rows: [["顧問", esc(b.advisor.name)], ["原本時間", struck(when)]],
+        advisor: mailAdvisor(b), meeting: mailMeeting(b, { cancelled: true }),
         intro: ["你在 RADIA 留下的資料都還在。之後想談，再挑一次時間就好。"],
         cta: { href: `${appUrl()}/advisors`, text: "再挑一次時間" },
         foot: [cancelFoot] }),
@@ -78,7 +78,7 @@ export function advisorCancelledMails(b: BookingDetail, reason: string): OutMail
     { to: b.client.email, replyTo: b.advisor.email, kind: "cancelled_by_advisor", bookingId: b.id,
       subject: `${adv}取消了 ${when} 的面談`,
       html: layout({ title: "面談取消了", preheader: `${adv}取消了 ${when} 的面談`,
-        rows: [["顧問", esc(b.advisor.name)], ["原本時間", struck(when)], ["原因", esc(reason)]],
+        advisor: mailAdvisor(b), meeting: mailMeeting(b, { cancelled: true }), rows: [["原因", esc(reason)]],
         intro: ["很抱歉臨時取消。你的資料都還在，可以重新挑一個時間或另一位顧問，前面講過的狀況會一起帶過去。"],
         cta: { href: `${appUrl()}/advisors`, text: "重新預約" },
         foot: [cancelFoot] }),
@@ -96,28 +96,26 @@ export function advisorCancelledMails(b: BookingDetail, reason: string): OutMail
 /** 面談前一天（雙方）、前 1 小時（只給客戶） */
 export function reminderMails(b: BookingDetail, kind: "24h" | "1h", opts: { advisorViewed: boolean; hasPassbook: boolean }): OutMail[] {
   const when = fmtTaipei(b.startsAt), w = whereText(b), adv = advisorTitle(b.advisor.name);
-  const meet = b.mode === "online" && b.advisor.meetingLink ? { href: esc(b.advisor.meetingLink), text: "加入視訊面談" } : undefined;
-  const rows: [string, string][] = [["顧問", esc(b.advisor.name)], ["時間", timeCell(when)], ["方式", w.html]];
+  const card = { advisor: mailAdvisor(b), meeting: mailMeeting(b) };   // 線上的「進入會議」按鈕在時間地點卡片裡
   const client: OutMail = kind === "24h"
     ? { to: b.client.email, replyTo: b.advisor.email, kind: "reminder_24h", bookingId: b.id,
         subject: `明天提醒：${when} 跟 ${adv}聊聊`,
-        html: layout({ title: "明天見", preheader: `明天 ${when}，${adv}`, rows,
+        html: layout({ title: "明天見", preheader: `明天 ${when}，${adv}`, ...card,
           // 主要動作：沒存摺就上傳；有了就看預約
           intro: [opts.hasPassbook ? "保險存摺已經給顧問看過了，明天直接開始談就好。" : "還沒上傳保險存摺的話，今天上傳還來得及，顧問明天就能直接談你的保單。"],
-          cta: opts.hasPassbook ? { href: `${appUrl()}/me`, text: "查看我的預約" } : { href: `${appUrl()}/consult`, text: "上傳保險存摺" },
+          cta: opts.hasPassbook ? { href: `${appUrl()}/me`, text: "查看我的預約" } : { href: `${appUrl()}${UPLOAD_PATH}`, text: "上傳保險存摺" },
           notes: { title: "要改時間或取消", items: [`要改時間：到 ${link("/me", "我的頁面")} 自己改（面談前 2 小時以前）`, `2 小時內臨時有事：直接回覆這封信，會寄到 ${esc(adv)}`] } }) }
     : { to: b.client.email, replyTo: b.advisor.email, kind: "reminder_1h", bookingId: b.id,
         subject: `再 1 小時：${adv}的面談`,
-        html: layout({ title: "再 1 小時就開始", preheader: `${when}，${adv}`, rows,
-          intro: meet ? ["時間到了按下面的按鈕加入。"] : undefined,
-          cta: meet,
+        html: layout({ title: "再 1 小時就開始", preheader: `${when}，${adv}`, ...card,
+          intro: b.mode === "online" && b.advisor.meetingLink ? ["時間到了按上面的「進入會議」加入。"] : undefined,
           outro: "臨時有事的話，直接回覆這封信跟顧問說。" }) };
   const out: OutMail[] = [client];
   if (kind === "24h") out.push({
     to: b.advisor.email, replyTo: b.client.email, kind: "reminder_24h", bookingId: b.id,
     subject: `明天面談：${when} ${clientName(b)}`,
     html: layout({ title: "明天有一場面談", preheader: `${when} ${clientName(b)}`,
-      rows: [["客戶", esc(clientName(b))], ["時間", when], ["方式", w.html], ["保單", opts.hasPassbook ? "已上傳保險存摺" : `<span style="color:${AMBER}">還沒上傳存摺</span>`]],
+      rows: [["客戶", esc(clientName(b))], ["時間", fmtRange(b.startsAt, b.endsAt)], ["方式", w.html], ["保單", opts.hasPassbook ? "已上傳保險存摺" : `<span style="color:${AMBER}">還沒上傳存摺</span>`]],
       intro: opts.advisorViewed ? undefined : ["<b>你還沒看過這位客戶的諮詢紀錄</b>，面談前記得先看。"],
       cta: { href: `${appUrl()}/clients/${b.client.id}`, text: "打開客戶頁" } }),
   });

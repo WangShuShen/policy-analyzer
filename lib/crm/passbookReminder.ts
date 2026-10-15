@@ -2,7 +2,7 @@ import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import db, { nowText } from "@/lib/db";
 import { bookings } from "@/lib/schema";
 import { bookingDetailById } from "@/lib/booking/service";
-import { appUrl, esc, layout, MUTED, advisorTitle } from "@/lib/booking/mail";
+import { appUrl, layout, advisorTitle, mailAdvisor, mailMeeting, UPLOAD_PATH } from "@/lib/booking/mail";
 import { fmtTaipei } from "@/lib/booking/slots";
 import { enqueue, type OutMail } from "@/lib/notify/outbox";
 import { view as passbookView } from "@/lib/passbook/service";
@@ -27,9 +27,9 @@ export function passbookReminderMail(b: NonNullable<Awaited<ReturnType<typeof bo
     html: layout({
       title: "先讓顧問看看你的保單",
       preheader: `${when} 跟 ${adv}面談，先上傳保險存摺，當天就能直接談你的保單`,
-      rows: [["顧問", esc(b.advisor.name)], ["時間", `${when}<br><span style="color:${MUTED};font-size:13px">最長約 2 小時</span>`]],
+      advisor: mailAdvisor(b), meeting: mailMeeting(b),
       intro: ["面談前把保險存摺傳上來，顧問會先看過你現在有哪些保障，當天就能直接談，不用從頭整理。", "不知道怎麼下載保險存摺也沒關係，上傳頁面有一步一步的說明。"],
-      cta: { href: `${appUrl()}/consult`, text: "上傳保險存摺" },
+      cta: { href: `${appUrl()}${UPLOAD_PATH}`, text: "上傳保險存摺" },
       outro: "不想上傳也可以，面談時再跟顧問說你手上有哪些保險就好。這封提醒只會寄這一次。",
     }),
   };

@@ -141,6 +141,13 @@
       "when": 1792054389278,
       "tag": "0019_ai_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792056499756,
+      "tag": "0020_unlock_mail",
+      "breakpoints": true
     }
   ]
 }

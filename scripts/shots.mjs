@@ -355,7 +355,7 @@ try {
   if (manual?.id ?? manual?.userId) await shoot("w2-02", "手動客戶的客戶頁", { path: `/clients/${manual.id ?? manual.userId}`, role: "顧問", who: A });
   await shoot("w2-03", "/todo 三組待辦", { path: "/todo", role: "顧問", who: A });
   await shoot("w2-03", "/todo ⋯ 選單展開", { path: "/todo", role: "顧問", who: A, act: async page => {
-    const b = page.locator("button[data-menu]").first(); await b.scrollIntoViewIfNeeded(); await b.click(); await sleep(600);
+    const b = page.locator("button[data-menu]:visible").first(); await b.scrollIntoViewIfNeeded(); await b.click(); await sleep(600);
   } });
   if (db) {
     await shoot("w2-04", "客戶頁摘要「客戶打開過我的分析 N 次」", { path: `/clients/${C4.id}?tab=sum`, role: "顧問", who: A, expect: /打開/ });
@@ -363,12 +363,13 @@ try {
   }
   await shoot("w2-05", "/profile 回應速度", { path: "/profile", role: "顧問", who: A });
   reuse("w2-05", "w1-06", 1, "/advisors 卡片上的回應速度標籤（同 w1-06-1）");
-  const mailHtml = path.join(os.tmpdir(), `radia-shots-mail-${process.pid}.html`);
+  // 客戶會收到的每一種信（本機渲染，不寄）：三種尺寸都拍，掛在對應的驗收項目（w1-06 確認／提醒、w1b-02 改期取消、w2-06 存摺提醒…）
+  const mailDir = fs.mkdtempSync(path.join(os.tmpdir(), "radia-shots-mail-"));
   try {
-    execFileSync("npx", ["tsx", "scripts/shots-mail.mts", mailHtml], { stdio: ["ignore", "ignore", "inherit"] });
-    await shoot("w2-06", "存摺提醒信（本機產生的信件 HTML 預覽，開發版不寄信；內容為虛構範例）", { url: "file://" + mailHtml, path: "（信件預覽）", role: "客戶" });
-  } catch (e) { console.log(`⚠️ 存摺提醒信預覽產生失敗：${e.message}`); }
-  finally { fs.rmSync(mailHtml, { force: true }); }
+    const list = JSON.parse(execFileSync("npx", ["tsx", "scripts/shots-mail.mts", mailDir], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] }).trim().split("\n").at(-1));
+    for (const m of list) await shoot(m.item, `信件預覽：${m.label}（本機產生的 HTML，範例資料虛構；主旨「${m.subject}」）`, { url: "file://" + path.join(mailDir, `${m.key}.html`), path: "（信件預覽）", role: "客戶" });
+  } catch (e) { console.log(`⚠️ 信件預覽產生失敗：${e.message}`); }
+  finally { fs.rmSync(mailDir, { recursive: true, force: true }); }
   await shoot("w2-07", "諮詢紀錄分頁（浮水印）", { path: `/clients/${C1.id}?tab=chat&conv=${conv1}`, role: "顧問", who: A });
   await shoot("w2-07", "諮詢紀錄列印預覽（print 樣式）", { path: `/clients/${C1.id}?tab=chat&conv=${conv1}`, role: "顧問", who: A, print: true });
 
@@ -382,9 +383,15 @@ try {
 
   // ── W3 文章 ──
   reuse("w3-01", "w1-09", 2, "/news（未登入，同 w1-09-1）");
-  const slug = (await (await fetch(`${BASE}/news`)).text()).match(/href="\/news\/(?!preview)([^"?#]+)"/)?.[1];
+  const slugOf = async base => (await (await fetch(`${base}/news`)).text()).match(/href="\/news\/(?!preview)([^"?#]+)"/)?.[1];
+  const slug = await slugOf(BASE);
   if (slug) await shoot("w3-02", "/news/[slug]（未登入）", { path: `/news/${slug}`, role: "未登入" });
-  else console.log("⚠️ /news 沒有文章，/news/[slug] 沒拍");
+  else {
+    // 本機資料庫常常沒有已發布的文章：公開頁，改拍開發版的（label 註明）
+    const DEV = "https://radia-dev-woad.vercel.app", devSlug = LOCAL ? await slugOf(DEV).catch(() => null) : null;
+    if (devSlug) await shoot("w3-02", "/news/[slug]（未登入；本機沒有已發布文章，這張拍開發版）", { url: `${DEV}/news/${devSlug}`, path: `/news/${devSlug}`, role: "未登入" });
+    else console.log("⚠️ /news 沒有文章，/news/[slug] 沒拍");
+  }
   await shoot("w3-03", "/admin/news", { path: "/admin/news", role: "管理員", who: admin });
 
   // ── w1b-10 每日上限（暫時調低，拍完立刻還原） ──

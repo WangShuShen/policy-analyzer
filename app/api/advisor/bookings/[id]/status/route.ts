@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sendUnlockedMailOnce } from "@/lib/booking/unlocked";
 import { z } from "zod";
 import { requireAdvisor } from "@/lib/auth";
 import { markBooking, MarkError } from "@/lib/advisor/clients";
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const r = await markBooking(a.advisorId, id, body.data.action);
     let warning: string | null = null;
     if (body.data.action === "met") {
+      await sendUnlockedMailOnce(id).catch(e => console.error("[unlock-mail]", id, e));   // 決議 4-at #2：只寄一次
       const pb = await passbookView(r.userId);
       if (pb.counts.preliminary > 0) warning = `客戶有 ${pb.counts.preliminary} 張保單的給付是 AI 初步讀取、還沒核對——送規劃書前要先核過（P4）`;
     }
