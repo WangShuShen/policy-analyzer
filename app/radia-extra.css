@@ -350,3 +350,6 @@
   .rd .rd-fbbtn span { display: none; }
   .rd .rd-fbbox { bottom: auto !important; top: 12%; }
 }
+
+/* 原型的手機規則 `.cacc span{display:none}` 連姓氏圓圈（.cav）也藏掉，帳號鈕在手機上變成空的（10/15 截圖發現）：圓圈留著、只藏名字 */
+@container vp (max-width:599.98px){ .rd .cacc span.cav{display:grid} .rd .cacc{justify-content:center} }
