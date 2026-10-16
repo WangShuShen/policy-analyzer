@@ -24,11 +24,12 @@ const OPEN = new Set<PanelKey>(["now", "route", "exp", "taxest", "proc", "fsum"]
 // 我的分析：依「事實 → 判讀」排；鎖住的永遠在下面
 export const PAGE_ORDER: PanelKey[] = ["now", "route", "exp", "taxest", "proc", "gaps", "retgap", "taxsrc", "survgap", "xfer", "edugap", "sum", "fsum"];
 
+// 4-ax（10/16 顧問照建議）：格子名稱不用「缺口、該補、補強」這類推銷感的詞，卡 D 的 AnalysisPanels／我的頁用同一套字
 export const PANEL_TITLE: Record<PanelKey, [string, string]> = {
-  now: ["你現在的保障", "保單合併"], gaps: ["該補什麼", "四級優先 ＋ 建議值"], sum: ["方向確認與保費試算", ""],
-  route: ["你現在的位置", ""], exp: ["你現在每個月花在哪裡", "你說的"], retgap: ["退休缺口", "含通膨試算"],
-  taxest: ["遺產稅試算", "示意"], proc: ["走完流程要多久", "保守估 10 個月"], taxsrc: ["稅源缺口", "含遺族過渡期"],
-  survgap: ["遺族長期保障缺口", "年收倍數法"], xfer: ["生前贈與 vs 繼承", "兩條路對照"], edugap: ["教育金", "時間成本對照"],
+  now: ["你現在的保障", "保單合併"], gaps: ["哪些地方還不夠", "四級優先 ＋ 建議值"], sum: ["方向確認與保費試算", ""],
+  route: ["你現在的位置", ""], exp: ["你現在每個月花在哪裡", "你說的"], retgap: ["退休後每個月差多少", "含通膨試算"],
+  taxest: ["遺產稅試算", "示意"], proc: ["走完流程要多久", "保守估 10 個月"], taxsrc: ["繳稅的錢夠不夠", "含遺族過渡期"],
+  survgap: ["家人往後的生活費夠不夠", "年收倍數法"], xfer: ["生前贈與 vs 繼承", "兩條路對照"], edugap: ["教育金", "時間成本對照"],
   fsum: ["下一步", ""],
 };
 
@@ -152,11 +153,11 @@ export async function buildAnalysis(userId: string, facts: StoredFact[], shown: 
   const headlines: AnalysisView["headlines"] = [];
   if (!unlocked) {
     const lk = new Set(locked.map(l => l.key));
-    if (lk.has("gaps") && gaps) headlines.push({ key: "gaps", label: "保障缺口", value: `${gaps.filter(g => g.level === "must").length} 項一定要補` });
-    if (lk.has("retgap")) headlines.push({ key: "retgap", label: "退休缺口", value: wan(results.retirement.gap) });
-    if (lk.has("taxsrc")) headlines.push({ key: "taxsrc", label: "稅源缺口", value: wan(results.taxSource.gap) });
+    if (lk.has("gaps") && gaps) headlines.push({ key: "gaps", label: "你的保障", value: `${gaps.filter(g => g.level === "must").length} 項最該先看` });
+    if (lk.has("retgap")) headlines.push({ key: "retgap", label: "退休後每個月差多少", value: wan(results.retirement.gap) });
+    if (lk.has("taxsrc")) headlines.push({ key: "taxsrc", label: "繳稅的錢夠不夠", value: wan(results.taxSource.gap) });
     // 4-ap：倍數不由 AI 講，寫成數字旁的試算基準（4-ae 照樣用年收倍數算）
-    if (lk.has("survgap")) headlines.push({ key: "survgap", label: "遺族保障缺口", value: wan(results.survivor.longGap), note: `試算基準：年收入 × ${results.survivor.mult}，僅供參考` });
+    if (lk.has("survgap")) headlines.push({ key: "survgap", label: "家人往後的生活費夠不夠", value: wan(results.survivor.longGap), note: `試算基準：年收入 × ${results.survivor.mult}，僅供參考` });
   }
   return { unlocked, booking, open, locked, headlines, assumptionsVersion: A.version, inputs, results };
 }
