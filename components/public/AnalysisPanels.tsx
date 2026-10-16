@@ -31,13 +31,14 @@ const PROC: [string, string, "frz" | "ok"][] = [
   ["第 0～2 週", "死亡登記、除戶、申請謄本", "frz"], ["第 1～6 個月", "遺產稅申報期", "frz"], ["第 6～9 個月", "國稅局核定", "frz"],
   ["第 9 個月", "繳稅、取得完稅證明", "frz"], ["第 9～11 個月", "繼承登記、存款解凍", "frz"], ["之後", "遺產分割完成", "ok"],
 ];
-const LVT: Record<string, string> = { must: "一定要補", boost: "建議補強", ok: "夠了", later: "這輪先不做" };
+// 4-ax（10/16 顧問）：拿掉「一定要補／建議補強／缺口」這類銷售味的字；名稱跟 lib/consult/analysis.ts 一字不差
+const LVT: Record<string, string> = { must: "最該先看", boost: "可以再看看", ok: "夠了", later: "這次先放著" };
 const sm = (color: string, text: React.ReactNode) => <><br /><span style={{ fontFamily: "var(--ui)", fontSize: 11, color }}>{text}</span></>;
 
 export function Panel({ d }: { d: PanelData }) {
   if ("needsPolicies" in d) {
     return d.key === "gaps"
-      ? <Pan t="該補什麼"><div className="gprn">{d.hasPolicies ? <>缺口要補哪些、補多少，<b>面談時顧問會依你的保單一項一項跟你看</b>。</> : <>要有你的保單才算得出來。<b>上傳保險存摺</b>後，這裡會列出缺口。</>}</div></Pan>
+      ? <Pan t="哪些地方還不夠"><div className="gprn">{d.hasPolicies ? <>哪些地方不夠、差多少，<b>面談時顧問會依你的保單一項一項跟你看</b>。</> : <>要有你的保單才算得出來。<b>上傳保險存摺</b>後，這裡會列出哪些地方還不夠。</>}</div></Pan>
       : <Pan t="方向確認"><div className="gprn">{d.hasPolicies ? "面談時跟顧問一起確認方向。" : "要有你的保單才整理得出方向。"}</div></Pan>;
   }
   switch (d.key) {
@@ -45,8 +46,8 @@ export function Panel({ d }: { d: PanelData }) {
     case "gaps": return <GapsPanel rows={d.rows} />;
     case "sum": return (
       <div className="dpan dfx"><div className="dsum">
-        <div className="dsr"><span>一定要補</span><b>{d.must.length ? d.must.join("、") : "—"}</b></div>
-        <div className="dsr"><span>建議補強</span><b>{d.boost.length ? d.boost.join("、") : "—"}</b></div>
+        <div className="dsr"><span>最該先看</span><b>{d.must.length ? d.must.join("、") : "—"}</b></div>
+        <div className="dsr"><span>可以再看看</span><b>{d.boost.length ? d.boost.join("、") : "—"}</b></div>
         <div className="dsr"><span>保費</span><b style={{ fontWeight: 600, color: "var(--muted)" }}>面談時由顧問試算</b></div>
       </div>
         <div className="dmark" style={{ marginTop: 11 }}>保費要看具體商品與核保結果，<b>由顧問用公司建議書幫你試算</b>——這裡不先估一個可能不準的數字。</div></div>
@@ -95,7 +96,7 @@ export function Panel({ d }: { d: PanelData }) {
     case "retgap": {
       const c = d.r, L = c.labor;
       return (
-        <div className="dpan dfx"><div className="dph"><span className="dpt">退休缺口</span><span className="dpn">只算最基礎</span></div>
+        <div className="dpan dfx"><div className="dph"><span className="dpt">退休後每個月差多少</span><span className="dpn">只算最基礎</span></div>
           <div className="fnbig" style={{ margin: "0 0 12px" }}><b>{W(c.gap)}</b><span>萬</span></div>
           <div className="exg">
             <div className="exr"><span>退休後基礎月開銷（今天物價）</span><span className="exv">{N(c.baseRet)}</span><span className="exc eq" /></div>
@@ -140,7 +141,7 @@ export function Panel({ d }: { d: PanelData }) {
     case "taxsrc": {
       const t = d.r;
       return (
-        <div className="dpan dfx"><div className="dph"><span className="dpt">稅源缺口</span><span className="dpn">不只算稅</span></div>
+        <div className="dpan dfx"><div className="dph"><span className="dpt">繳稅的錢夠不夠</span><span className="dpn">不只算稅</span></div>
           <div className="fnbig" style={{ margin: "0 0 12px" }}><b>{W(t.gap)}</b><span>萬</span></div>
           <div className="srcg">
             <div className="srcr"><span>遺產稅</span><b>{W(t.tax)} 萬</b></div>
@@ -163,7 +164,7 @@ export function Panel({ d }: { d: PanelData }) {
       const t = d.r;
       const lifeNote = !d.life ? "還沒有你的保單，先以 0 計" : [`依你的保險存摺${d.life.preliminary ? "（含 AI 初步讀取）" : ""}`, d.life.missing ? `尚未含 ${d.life.missing} 張還在確認的` : ""].filter(Boolean).join("，");
       return (
-        <div className="dpan dfx"><div className="dph"><span className="dpt">遺族長期保障缺口</span><span className="dpn">試算基準：年收入 × {t.mult}，僅供參考</span></div>
+        <div className="dpan dfx"><div className="dph"><span className="dpt">家人往後的生活費夠不夠</span><span className="dpn">試算基準：年收入 × {t.mult}，僅供參考</span></div>
           <div className="fnbig" style={{ margin: "0 0 12px" }}><b>{W(t.longGap)}</b><span>萬</span></div>
           <div className="srcg">
             <div className="srcr"><span>收入替代{sm("var(--muted)", `年收 ${W(t.inc)} 萬 × ${t.mult} 倍`)}</span><b>{W(t.repl)} 萬</b></div>
@@ -230,7 +231,7 @@ export function Panel({ d }: { d: PanelData }) {
         <div className="dsr"><span>還需要</span><b style={d.hasPolicies ? undefined : { color: "var(--amber)" }}>{d.hasPolicies ? "保單已整理" : "你的保單"}</b></div>
         <a className="btn dsbtn" href="/advisors">去挑顧問</a>
       </div>
-        <div className="dmark" style={{ marginTop: 11 }}>{d.hasPolicies ? <>顧問會先看過你的保單，面談就能直接談<b>補強前後的差異</b>。</> : <>面談前<a href={UPLOAD_PATH} style={{ color: "var(--brand-ink)" }}>上傳保險存摺</a>也來得及。<br />顧問會先看過，面談就能直接談<b>補強前後的差異</b>。</>}</div></div>
+        <div className="dmark" style={{ marginTop: 11 }}>{d.hasPolicies ? <>顧問會先看過你的保單，面談就能直接看<b>你現在的保障夠不夠</b>。</> : <>面談前<a href={UPLOAD_PATH} style={{ color: "var(--brand-ink)" }}>上傳保險存摺</a>也來得及。<br />顧問會先看過，面談就能直接看<b>你現在的保障夠不夠</b>。</>}</div></div>
     );
   }
 }
@@ -240,7 +241,7 @@ function GapsPanel({ rows }: { rows: Extract<PanelData, { key: "gaps"; rows: unk
   const top = rows.filter(r => r.level === "must" || r.level === "boost").sort((a, b) => (a.level === "must" ? 0 : 1) - (b.level === "must" ? 0 : 1));
   const rest = rows.filter(r => r.level === "ok" || r.level === "later");
   return (
-    <div className="dpan dfx"><div className="dph"><span className="dpt">該補什麼</span><span className="dpn">依急迫性排</span></div>
+    <div className="dpan dfx"><div className="dph"><span className="dpt">哪些地方還不夠</span><span className="dpn">依急迫性排</span></div>
       {top.map(r => (
         <div key={r.key} className={`gpi ${r.level}`}>
           <div className="gph2"><span className="gpnm">{r.label}</span><span className={`lvl ${r.level}`}>{LVT[r.level]}</span></div>
@@ -257,7 +258,7 @@ function GapsPanel({ rows }: { rows: Extract<PanelData, { key: "gaps"; rows: unk
             <div key={r.key} className="gprl"><span className="gpnm2">{r.label}</span><span style={{ color: "var(--muted)" }}>{r.current}</span><span className={`lvl ${r.level}`}>{LVT[r.level]}</span></div>
           ))}
           <div className="gprn">{rest.filter(r => r.level === "later").map(r => r.reason).filter((v, i, a) => a.indexOf(v) === i).join("；")}<br />
-            這輪先不做不是永遠不做，是<b>不要一次把保費做滿</b>。</div>
+            這次先放著不是不重要，是<b>不用一次全部處理</b>。</div>
         </div>
       )}
     </div>

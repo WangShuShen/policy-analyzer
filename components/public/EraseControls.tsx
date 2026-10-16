@@ -29,7 +29,7 @@ export function PassbookDelete({ count }: { count: number }) {
       <div className="er-t">確定要刪除保險存摺嗎？</div>
       <ul className="er-list">
         <li>會刪掉你上傳的存摺{count > 0 ? `，和讀出來的 ${count} 張保單` : "和讀出來的保單"}</li>
-        <li>「我的分析」裡「你現在的保障」和保障缺口會一起清掉，顧問也看不到了</li>
+        <li>「我的分析」裡「你現在的保障」和「哪些地方還不夠」會一起清掉，顧問也看不到了</li>
         <li><b>刪了不能復原</b>，之後想要可以再傳一次</li>
       </ul>
       {err && <div className="rd-err" style={{ margin: "0 0 10px" }}>{err}</div>}

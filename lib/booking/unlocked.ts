@@ -18,9 +18,9 @@ export function unlockedMail(b: BookingDetail): OutMail {
     subject: `你的完整分析已經打開了`,
     html: layout({
       title: "你的完整分析已經打開了",
-      preheader: `跟 ${adv}談完了，該補什麼、方向與保費試算都看得到了`,
+      preheader: `跟 ${adv}談完了，哪些地方還不夠、方向與保費試算都看得到了`,
       advisor: mailAdvisor(b),
-      intro: [`謝謝你跟 ${adv}聊。面談前鎖住的部分——<b>該補什麼、方向確認與保費試算</b>——現在都打開了，隨時可以回來看。`, "有不清楚的地方，直接回覆這封信問顧問就好。"],
+      intro: [`謝謝你跟 ${adv}聊。面談前鎖住的部分——<b>哪些地方還不夠、方向確認與保費試算</b>——現在都打開了，隨時可以回來看。`, "有不清楚的地方，直接回覆這封信問顧問就好。"],
       cta: { href: `${appUrl()}/analysis`, text: "看我的完整分析" },
     }),
   };

@@ -108,13 +108,13 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         <div style={{ marginTop: 16 }}>
           <div className="planhd"><div className="ph">
             <div className="eyebrow">我的規劃</div>
-            <h2 className="t" style={{ marginBottom: 6 }}>補強前後，差在哪</h2>
+            <h2 className="t" style={{ marginBottom: 6 }}>調整前後，差在哪</h2>
             <p className="sub">顧問看過你的保單之後會幫你算出來。</p></div></div>
           {!b ? (
             <div className="gate">
               <svg className="ill i56" viewBox="0 0 48 48" style={{ margin: "0 auto" }} aria-hidden="true"><use href="#i-lock" /></svg>
               <div className="gt">要有你的保單才算得出來</div>
-              <div className="gd">補強前後的對照需要知道你現在有什麼。<br />約好時間、上傳保險存摺，顧問確認完就會送給你。</div>
+              <div className="gd">前後對照需要先知道你現在有什麼。<br />約好時間、上傳保險存摺，顧問確認完就會送給你。</div>
             </div>
           ) : (
             <>
