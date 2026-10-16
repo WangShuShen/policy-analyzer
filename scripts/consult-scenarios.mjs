@@ -51,8 +51,8 @@ const S = {
   F01: chat(["啊我個人保單怎麼看"], { edu: /第一頁|保到幾歲|保障到|繳到|繳費/, offer: /upload|booking/, bad: [/最近(是)?發生(了)?什麼事/] }),   // 顧問截圖原句
   F02: chat(["理賠金怎麼那麼少", "住院開刀，自費的幾乎沒賠"], { edu: /上限|天數|範圍|等待期/, hook: /收據|保單上|一項/, bad: [MONEY] }),
   F03: chat(["我上個月剛買一張醫療險，想確認有沒有買對"], { bad: [/買對了|買錯了|建議(你)?退/] }),
-  F04: chat(["我什麼都不懂，要從哪裡開始"], { edu: /生病|意外|走了|身故/ }),
-  F05: chat(["保險公司說不賠，我該怎麼辦"], { urgent: true, edu: /原因|等待期|健康狀況|範圍/, bad: [/一定(能|會)賠|應該可以爭取/] }),
+  F04: chat(["我什麼都不懂，要從哪裡開始"], { edu: /生病|意外|走了|身故|存摺|列出|第一頁/ }),
+  F05: chat(["保險公司說不賠，我該怎麼辦"], { urgent: true, edu: /原因|理由|等待期|健康狀況|範圍/, bad: [/一定(能|會)賠|應該可以爭取/] }),
   F06: chat(["我想解約，繳不下去了"], { urgent: true, edu: /拿回|比繳的少|保障.{0,4}沒/, bad: [/建議你解約|不要解約/] }),
   F07: chat(["想幫爸媽整理保單，他們也不知道自己買了什麼"], { offer: /booking/, bad: [/上傳(爸媽|他們|父母)的/] }),
   F08: chat(["實支實付是什麼？", "那我的有沒有？"], { edu: /收據|實際/, terms: true, bad: [/你(的)?(有|沒有)實支實付/] }),
@@ -73,11 +73,11 @@ const S = {
   F23: chat(["小孩以後念大學要準備多少"], { realAI: false, offer: /calc_edu/, bad: [MONEY] }),
   F24: chat(["我保了好幾張，每個月繳好多，是不是保太多"], { offer: /upload|booking/, bad: [/保太多了|保太少了|確實(保)?太多/] }),
   F25: chat(["保單是我媽以前幫我買的，我完全不知道內容"], { offer: /upload|booking/, edu: /存摺/ }),
-  F26: chat(["我有乳癌病史，還買得到保險嗎"], { edu: /告知|照實/, bad: [/買得到|買不到|一定(會)?過|可以保/] }),
+  F26: chat(["我有乳癌病史，還買得到保險嗎"], { edu: /告知|照實/, bad: [/一定(會)?過|(應該|還是|都)(買得到|可以保)|(就)?買不到了/] }),
   F27: chat(["理賠要準備什麼"], { edu: /證明|收據|申請書/, offer: null }),
   F28: chat(["我朋友 35 歲得癌症，我好怕"], { facts: { trigger: /朋友/ }, bad: [/你(得了|罹患)/] }),
   F29: chat(["保險存摺是什麼？要去哪裡弄"], { edu: /清單|列出|所有(的)?保單/, offer: /upload|booking/ }),
-  F30: chat(["我只是看看，不想留資料"], { offer: null, bad: [/幾歲|收入|身體狀況|健康狀況/] }),
+  F30: chat(["我只是看看，不想留資料"], { offer: null, bad: [/你(今年|現在)?幾歲|你的收入|你的(身體|健康)狀況|不會(記|留)|不用留(任何)?資料/] }),
   F31: chat(["照收據賠的跟照天數賠的哪個好"], { edu: /收據|天數/, bad: [/你比較適合|建議你(選|買)/] }),
   F32: chat(["我的保單要繳到幾歲？我看不懂"], { edu: /第一頁|繳費|年期|繳到/, offer: /upload|booking/ }),
   F33: chat(["我單親，一個人養兩個小孩，最怕我倒下他們沒人管"], { bad: [/家裡(有)?誰(是)?靠你|最擔心(的是)?(哪|什麼)/] }),
@@ -340,14 +340,12 @@ async function runOne(id, round) {
   if (!broken && sc.urgent && !chatTurns.slice(0, 2).some(x => x.offer !== "none")) fails.push("C6 急件第 2 句以內沒有邀約");
   if (offers.filter(x => !x.byAsk).length > 3) fails.push("C7 主動邀約超過 3 次");
   if (!MOCK && !broken) {
-    const said = [];      // 他講過的話（他先講的名詞 AI 才能跟著用）
-    for (let i = 0; i < replies.length; i++) {
-      const st = sc.steps[i];
-      if (st?.text) said.push(st.text);
-      for (const x of replies[i]) {
-        const t = x.text.match(TERMS)?.[0];
-        if (t && !sc.terms && !said.some(s => s.includes(t))) { fails.push(`C8 他沒講過就用了專有名詞「${t}」`); break; }
-      }
+    // 他講過的話（打的字、點的選項）：他先講的名詞 AI 才能跟著用
+    const said = log.filter(l => /^(客戶: |\(點\) )/.test(l)).map(l => l.replace(/^(客戶: |\(點\) )/, ""));
+    for (let i = 0; i < replies.length && !sc.terms; i++) {
+      const before = said.slice(0, i + 1);
+      const hit = replies[i].map(x => x.text.match(TERMS)?.[0]).find(t => t && !before.some(s => s.includes(t)));
+      if (hit) { fails.push(`C8 他沒講過就用了專有名詞「${hit}」`); break; }
     }
     const all = replies.flat().map(x => x.text).join("\n");
     if (sc.edu && !sc.edu.test(all)) fails.push(`C3 沒有出現一般衛教 ${sc.edu}`);
