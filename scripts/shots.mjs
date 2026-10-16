@@ -411,6 +411,11 @@ try {
   }
   await shoot("w3-03", "/admin/news", { path: "/admin/news", role: "管理員", who: admin });
 
+  // ── 保險小教室（4-av）：公開頁，未登入拍（文章在 lib/guide/articles.ts） ──
+  await shoot("w3-guide", "/guide 保險小教室列表（未登入）", { path: "/guide", role: "未登入", expect: /照著做就會/ });
+  for (const [slug, t] of [["passbook", "保險存摺下載教學"], ["claim", "理賠怎麼申請"], ["policy-basics", "看懂保單第一頁"]])
+    await shoot("w3-guide", `/guide/${slug} ${t}（未登入）`, { path: `/guide/${slug}`, role: "未登入", expect: new RegExp(t) });
+
   // ── w1b-10 每日上限（暫時調低，拍完立刻還原） ──
   if (want("w1b-10")) {
     saved = (await api(admin, "GET", "/api/admin/monitor")).usage.thresholds;
