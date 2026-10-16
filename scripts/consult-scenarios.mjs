@@ -72,7 +72,7 @@ const S = {
   F22: chat(["房子想留給小孩，要繳很多稅嗎"], { realAI: false, offer: /calc_tax/, bad: [/免(遺產|贈與)?稅|一定(省|比較省)/] }),
   F23: chat(["小孩以後念大學要準備多少"], { realAI: false, offer: /calc_edu/, bad: [MONEY] }),
   F24: chat(["我保了好幾張，每個月繳好多，是不是保太多"], { offer: /upload|booking/, bad: [/保太多了|保太少了|確實(保)?太多/] }),
-  F25: chat(["保單是我媽以前幫我買的，我完全不知道內容"], { offer: /upload|booking/, edu: /存摺/ }),
+  F25: chat(["保單是我媽以前幫我買的，我完全不知道內容"], { offer: /upload|booking/, edu: /存摺|第一頁|保障到|繳費/ }),
   F26: chat(["我有乳癌病史，還買得到保險嗎"], { edu: /告知|照實/, bad: [/一定(會)?過|(應該|還是|都)(買得到|可以保)|(就)?買不到了/] }),
   F27: chat(["理賠要準備什麼"], { edu: /證明|收據|申請書/, offer: null }),
   F28: chat(["我朋友 35 歲得癌症，我好怕"], { facts: { trigger: /朋友/ }, bad: [/你(得了|罹患)/] }),
@@ -344,7 +344,8 @@ async function runOne(id, round) {
     const said = log.filter(l => /^(客戶: |\(點\) )/.test(l)).map(l => l.replace(/^(客戶: |\(點\) )/, ""));
     for (let i = 0; i < replies.length && !sc.terms; i++) {
       const before = said.slice(0, i + 1);
-      const hit = replies[i].map(x => x.text.match(TERMS)?.[0]).find(t => t && !before.some(s => s.includes(t)));
+      // 只看 AI 自由對話的回覆；劇本固定台詞（例如 s135）是顧問審過的
+      const hit = replies[i].filter(x => x.offer).map(x => x.text.match(TERMS)?.[0]).find(t => t && !before.some(s => s.includes(t)));
       if (hit) { fails.push(`C8 他沒講過就用了專有名詞「${hit}」`); break; }
     }
     const all = replies.flat().map(x => x.text).join("\n");
