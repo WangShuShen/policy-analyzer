@@ -23,7 +23,8 @@ export async function proxy(req: NextRequest) {
     // 保險快訊（W3）：公開頁＋搜尋引擎用的 sitemap／robots。/news/preview/<id> 也在這底下，頁面自己檢查管理者、不是就 404
     pathname === "/news" ||
     pathname.startsWith("/news/") ||
-    // 教學頁（10/16 卡 D：保險存摺下載教學 /guide/passbook）：靜態說明，不讀任何資料
+    // 保險小教室（4-av，卡 D）：/guide 列表＋/guide/<slug> 靜態教學，不讀任何資料
+    pathname === "/guide" ||             // 保險小教室列表（4-av）
     pathname.startsWith("/guide/") ||
     pathname === "/sitemap.xml" ||
     pathname === "/robots.txt" ||
