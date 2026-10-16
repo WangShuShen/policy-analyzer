@@ -446,3 +446,11 @@
 .rd .ccbtn.er-danger{background:var(--must);border-color:var(--must);color:#fff}
 .rd .ccbtn.er-danger:disabled{opacity:.45}
 .rd .er-done{background:var(--brand-soft);border-color:transparent}
+/* 客戶端頂部導覽（10/16）：加了「保險小教室」後手機放不下，分頁被壓到 40px、字疊在一起 →
+   分頁維持原本寬度不縮，整排橫向滑（.cnav 原型就是 overflow-x:auto）；目前這頁的分頁 ClientChrome 會自動捲進畫面 */
+.rd .cnav .cnb{flex:none}
+@container vp (max-width:599.98px){
+  .rd .cnav{gap:4px;scroll-padding-inline:14px;padding-inline:10px;
+    -webkit-mask-image:linear-gradient(to right,transparent,#000 12px,#000 calc(100% - 12px),transparent);mask-image:linear-gradient(to right,transparent,#000 12px,#000 calc(100% - 12px),transparent)}   /* 兩端淡出：被切掉的分頁看得出「還有、可以滑」，不會像黏在 RADIA 後面 */
+  .rd .cnav .cnb{padding:7px 10px}
+}
