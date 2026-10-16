@@ -117,6 +117,8 @@ const S = {
 const TONE_GROUP = ["G1", "G2", "G3"];
 // AI 講專有名詞前，他自己要先講過（C8）
 const TERMS = /條款|實支實付|日額型|附約|除外|要保人/;
+// 4-ax：推銷感的詞
+const PUSHY = /需求|補強|缺口|加保/;
 // 指令裡的範例回覆（C9：不能照抄）
 const EXAMPLE_REPLIES = new Set([...fs.readFileSync(new URL("../lib/consult/ai.ts", import.meta.url), "utf8").matchAll(/"reply":"([^"]+)"/g)].map(m => m[1].replace(/<[^>]+>/g, "")));
 // realAI：要靠 AI 的語意理解（新聞 vs 家人、情緒、一句話填多點、打字判子路線）。--mock 時一律標「需真 AI 補驗」：
@@ -352,6 +354,9 @@ async function runOne(id, round) {
     if (sc.edu && !sc.edu.test(all)) fails.push(`C3 沒有出現一般衛教 ${sc.edu}`);
     const inviteLine = offers[0]?.text ?? "";
     if (sc.hook && offers.length && !sc.hook.test(inviteLine)) fails.push(`C5 邀約理由沒對上他的事 ${sc.hook}`);
+    // 4-ax：AI 自由對話的話和選項不用推銷感的詞（他自己先講了才可以）
+    const pushy = replies.flat().filter(x => x.offer).flatMap(x => [x.text, ...x.chips]).join("\n").match(PUSHY)?.[0];
+    if (pushy && !said.some(s => s.includes(pushy))) fails.push(`4-ax 用了推銷感的詞「${pushy}」`);
     const copied = replies.flat().find(x => EXAMPLE_REPLIES.has(x.text));
     if (copied) fails.push(`C9 照抄指令範例：${copied.text.slice(0, 30)}…`);
   }
