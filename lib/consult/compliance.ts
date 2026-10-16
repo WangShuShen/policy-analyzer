@@ -117,7 +117,9 @@ export async function aiReview(text: string, chips: string[] = []): Promise<Revi
   try {
     const res = await reviewClient().messages.parse({
       model: REVIEW_MODEL,
-      max_tokens: 256,
+      // Haiku 5.5 預設會先思考：2026-10-16 實測思考就用掉 160 幾個 token，回覆一長 256 就不夠、輸出被截斷 →「審查失敗」被誤擋
+      max_tokens: 1024,
+      thinking: { type: "disabled" },
       output_config: { format: zodOutputFormat(ReviewSchema) },
       system: [{ type: "text", text: REVIEW_SYSTEM, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content }],
