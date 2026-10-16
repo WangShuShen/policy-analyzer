@@ -382,7 +382,9 @@ async function needRound(userId: string, convId: string, st: FlowState, input: {
   else if (invite === "not_now") offer = "none";
   if (offer === "upload" && policy === "沒有") offer = "booking";
   await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
-  const chips = [...r.chips, ...actionChips(offer)].filter((c, i, a) => a.indexOf(c) === i);
+  // 有邀約時，AI 自己寫的同類選項（「好，先算算看」「約顧問」）拿掉：點了不會走出口，又跟程式的按鈕重複（真 AI 測試 F21）
+  const own = offer === "none" ? r.chips : r.chips.filter(c => !/算算|傳.*存摺|我傳|約顧問/.test(c));
+  const chips = [...own, ...actionChips(offer)].filter((c, i, a) => a.indexOf(c) === i);
   await store.addMessage(convId, "assistant", {
     kind: "ai", html: r.html, chips, ...(r.asked ? { ask: r.asked } : {}), offer,
     ...(ex.intent === "book" ? { byAsk: true } : {}), ...(ex.urgent ? { urgent: true } : {}),
