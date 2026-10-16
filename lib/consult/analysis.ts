@@ -157,7 +157,7 @@ export async function buildAnalysis(userId: string, facts: StoredFact[], shown: 
     if (lk.has("retgap")) headlines.push({ key: "retgap", label: "退休後每個月差多少", value: wan(results.retirement.gap) });
     if (lk.has("taxsrc")) headlines.push({ key: "taxsrc", label: "繳稅的錢夠不夠", value: wan(results.taxSource.gap) });
     // 4-ap：倍數不由 AI 講，寫成數字旁的試算基準（4-ae 照樣用年收倍數算）
-    if (lk.has("survgap")) headlines.push({ key: "survgap", label: "家人往後的生活費夠不夠", value: wan(results.survivor.longGap), note: `試算基準：年收入 × ${results.survivor.mult}，僅供參考` });
+    if (lk.has("survgap")) headlines.push({ key: "survgap", label: "家人往後的生活費", value: wan(results.survivor.longGap), note: `試算基準：年收入 × ${results.survivor.mult}，僅供參考` });
   }
   return { unlocked, booking, open, locked, headlines, assumptionsVersion: A.version, inputs, results };
 }
