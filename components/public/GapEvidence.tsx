@@ -9,7 +9,7 @@ export function Evidence({ k }: { k: string }) {
   if (!c) return null;
   return (
     <details style={{ marginTop: 6 }}>
-      <summary className="alink" style={{ listStyle: "none", cursor: "pointer", padding: 0 }}>為什麼要補？看數據</summary>
+      <summary className="alink" style={{ listStyle: "none", cursor: "pointer", padding: 0 }}>為什麼是這個數字？看數據</summary>
       <div className="gpev">
         <div className="evh">📊 公開統計</div>
         {c.stats.map(s => (

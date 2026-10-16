@@ -196,7 +196,7 @@ export function PassbookUpload({ conversationId, onUploaded, onSkip, busy, api =
     <div className="upload up2" style={{ marginTop: 12 }}>
       <svg className="ill i44" viewBox="0 0 48 48" style={{ margin: "0 auto" }} aria-hidden="true"><use href="#i-upload" /></svg>
       <h3>上傳你的保險存摺</h3>
-      <p><strong>有你的保單，才做得出專屬你的分析</strong>——現在有多少、還差多少、該補哪裡。<br />沒有的話，面談只能講通用的方向。</p>
+      <p><strong>有你的保單，才做得出專屬你的分析</strong>——現在有多少、還差多少、哪裡不夠。<br />沒有的話，面談只能講通用的方向。</p>
 
       {!needPw && !images.length && (
         <div className="upbtns">
