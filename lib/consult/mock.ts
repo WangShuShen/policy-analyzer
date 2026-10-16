@@ -1,6 +1,6 @@
 import type { AskStep } from "./engine";
-import type { Extraction, NeedExtraction, NeedTurnInput, ReplyMode, Usage } from "./ai";
-import { DECLINED, nextSlot, slotOf, type Values } from "./needs";
+import type { Extraction, NeedExtraction, NeedTurnInput, Offer, ReplyMode, Usage } from "./ai";
+import { DECLINED, slotOf, type Values } from "./needs";
 
 /*
  * 模擬 AI 模式（顧問 10/13 定案：開發版 AI 先用模擬的，暫不儲值）。
@@ -81,7 +81,7 @@ export function mockExtractAnswer(ask: AskStep, text: string): Extraction {
   return none;                                                          // 沒抓到：照程式走（請他從選項挑）
 }
 
-// ── 需求點整理員 ───────────────────────────────────────────────────
+// ── 自由對話的整理員（4-au）───────────────────────────────────────────────────
 
 const DECLINE = /先不說|不想說|不想講|不方便|私人|跳過|不太想說/;
 
@@ -133,24 +133,40 @@ const POLICY: [RegExp, string][] = [
 
 const first = (rules: [RegExp, string][], text: string) => rules.find(([re]) => re.test(text))?.[1];
 
-export function mockExtractNeeds(known: Values, text: string): NeedExtraction {
+const URGENT = /剛走|過世|走了|往生|住院|剛確診|確診|不賠|拒賠|解約|停繳|繳不下去|出事/;
+const ACCEPT = /^(好|好啊|好喔|可以|ok|OK|嗯好|我傳|幫我算|算算看)/;
+
+/** 他今天想問的事（模擬：常見說法對到短句） */
+const TOPIC: [RegExp, string][] = [
+  [/理賠.*少|賠.*少|沒賠/, "理賠金比預期少"],
+  [/不賠|拒賠/, "被拒賠"],
+  [/解約|停繳|繳不下去/, "想解約"],
+  [/爸媽|父母|長輩/, "想幫爸媽整理保單"],
+  [/看懂|怎麼看|看不懂/, "看不懂自己的保單"],
+  [/退休/, "想算退休要準備多少"],
+  [/稅|傳承|留給|繼承/, "傳承與稅"],
+  [/教育|大學|學費/, "小孩教育金"],
+];
+
+export function mockExtractNeeds(known: Values, text: string, history: { role: string; text: string }[] = []): NeedExtraction {
+  const lastAi = [...history].reverse().find(l => l.role === "assistant")?.text ?? "";
   const intent: NeedExtraction["intent"] =
     BOOK.test(text) ? "book"
-    : /推薦|哪家|哪一張|保多少|多少才夠/.test(text) ? "product"
+    : ACCEPT.test(text.trim()) && /存摺|算|顧問/.test(lastAi) ? "accept"
+    : /推薦|哪家|哪一張|保多少|多少才夠|該買|要買什麼/.test(text) ? "product"
     : KNOWLEDGE.test(text) ? "knowledge"
     : /剛走|過世|很亂|在哭/.test(text) ? "emotion"
     : "answer";
+  const urgent = URGENT.test(text);
   const updates: NeedExtraction["updates"] = [];
   const set = (slot: string, value: string | undefined) => {
     if (value && !updates.some(u => u.slot === slot)) updates.push({ slot, value, confidence: "clear" });
   };
-  // 拒答：記在正在問的那一點上（想約顧問時正在問的是「最擔心」）
   if (DECLINE.test(text)) {
-    const asking = intent === "book" || /直接約/.test(text) ? slotOf("worry") : nextSlot(known);
-    if (asking) set(asking.key, DECLINED);
-    return { intent, updates };
+    if (intent === "book" || /直接約/.test(text)) set("worry", DECLINED);
+    return { intent, urgent, updates };
   }
-  if (/保單.*夠|看看保單|確認保單/.test(text)) set("intent", "想確認現有保單夠不夠");
+  if (!known.has("topic")) set("topic", first(TOPIC, text));
   set("trigger", first(TRIGGER, text));
   const trigger = updates.find(u => u.slot === "trigger")?.value ?? known.get("trigger") ?? "";
   if (/生病|照顧/.test(trigger)) {
@@ -161,35 +177,43 @@ export function mockExtractNeeds(known: Values, text: string): NeedExtraction {
   set("income_share", first(INCOME, text));
   set("worry", first(WORRY, text));
   if (/保|團保/.test(text) || first(POLICY, text) === "沒有保單") set("existing_policy", first(POLICY, text));
-  return { intent, updates };
+  return { intent, urgent, updates };
 }
 
 // ── 說話 ───────────────────────────────────────────────────────────
 
-/** 給客戶看的問句（needs.ts 的 ask 是寫給 AI 看的說明，不能直接講） */
+/** 給客戶看的問句（needs.ts 的 ask 是寫給整理員看的說明，不能直接講） */
 const QUESTION: Record<string, string> = {
-  intent: "你今天想先聊哪一塊？",
-  trigger: "會想到要看保單，是最近發生了什麼事嗎？",
-  care_share: "照顧家人的錢，現在主要是誰在出？",
-  care_duration: "醫生有說大概要持續多久嗎？",
-  family: "家裡有誰是靠你的嗎？",
-  income_share: "家裡的收入，你大概佔多少？",
-  worry: "如果真的發生什麼事，你最擔心哪一種情況？",
   existing_policy: "你手上有保單嗎？知道大概保了什麼嗎？",
+  family: "家裡有誰是靠你的嗎？",
+  worry: "如果真的發生什麼事，你最擔心哪一種情況？",
 };
 const BOOK_LINE = "可以，下面的「約顧問」隨時都能約，你講的都會一起帶給顧問。";
-const ADVISOR_LINE = "這部分要看條款和你的實際狀況，面談時顧問會當面說明。";
+const ADVISOR_LINE = "這要看你保單上怎麼寫和你的狀況，顧問會當面跟你說。";
 
-export function mockNeedTurn(m: NeedTurnInput): { reply: string; chips: string[] } {
-  const ask = m.askNow;
-  const q = ask ? QUESTION[ask.key] ?? "" : "";
-  if (m.intent === "emotion") return { reply: "辛苦了，慢慢來就好，不用急。", chips: ["想繼續聊", "先休息一下"] };
-  if (m.intent === "book") {
-    if (ask?.key === "worry") return { reply: `${BOOK_LINE}約之前只想問一件事——你最擔心哪一種情況？`, chips: [...ask.backup.slice(0, 3), "先不說，直接約"] };
-    return { reply: BOOK_LINE, chips: ["先去約顧問", "再聊一下"] };
-  }
+/** 模擬模式的出口：看他這句話的字 */
+function mockExit(text: string, hasPolicy: NeedTurnInput["hasPolicy"]): Offer {
+  if (/退休/.test(text)) return "calc_ret";
+  if (/稅|傳承|留給|繼承/.test(text)) return "calc_tax";
+  if (/教育|大學|學費|念書/.test(text)) return "calc_edu";
+  if (/保單|存摺|看懂|夠不夠|保太多|團保|好幾張/.test(text) && hasPolicy !== "沒有") return "upload";
+  return "none";
+}
+
+export function mockNeedTurn(m: NeedTurnInput): { reply: string; chips: string[]; asked: string | null; offer: Offer } {
+  if (m.intent === "book") return { reply: BOOK_LINE, chips: ["想先問一件事"], asked: null, offer: "booking" };
+  if (m.intent === "emotion") return { reply: "辛苦了，慢慢來就好，不用急。", chips: ["想繼續聊", "先休息一下"], asked: null, offer: m.invite === "now" ? "booking" : "none" };
   const lead = m.intent === "product" || m.intent === "knowledge" ? ADVISOR_LINE : "了解，我記下來了。";
-  return { reply: q ? `${lead}${q}` : lead, chips: ask ? ask.backup : [] };
+  if (m.invite !== "not_now") {
+    const exit = mockExit(m.userText, m.hasPolicy);
+    const offer = exit !== "none" ? exit : m.invite === "now" ? "booking" : "none";
+    if (offer !== "none") return { reply: `${lead}要不要讓顧問幫你看看？`, chips: ["我再想想"], asked: null, offer };
+  }
+  const done = new Set(m.askedBefore.map(s => s.key));
+  const next = Object.keys(QUESTION).find(k => !done.has(k));
+  return next
+    ? { reply: `${lead}${QUESTION[next]}`, chips: slotOf(next)!.backup, asked: next, offer: "none" }
+    : { reply: lead, chips: ["想再問一件事"], asked: null, offer: "none" };
 }
 
 export function mockReply(m: ReplyMode): string {

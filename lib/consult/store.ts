@@ -4,7 +4,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { encryptJson, decryptJson } from "@/lib/fieldCrypto";
 import { SCRIPT_VERSION } from "./script";
 import type { FlowState } from "./engine";
-import type { Usage } from "./ai";
+import type { Offer, Usage } from "./ai";
 
 /*
  * 諮詢的資料存取。所有個資欄位加密（D2）；每次互動把 expires_at 往後推 1 年（D3）。
@@ -15,7 +15,10 @@ export type ConversationRow = typeof conversations.$inferSelect;
 /** 對話內容的種類（加密後存在 messages.content_enc） */
 export type MessageContent =
   | { kind: "user"; text: string }
-  | { kind: "ai"; html: string; chips?: string[]; ask?: string; mark?: "clarify" | "want_ask"; link?: MessageLink }   // chips：4-ai 需求點引導時 AI 產生的選項（可能含健康資訊，跟著內容一起加密）；ask：這一句在問哪個需求點；mark：開場這類固定題，這一句是「聽不懂」或「你想問什麼」（下一句要接著處理）
+  | { kind: "ai"; html: string; chips?: string[]; ask?: string; mark?: "clarify" | "want_ask"; link?: MessageLink; offer?: Offer; byAsk?: boolean; urgent?: boolean }
+    // chips：自由對話時 AI 產生的選項＋程式接上的出口按鈕（可能含健康資訊，跟著內容一起加密）；ask：這一句在問哪個筆記項目（4-au：同一件事不問兩次）
+    // mark：固定題的「聽不懂」或「你想問什麼」（下一句要接著處理）
+    // offer：自由對話的這一句有沒有邀約、邀去哪（4-au；有這個欄位＝自由對話的回覆）；byAsk：是他自己說要約的（不算主動邀約次數）；urgent：這一輪整理員判斷是急件
   | { kind: "trend"; title: string; body: string; forYou: string }
   | { kind: "panel"; key: string }
   | { kind: "note"; text: string; link?: MessageLink };

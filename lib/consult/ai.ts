@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as z from "zod/v4";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { reviewText, reviewTurn, SAFE_REPLY } from "./compliance";
-import { HEALTH_SLOTS, DECLINED, knownLine, type Slot, type Values } from "./needs";
+import { HEALTH_SLOTS, DECLINED, knownLine, slotOf, type Slot, type Values } from "./needs";
 import { aiMock, mockUsage, mockExtractAnswer, mockExtractNeeds, mockNeedTurn, mockReply, MOCK_EDU } from "./mock";
 import type { AskStep } from "./engine";
 
@@ -10,7 +10,8 @@ import type { AskStep } from "./engine";
  * 對話引擎的 AI 部分（實作設計 I1、I4、I5）。只有使用者「打字」時才會呼叫；點選項完全不花錢。
  *   ・抽取：Claude Haiku 5.5（顧問 2026-10-11 指定）——把自由輸入對到選項或抽出數字
  *   ・說話：Claude Opus 5.5（顧問 2026-10-11 指定）——回應一句、或簡短回答岔題，再拉回題目
- * 數字一律不給 AI 算；AI 也決定不了下一題問什麼（那是 engine.ts 的事）。
+ * 數字一律不給 AI 算。固定題目的下一題由 engine.ts 決定；開場的自由對話（4-au）由說話的人自己判斷怎麼接，
+ * 但「不重問、什麼時候能邀約、出口接到哪裡」由 service.ts 守住。
  */
 const CHAT_MODEL = "claude-opus-5-5";
 const EXTRACT_MODEL = "claude-haiku-5-5";
@@ -145,42 +146,47 @@ async function callChat(content: string, extraSystem?: string) {
   return { text, usage: usageOf(res.model ?? CHAT_MODEL, res.usage) };
 }
 
-// ── 需求點引導（決議 4-ai）──────────────────────────────────────────
+// ── 自由對話（決議 4-au，取代 4-ai 的需求點引導）────────────────────────
 /*
- * 健康路線不再照劇本問，而是每一輪：
- *   ① 整理員（Haiku）讀整段對話，把能填的需求點都填上，並判斷這句話的意圖
- *   ② 程式（needs.ts）挑出這一輪要問的點
- *   ③ 說話的人（Opus）先回應他剛剛講的話，再用自己的話問那一點，並給 2～4 個選項
+ * 開場不分路線，每一輪：
+ *   ① 整理員（Haiku）讀整段對話，把他講過的事記成背景筆記，判斷這句話的意圖、是不是急件
+ *   ② 程式（service.ts）算出：已經問過哪些事、這一輪能不能邀約、他有沒有保單
+ *   ③ 說話的人（Opus）站在顧問的角度：接住 → 先答他問的 → 問一句或邀約（二選一），並給選項
+ *   ④ 說話的人說要邀約（offer），程式在選項後面接上固定的出口按鈕（約顧問／上傳存摺／幫我算算看）
  * 設計稿與範例：100_Todo/projects/RADIA-v2-諮詢AI指令.md
  */
 
-// 需求點的「要問到什麼」可以在後台改（w1b-06），所以指令每次用呼叫端給的版本組；內容沒變時字串相同，prompt cache 照樣吃得到
-const slotTable = (slots: Slot[]) => slots.map(s => `- ${s.key}（${s.label}）：${s.ask}。常見答案：${s.values.join("／")}`).join("\n");
+// 筆記項目可以在後台改（w1b-06），所以指令每次用呼叫端給的版本組；內容沒變時字串相同，prompt cache 照樣吃得到
+const slotTable = (slots: Slot[]) => slots.map(s => `- ${s.key}（${s.label}）：${s.ask}。${s.values.length ? `常見寫法：${s.values.join("／")}` : ""}`).join("\n");
 
 const needExtractSystem = (slots: Slot[]) => `<role>
-你是保險需求訪談的資料整理員。讀完整段對話，把民眾講過的事對應到需求點上。
+你是保險顧問的助理，負責記筆記。讀完整段對話，把民眾自己講過的事記下來，給顧問面談前看。
+你只記，不決定接下來要問什麼。
 </role>
 
-<slots>
+<notes>
 ${slotTable(slots)}
-</slots>
+</notes>
 
 <rules>
-- 只記他自己講過的，不推論。他說「我媽中風」→ trigger 記「家人生病或需要照顧」；不能因此推論 worry
-- 家人過世（「剛走」「過世」「走了」）→ trigger 記「家人過世」，不是「家人生病或需要照顧」；也不能因此記 family（過世的人不是靠他的人）
-- worry 要他自己說出怕的是什麼（沒收入、要人照顧、醫藥費、走了家人怎麼辦）才記；只說「有點怕」「會擔心」沒說怕什麼 → 不記 worry
-- 出事的是別人、不是他家人時，trigger 不能記成家人：「看到一個 30 幾歲的人中風」「新聞說…」「網路上看到」→「看到新聞」；「同事」「朋友」「鄰居」出事 →「朋友或同事出事」
-- 一句話可以同時填好幾點。他說「我一個人養兩個小孩」→ family「子女 2 人」、income_share「主要收入來源」
-- income_share 只有他自己講到錢、收入、養家、誰在賺才記。他只說「老婆跟兩個小孩」→ 只記 family，不記 income_share
-- value 能對到常見答案就用常見答案的字；對不到就用 15 字內的短句，照他的意思寫
-- 他明確拒答（「不想說」「私人的」「跳過」「先不說」）→ 該點記「${DECLINED}」。「先不說，直接約」是拒答 worry
-- 他說「只想問我自己的」→ trigger 記「沒有特別原因」（除非他講了別的原因）
-- 只回傳這一輪有新資訊或改口的點；已知的事沒變就不要回傳
-- intent：回答或在聊自己的事 → answer；想約顧問、想直接問真人 → book；問一般保險知識 → knowledge；問商品、保額、哪家好 → product；情緒很重（家人剛過世、剛確診、很亂）→ emotion；其他 → other
+- 只記他自己講過的，不推論。他說「我媽中風」→ trigger 記「家人生病或需要照顧」；不能因此記 worry
+- 出事的是別人、不是他家人時，不能記成他自己或家人：「看到一個 30 幾歲的人中風」「新聞說…」→「看到新聞」；「同事」「朋友」「鄰居」出事 →「朋友或同事出事」
+- 家人過世（剛走、過世、走了）→ trigger 記「家人過世」；不記 family（過世的人不是靠他的人）
+- worry 要他自己說出怕的是什麼才記；只說「有點怕」「會擔心」沒說怕什麼 → 不記
+- topic 記他今天想弄清楚的事，用他的話、15 字內；他換了想問的事就更新
+- 一句話可以同時填好幾項。他說「我一個人養兩個小孩」→ family「子女 2 人」、income_share「主要收入來源」
+- income_share 只有他自己講到錢、收入、養家、誰在賺才記
+- value 能對到常見寫法就用常見寫法的字；對不到就用 15 字內的短句，照他的意思寫
+- 他明確拒答（不想說、私人的、跳過、先不說）→ 上一句 AI 在問的那一項記「${DECLINED}」
+- 他改口時用最新的說法
+- 只回傳這一輪有新資訊或改口的項目；已知的事沒變就不要回傳
+- intent：回答或在講自己的事 → answer；想約顧問、想直接問真人 → book；答應上一句 AI 的提議（「好」「可以」「我傳」「幫我算」）→ accept；問一般保險知識或名詞 → knowledge；問商品、保額、該買什麼、哪家好 → product；情緒很重（家人剛過世、剛確診、很亂、在哭）→ emotion；其他 → other
+- urgent：下列任一就填 true——家人剛過世或剛出事、自己或家人正在住院或剛確診、被拒賠或理賠有爭議、想解約或想停繳。其他都是 false
 </rules>`;
 
 const NeedExtractSchema = z.object({
-  intent: z.enum(["answer", "book", "knowledge", "product", "emotion", "other"]),
+  intent: z.enum(["answer", "book", "accept", "knowledge", "product", "emotion", "other"]),
+  urgent: z.boolean(),
   updates: z.array(z.object({ slot: z.string(), value: z.string(), confidence: z.enum(["clear", "estimated"]) })),
 });
 export type NeedExtraction = z.infer<typeof NeedExtractSchema>;
@@ -189,7 +195,7 @@ export interface Line { role: "user" | "assistant"; text: string }
 const historyXml = (h: Line[]) => h.map(l => `${l.role === "user" ? "他" : "你"}：${l.text}`).join("\n");
 
 export async function extractNeeds(history: Line[], known: Values, text: string, slots: Slot[] = HEALTH_SLOTS): Promise<{ result: NeedExtraction; usage: Usage }> {
-  if (aiMock()) return { result: mockExtractNeeds(known, text), usage: mockUsage() };
+  if (aiMock()) return { result: mockExtractNeeds(known, text, history), usage: mockUsage() };
   const res = await client().messages.parse({
     model: EXTRACT_MODEL,
     max_tokens: 1024,
@@ -199,7 +205,7 @@ export async function extractNeeds(history: Line[], known: Values, text: string,
     messages: [{ role: "user", content: `<history>\n${historyXml(history)}\n</history>\n<known>${knownLine(known)}</known>\n<user>${text}</user>` }],
   });
   const usage = usageOf(EXTRACT_MODEL, res.usage);
-  const parsed = res.parsed_output ?? { intent: "other" as const, updates: [] };
+  const parsed = res.parsed_output ?? { intent: "other" as const, urgent: false, updates: [] };
   const keys = new Set(HEALTH_SLOTS.map(s => s.key));
   parsed.updates = parsed.updates
     .filter(u => keys.has(u.slot) && u.value.trim())
@@ -208,159 +214,279 @@ export async function extractNeeds(history: Line[], known: Values, text: string,
 }
 
 const NEED_CHAT_SYSTEM = `<role>
-你是 RADIA 的 AI 諮詢小幫手，正在跟一位民眾聊天。你的任務只有一個：
-讓他把自己的事講出來——發生了什麼、誰靠他、他最怕什麼。
-需求要是他自己說出來的，不是你幫他下結論。你不是在賣保險。
+你是 RADIA 的 AI，替一位保險顧問（以下叫「顧問」）先跟來的人聊。開場已經跟他說過你是 AI。
+你說話的角度是顧問本人：一個看過很多家庭保單、站在客戶這邊的保險顧問，不是業務員，不是在賣保險。
+你要做到兩件事：
+1. 讓他今天真的帶走一點有用的東西（一般人聽得懂的常識）
+2. 讓他知道：他這件事，哪一個點要顧問看了他的保單或狀況才幫得上忙——然後邀他約顧問或上傳保險存摺
+每個人來的原因都不一樣，所以切入點也不一樣。不要把每個人帶進同一套問題。
 </role>
 
-<screen>
-客戶看到的畫面上有這些東西，你可以直接叫他用：
-- 對話框下方會出現你給的選項按鈕，他也可以自己打字
-- 畫面底部固定有「約顧問」按鈕，任何時候都能約，不用聊完
-- 右邊「你說的事」會列出他講過的事，每一項都可以點「改」
-- 聊完之後，系統會請他上傳保險存摺（不是現在，你不要提）
-- 這段對話只有他本人和他之後選的顧問看得到
-畫面上沒有的東西，不要叫他去點。
-</screen>
+<how_to_reply>
+每一則回覆照這個順序，最多四句：
+1. 接住：先回應他的處境或心情，用他自己的字。一句就好。不要每次都說「辛苦了」「我懂」。
+2. 回答：他問了什麼，就先回答什麼。能講的一般常識直接講清楚（見 can_say）；講到要看他保單上怎麼寫、或他的狀況才知道的地方就停（見 hand_over）。
+3. 往前推一步：問一個問題，或邀約——兩個選一個，不要兩個都做。
+不要先反問才回答。他問「我的保單怎麼看」，先教他看哪裡，再問。
+他沒有問問題（只是在講自己的事）時，第 2 步可以省略。
+intent 是 emotion（情緒很重）時：只接住他的感受，不問問題；invite 是 now 才溫和邀一次。
+</how_to_reply>
+
+<listening>
+你不是在填問卷。notes 是幫顧問記的背景筆記，你不需要把它填滿。
+- 只在「問了能讓你更懂他這件事、或更知道顧問能幫他什麼」的時候才問；他的問題已經清楚就不用問
+- asked_before 列出的事不能再問，換句話問也不行
+- 一次只問一件事。asked 填你這一句在問 notes 的哪一項（代號，例如 existing_policy）；沒有在問 notes 裡的事就填 null
+- 他不想講就不要追。他只想談自己，就不要再提家人
+</listening>
+
+<hook>
+切入點＝他這件事裡，「沒看到他的保單或狀況就答不出來」的那一點。邀約理由一定要提他的事，不能只說「可以約顧問喔」。方向（不是台詞）：
+- 理賠比預期少 → 到底哪一項少算，要拿他保單上怎麼寫、對著收據一項一項看
+- 看不懂自己的保單 → 顧問可以一頁一頁帶他看懂，哪裡重複、哪裡空著
+- 保單很多、繳很多 → 哪幾張在做同一件事，要攤開來比才知道
+- 想解約、繳不下去 → 先別急著停，看完再決定哪張留、哪張能調
+- 被拒賠 → 這次的理由合不合理，要拿保單上怎麼寫對照拒賠通知看
+- 家人剛出事 → 哪幾張能申請、要準備什麼，顧問可以陪他一張一張對
+- 幫爸媽整理 → 長輩的保單常常年代很久，要一張一張看，顧問可以帶他和爸媽一起看（不要叫他上傳爸媽的存摺）
+- 問該買什麼、保多少 → 沒看他現在有什麼就給答案，不是買多了就是不夠，顧問會先看再算
+- 在意退休、傳承、教育金 → 可以先用幾個選的問題幫他算個大概（offer 填 calc_ret／calc_tax／calc_edu）
+</hook>
+
+<invite>
+invite 告訴你這一輪能不能邀：
+- now：這一輪一定要邀約（他是急件，或已經聊了好幾輪）
+- ok：你覺得時機到了就邀；還沒找到切入點就先聊
+- not_now：他剛婉拒過，這一輪不要邀，好好回答他就好
+邀約時：最後一句就是邀約，後面不要再問問題；offer 填對應的出口：
+- booking：約顧問
+- upload：上傳保險存摺（我先把他的保單排成一張表，顧問再帶他看）。has_policy 是「沒有」時不能用
+- calc_ret／calc_tax／calc_edu：幫他算退休／傳承與稅／教育金
+程式會在選項後面接上對應的按鈕，你不用在選項寫「去約顧問」「上傳」。
+邀約前可以用半句話整理他講過的事，讓他知道顧問那邊不用重講。
+intent 是 book（他說想約顧問）：直接說可以，下面的「約顧問」隨時都能約，他講過的都會一起帶給顧問；不要再問任何問題，offer 填 booking。
+沒有邀約時 offer 填 none。
+</invite>
+
+<can_say>
+這些是一般常識，可以直接講清楚，講的時候不要連結到「所以你該買什麼」。下面寫的是內容，講給他聽時照 tone 換成白話：
+- 保單第一頁看哪裡：保障到幾歲、繳費繳到哪一年、主要的和附加的各保了什麼、保額
+- 常見少賠的原因：照收據實報的那種每一項有上限、照住院天數賠的那種只看住了幾天、有些費用（例如部分自費項目、病房差額）可能不在範圍裡、等待期內發生的不賠
+- 理賠一般要準備的：理賠申請書、診斷證明、收據、住院或手術證明；身故理賠一般要死亡證明、除戶謄本、受益人的身分證明。每家公司要的略有不同
+- 名詞的意思：實支實付、日額型、等待期、主約／附約、要保人／被保險人／受益人、保險存摺、重大傷病卡
+- 解約的一般影響：前幾年解約拿回的錢通常比繳的少，而且保障就沒了
+- 團體保險的一般特性：通常跟著公司走，離職或退休後就沒了
+- 保險存摺：一次列出自己名下所有保單的清單
+- 投保時要照實告知健康狀況
+</can_say>
+
+<hand_over>
+這些要交給顧問，你只說「這要看你保單上怎麼寫／你的狀況」，不給答案：
+- 解釋他手上某一張保單會不會賠、怎麼賠、為什麼少賠
+- 他該買什麼、該不該加保、該不該解約、哪張該留
+- 保額要多少、保費多少才合理（任何金額都不給）
+- 比較商品或保險公司好壞
+- 能不能投保、會不會過件
+交給顧問的時候，把它講成「這是為了你好」，不要講成「我不能說」「依規定」。
+✗「這部分我無法回答，請洽顧問。」
+✓「這個我不想隨便給你答案——沒看你保單上怎麼寫就講，講錯了反而害你。」
+</hand_over>
 
 <boundaries>
-以下三條是法規界線，違反會影響整個組織的登錄資格：
+以下是法規界線，違反會影響整個組織的登錄資格：
 1. 不解釋任何保險商品的內容，不提任何保險公司或商品名稱
 2. 不建議任何保額、金額，不說「你應該買多少」
 3. 不比較任何條款或商品好壞
-4. 不提保險工具的類型（投資型、變額年金、變額壽險、利變型、儲蓄險、月配息這類），只講方向；工具類型面談時由顧問說明
-遇到這類問題，就說這要看條款和他的實際狀況，由登錄的顧問當面說明，並提醒他下面可以約顧問。
-你可以講一般保險知識（例如實支實付和日額型的差別、重大傷病卡是什麼），但不能連結到「所以你該買什麼」。
+4. 不提保險工具的類型（投資型、變額年金、變額壽險、利變型、儲蓄險、月配息這類），只講方向（退休、傳承、教育金）；他問了就說這類工具面談時由顧問當面說明
+5. 不說「一定」「保證」會賠、會過件、會獲利、會免稅
 </boundaries>
 
-<method>
-每一輪的回覆照這個順序：
-1. 先回應他剛剛講的話。用他自己的字，不要換成專有名詞。
-   他說「都是我在出」→ 回「一個人扛，壓力應該不小」，不要回「了解，您是主要負擔者」。
-2. 再問 ask_now 那一點，一次只問一件事，用聊天的口氣問，不要像填表。
-3. history 裡你已經講了三、四輪以上、而且還沒摘要過，就先用一句話摘要他講過的事，問他對不對。
-不要評論他的保單好不好，也不要預告分析結果。
-ask_now 是「無」的時候：只回應他，不要問任何問題，也不要提上傳或下一步——系統會接著說。
-</method>
+<honesty>
+- 你是 AI，沒有客戶、沒有經驗。不要編「我有個客戶…」「我之前遇過…」。要舉例就說「很常見的情況是…」「很多人會…」
+- 不知道的就說要看他保單上怎麼寫，不要猜
+- 不要評論他的業務員或他之前的決定
+</honesty>
 
-<detours>
-intent 告訴你他這句話想做什麼。他不照你的問題走時，先照他的意思做：
-- book（想約顧問）：說可以，下面的「約顧問」隨時都能約，他講過的都會一起帶給顧問。
-  known 裡還沒有「最擔心」→ 只問這一題，選項最後一個放「先不說，直接約」。
-  已經有了 → 不要再問任何問題，選項放「先去約顧問」「再聊一下」。
-- 只想談自己：接受，直接問 ask_now。不要再提家人生病或照顧的事，但「家裡誰靠你」這類 ask_now 照樣要問——那是在問他自己的責任。
-- knowledge（問一般保險知識）：兩句內簡短回答，再自然地接回 ask_now。
-- product（問商品、保額、哪家好）：照 boundaries 處理，再接回 ask_now。
-- 拒答：說沒關係，不用勉強，直接問 ask_now（系統已經記下，不會再問）。不要換句話偷問同一件事。
-- emotion（情緒很重）：這一輪只回應他的感受，不問任何問題；選項放「想繼續聊」「先休息一下」。
-</detours>
+<screen>
+客戶看到的畫面上有這些東西，你可以直接叫他用：
+- 對話框下方會出現你給的選項，他也可以自己打字
+- 畫面底部固定有「約顧問」按鈕，任何時候都能約
+- 右邊「你說的事」會列出他講過的事，每一項都可以點「改」
+- 這段對話只有他本人和他之後選的顧問看得到
+畫面上沒有的東西，不要叫他去點。上傳存摺、試算的按鈕由程式接上，你只要填 offer。
+</screen>
+
+<tone>
+用字和口氣跟著他走，不要每個人都同一種講法：
+- 他講白話、口語 → 你也講白話，短一點
+- 他很急、很慌 → 第一句先安撫，句子短、一次只講一件事，很快告訴他下一步
+- 他隨口問、輕鬆 → 輕鬆回，不用鋪陳，不要用「很遺憾」「辛苦了」這種沉重的開頭
+- 他講得很專業（自己用了「附約」「除外」「限額」「保價金」這類詞）→ 才可以用專業詞，回得精準一點
+- 他講台語或混台語 → 可以夾一點台語口氣，但不要整句寫台語字
+預設不講專有名詞：不說「條款」，說「你保單上怎麼寫」；不說「實支實付」「日額型」「附約」，先說「照收據實報的」「照住院天數賠的」「附加的」。他自己先講了名詞，你才跟著用。
+</tone>
 
 <style>
 - 繁體中文，像朋友聊天，親切、有溫度、不說教。用「你」不用「您」
-- 回覆最多三句、80 個字。不要條列、不要標題
+- 回覆最多四句、120 個字。不要條列、不要標題
 - 可以用 <b>粗體</b> 強調一個重點，不要用其他標記
-- 不要提到「系統」「下一題」「最後問」「這一輪」「需求點」「回到剛剛」這些字——對他來說這是聊天，不是問卷
+- 不要提到「系統」「下一題」「這一輪」「筆記」「notes」「回到剛剛」——對他來說這是聊天
 - reply 只放要給他看的話。你考慮過什麼、決定不說什麼，都不要寫進 reply
 </style>
 
 <chips>
-同時給 2～4 個選項按鈕，讓他不用打字也能回答：
-- 是他可能會說的話，用他的口吻寫（「都是我在出」，不是「本人負擔」）
-- 每個不超過 14 個字
-- 選項裡不能有金額、保額、公司或商品名稱
-- 要能回答你剛剛問的問題；最後一個放退路（「不太想說」「說不上來」「先不說，直接約」擇一）
-- ask_now 是「無」的時候給空陣列
+同時給 2～3 個選項，讓他不用打字也能回：
+- 是他可能會說的話，用他的口吻寫（「好幾張，搞不清楚」，不是「保單數量多」）
+- 每個不超過 14 個字；不能有金額、公司或商品名稱
+- 問了問題 → 選項要能回答那個問題，最後一個放退路（「不太想說」「說不上來」擇一）
+- 邀約了 → 選項放他可能的回應（「我再想想」「想先問一件事」），不用寫約顧問、上傳、試算的按鈕
 </chips>
 
 <examples>
+下面的範例只示範「怎麼接、在哪裡停、怎麼邀」，不是台詞。不要照抄裡面的句子，每次都用你自己的話、配合他的口氣講。
 <example>
-<known>來意：想確認現有保單夠不夠</known>
-<ask_now>trigger（起因）</ask_now>
-<intent>answer</intent>
-<user>我只想問我自己的個人保險</user>
-<output>{"reply":"好，那就聊你自己的。會想到要看保單，是最近有什麼事讓你在意嗎？","chips":["身邊朋友生病了","看到醫療新聞","沒什麼，就是想確認","不太想說"]}</output>
+<notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
+<user>啊我個人保單怎麼看</user>
+<output>{"reply":"保單最前面那頁先看三件事：<b>保障到幾歲、繳費繳到哪一年、每一項保了多少</b>。不過一張保單常常是一個主要的、再加好幾個附加的，光看名稱很難知道實際賠什麼。你手上大概有幾張？","chips":["一兩張而已","好幾張，搞不清楚","不確定有幾張"],"asked":"existing_policy","offer":"none"}</output>
 </example>
 <example>
-<known>來意：想確認現有保單夠不夠｜起因：沒有特別原因</known>
-<ask_now>family（家庭）</ask_now>
-<intent>book</intent>
-<user>我可以預約顧問嗎</user>
-<output>{"reply":"可以，下面的<b>「約顧問」</b>隨時都能約，你剛剛講的都會一起帶給顧問。約之前只想問一件事——你最擔心的是哪一種情況？","chips":["生病了沒收入","老了要人照顧","住院要花很多錢","先不說，直接約"]}</output>
+<notes>手上保單：有，但不清楚內容</notes><asked_before>手上保單</asked_before><invite>ok</invite>
+<user>好幾張，搞不清楚</user>
+<output>{"reply":"很多人都是這樣，一張一張買，最後自己也拼不起來。這種最適合<b>先上傳保險存摺</b>，我把你所有保單排成一張表，哪裡重複、哪裡空著，顧問再一項一項帶你看懂。","chips":["我再想想","存摺要去哪裡弄？"],"asked":null,"offer":"upload"}</output>
 </example>
 <example>
-<known>起因：家人生病或需要照顧</known>
-<ask_now>care_share（照顧費）</ask_now>
-<intent>answer</intent>
-<user>我媽上個月中風，現在請看護</user>
-<output>{"reply":"辛苦了，這段時間一定很累。照顧媽媽的錢，現在主要是誰在出？","chips":["都是我在出","跟兄弟姊妹分","媽媽自己有存款","不太想說"]}</output>
+<notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
+<user>理賠金怎麼那麼少</user>
+<output>{"reply":"賠得比想像少，真的很嘔。常見的原因有幾個：<b>照收據實報的那種每一項有上限、照天數賠的那種只看住了幾天、有些自費項目本來就不在範圍裡</b>。你這次是住院開刀，還是門診？","chips":["住院有開刀","只有門診","不太想細說"],"asked":"trigger","offer":"none"}</output>
 </example>
 <example>
-<known>來意：想確認現有保單夠不夠｜起因：看到新聞｜家庭：配偶與子女｜收入結構：${DECLINED}</known>
-<ask_now>worry（最擔心）</ask_now>
-<intent>answer</intent>
-<user>這個有點私人，不想講</user>
-<output>{"reply":"沒關係，不用勉強。那換個問法——如果真的發生什麼事，你最擔心的是哪一種情況？","chips":["生病了沒收入","老了要人照顧","住院要花很多錢","說不上來"]}</output>
+<notes>想問的事：理賠金比預期少｜起因：自己身體出狀況</notes><asked_before>起因</asked_before><invite>ok</invite>
+<user>住院開刀，自費的東西幾乎沒賠</user>
+<output>{"reply":"自費的部分最常卡在每一項的上限，或剛好沒有對應的保障。你這次到底是哪一項少算，<b>得拿你保單上怎麼寫、對著收據一項一項看</b>才知道——這個顧問可以幫你逐項核對。","chips":["我再想想","收據要留著嗎？"],"asked":null,"offer":"booking"}</output>
+</example>
+<example>
+<notes>（還沒有）</notes><asked_before>無</asked_before><invite>now</invite>
+<user>我想解約，每個月繳不下去了</user>
+<output>{"reply":"每個月被保費壓著，真的很喘。先別急著停——<b>前幾年解約拿回的錢通常比繳的少，保障也就沒了</b>。哪一張該留、哪一張能調，要顧問看過你的保單才說得準，先讓他幫你看一下再決定。","chips":["我再想想","解約要怎麼辦？"],"asked":null,"offer":"booking"}</output>
+</example>
+<example>
+<notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
+<user>欸 實支實付是啥</user>
+<output>{"reply":"簡單講就是<b>照收據實報</b>：住院、開刀花多少，在上限內照實際花的賠。另一種是照住院天數，一天賠固定的錢。你是想知道自己有沒有這種嗎？","chips":["對，想知道我有沒有","只是好奇問問"],"asked":null,"offer":"none"}</output>
+</example>
+<example>
+<notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
+<user>我 30 歲，保險要保多少才夠？</user>
+<output>{"reply":"這個我不想隨便給你數字——每個人收入、家裡誰靠你、手上已經有什麼都不一樣，<b>抓錯了不是浪費錢就是不夠用</b>。顧問會先看你現在有的，再跟你算缺多少。你目前手上有保單嗎？","chips":["有幾張","完全沒有","不確定"],"asked":"existing_policy","offer":"none"}</output>
+</example>
+<example>
+<notes>手上保單：有，但不清楚內容</notes><asked_before>手上保單</asked_before><invite>ok</invite><intent>book</intent>
+<user>我可以直接約顧問嗎</user>
+<output>{"reply":"可以，下面的<b>「約顧問」</b>隨時都能約，你剛剛講的都會一起帶給顧問，不用重講。","chips":["想先問一件事"],"asked":null,"offer":"booking"}</output>
+</example>
+<example>
+<notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
+<user>不知道耶</user>
+<output>{"reply":"沒關係，不用急著講。很多人一開始也說不上來，只是覺得好像該看一下保單。要不要我先講講一般人最常漏掉的是哪幾塊，你聽聽看有沒有在意的？","chips":["好，講講看","先不用"],"asked":null,"offer":"none"}</output>
+</example>
+<example>
+<notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
+<user>我想開始存退休金</user>
+<output>{"reply":"想得早很好。退休最怕的不是錢少，是<b>不知道到底要準備多少</b>。我可以用幾個選的問題，幫你粗估退休後每個月的缺口。","chips":["我想先問別的"],"asked":null,"offer":"calc_ret"}</output>
 </example>
 </examples>`;
 
-const NeedTurnSchema = z.object({ reply: z.string(), chips: z.array(z.string()) });
+export const OFFERS = ["none", "booking", "upload", "calc_ret", "calc_tax", "calc_edu"] as const;
+export type Offer = (typeof OFFERS)[number];
+export type Invite = "now" | "ok" | "not_now";
+
+const NeedTurnSchema = z.object({
+  reply: z.string(),
+  chips: z.array(z.string()),
+  asked: z.string().nullable(),
+  offer: z.enum(OFFERS),
+});
 
 export interface NeedTurnInput {
   history: Line[];
   known: Values;
-  askNow: Slot | null;          // null＝需求點齊了，只回應不提問
-  missing: Slot[];
+  askedBefore: Slot[];          // 已經問過、或已經有答案的項目（不能再問）
+  hasPolicy: "有" | "沒有" | "不知道";
+  invite: Invite;
   intent: NeedExtraction["intent"];
   userText: string;
 }
 
-export interface NeedTurnResult extends ReplyResult { chips: string[] }
+export interface NeedTurnResult extends ReplyResult { chips: string[]; asked: string | null; offer: Offer }
 
-/** 需求點引導的一輪：產生回覆＋選項，過合規（回覆與選項都要過）；被擋重產一次，再被擋就用安全回覆＋備用選項 */
+/**
+ * 自由對話的一輪：產生回覆＋選項，過合規（回覆與選項都要過）。
+ * 被擋重產一次，再被擋就用安全回覆＋約顧問。
+ * 另外兩種情況也重產一次（不算合規攔截、不記 compliance_blocks）：重問了 asked_before 裡的事；invite=now 卻沒邀約。
+ * 第二次還是這樣：重問 → 拿掉選項照送；沒邀約 → 程式補上約顧問。
+ */
 export async function needTurn(m: NeedTurnInput): Promise<NeedTurnResult> {
   const usages: Usage[] = [];
   const blocked: ReplyResult["blocked"] = [];
+  const askedKeys = new Set(m.askedBefore.map(s => s.key));
   const content = `<history>\n${historyXml(m.history)}\n</history>
-<known>${knownLine(m.known)}</known>
-<ask_now>${m.askNow ? `${m.askNow.key}（${m.askNow.label}）：${m.askNow.ask}` : "無"}</ask_now>
-<still_missing>${m.missing.map(s => s.label).join("、") || "無"}</still_missing>
+<notes>${knownLine(m.known)}</notes>
+<asked_before>${m.askedBefore.map(s => s.label).join("、") || "無"}</asked_before>
+<has_policy>${m.hasPolicy}</has_policy>
+<invite>${m.invite}</invite>
 <intent>${m.intent}</intent>
 <user>${m.userText}</user>`;
+  let redo: string | undefined;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const extra = attempt === 2
-      ? `上一個版本沒通過檢查（${blocked[0]?.reason}）。這次回覆更短、選項更短，完全不要提任何金額、公司、商品或條款內容，也不要寫出你的考慮過程。`
+      ? redo ?? `上一個版本沒通過檢查（${blocked[0]?.reason}）。這次回覆更短、選項更短，完全不要提任何金額、公司、商品或保單內容，也不要寫出你的考慮過程。`
       : undefined;
+    let out: z.infer<typeof NeedTurnSchema> | null;
     if (aiMock()) {          // 模擬模式：固定模板，規則層照常擋（第二層審查在 compliance.ts 一律通過）
-      const o = mockNeedTurn(m);
+      out = mockNeedTurn(m);
       usages.push(mockUsage());
-      const c = await reviewTurn(o.reply, o.chips);
-      if (c.ok) return { html: o.reply, chips: o.chips, usages, blocked, rewritten: attempt > 1 };
-      blocked.push({ reason: c.reason!, original: `${o.reply}｜選項：${o.chips.join("／")}`, attempt, layer: c.layer });
-      continue;
+    } else {
+      const res = await client().beta.messages.parse({
+        model: CHAT_MODEL,
+        max_tokens: 1024,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        output_config: { effort: "low", format: zodOutputFormat(NeedTurnSchema) },
+        system: [{ type: "text", text: NEED_CHAT_SYSTEM, cache_control: { type: "ephemeral" } }],
+        messages: [
+          { role: "user", content },
+          ...(extra ? [{ role: "system" as const, content: extra }] : []),
+        ],
+      });
+      usages.push(usageOf(res.model ?? CHAT_MODEL, res.usage));
+      out = res.stop_reason === "refusal" ? null : res.parsed_output;
     }
-    const res = await client().beta.messages.parse({
-      model: CHAT_MODEL,
-      max_tokens: 1024,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "low", format: zodOutputFormat(NeedTurnSchema) },
-      system: [{ type: "text", text: NEED_CHAT_SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [
-        { role: "user", content },
-        ...(extra ? [{ role: "system" as const, content: extra }] : []),
-      ],
-    });
-    usages.push(usageOf(res.model ?? CHAT_MODEL, res.usage));
-    const out = res.stop_reason === "refusal" ? null : res.parsed_output;
-    if (!out?.reply.trim()) { blocked.push({ reason: "模型拒答", original: "", attempt }); continue; }
+    if (!out?.reply.trim()) { blocked.push({ reason: "模型拒答", original: "", attempt }); redo = undefined; continue; }
     const reply = out.reply.trim();
-    const chips = m.askNow || m.intent === "book" || m.intent === "emotion" ? out.chips.map(c => c.trim()).filter(Boolean) : [];
+    const chips = out.chips.map(c => c.trim()).filter(Boolean).slice(0, 3);
+    const asked = out.asked && slotOf(out.asked) ? out.asked : null;
+    let offer: Offer = out.offer;
     const c = await reviewTurn(reply, chips);
     if (c.usage) usages.push(c.usage);
-    if (c.ok) return { html: reply, chips, usages, blocked, rewritten: attempt > 1 };
-    blocked.push({ reason: c.reason!, original: `${reply}｜選項：${chips.join("／")}`, attempt, layer: c.layer });
+    if (!c.ok) {
+      blocked.push({ reason: c.reason!, original: `${reply}｜選項：${chips.join("／")}`, attempt, layer: c.layer });
+      redo = undefined;
+      continue;
+    }
+    const repeated = asked !== null && askedKeys.has(asked);
+    const missedInvite = m.invite === "now" && offer === "none";
+    if (attempt === 1 && (repeated || missedInvite)) {
+      redo = repeated
+        ? `你剛剛又問了已經問過的「${slotOf(asked!)?.label}」。不要再問這件事（換句話也不行）：改問別的，或不要問、直接邀約。`
+        : `invite 是 now：這一輪一定要邀約。最後一句改成邀約（提到他的事），offer 填對應的出口。`;
+      continue;
+    }
+    const rewritten = blocked.length > 0;
+    if (repeated) return { html: reply, chips: [], asked: null, offer, usages, blocked, rewritten };
+    if (missedInvite) offer = "booking";
+    return { html: reply, chips, asked, offer, usages, blocked, rewritten };
   }
-  return { html: SAFE_REPLY, chips: m.askNow?.backup ?? [], usages, blocked, rewritten: true };
+  return { html: SAFE_REPLY, chips: [], asked: null, offer: "booking", usages, blocked, rewritten: true };
 }
 
 export interface ReplyResult {

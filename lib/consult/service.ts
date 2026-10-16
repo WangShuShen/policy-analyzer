@@ -1,8 +1,8 @@
 import { advance, askAt, answerFromOption, applyAnswer, nearestOption, passUpload, stepAt,
   type Answer, type FlowEvent, type FlowState, type Pending } from "./engine";
 import { STEPS } from "./script";
-import { extractAnswer, reply, confirmLine, WANT_ASK_LINE, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction } from "./ai";
-import { DECLINED, HEALTH_SLOTS, nextSlot, needsReady, slotOf, stillMissing } from "./needs";
+import { extractAnswer, reply, confirmLine, WANT_ASK_LINE, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction, type Offer, type Invite } from "./ai";
+import { DECLINED, HEALTH_SLOTS, askedBefore, hasPolicy, slotOf } from "./needs";
 import * as store from "./store";
 import { buildAnalysis, publicView, saveSnapshotIfChanged, type AnalysisView } from "./analysis";
 import { liveContent } from "@/lib/content/store";
@@ -18,9 +18,9 @@ import { capReached } from "@/lib/admin/usage";
  *            岔題問知識 → Opus 簡短回答並拉回 → 停在同一題
  *            聽不懂     → Opus 請他再說一次 → 停在同一題
  *            想約顧問   → Opus 說可以、指出約顧問按鈕 → 停在同一題
- *   需求點引導（4-ai，健康路線的 need 步驟）：點選項或打字都一樣
- *            Haiku 讀整段對話填需求點 → needs.ts 挑下一點 → Opus 回應＋問＋產生選項
- *            READY 三點齊了 → 引擎接著往下（醫療趨勢 → 上傳存摺）
+ *   自由對話（4-au，開場的 chat 步驟，不分路線）：點選項或打字都一樣
+ *            Haiku 讀整段對話記筆記、判斷意圖與急件 → 程式算能不能邀約 → Opus 站在顧問角度接話＋給選項
+ *            他點出口按鈕（好，我傳保險存摺／幫我算算看）→ 設好分支，引擎接著往下（醫療趨勢 → 上傳；或財務試算）
  */
 
 export interface Snapshot {
@@ -61,14 +61,14 @@ export class StaleTurnError extends Error {
   constructor() { super("這一題已經回答過了，畫面會更新到最新狀態"); }
 }
 
-/** 後台發布版的需求點（整理員的指令用） */
+/** 後台發布版的筆記項目（整理員的指令用） */
 const liveSlots = async () => { const lc = await liveContent(); return HEALTH_SLOTS.map(x => liveSlot(lc, x)); };
 
 const pendingAt = async (st: FlowState): Promise<Pending> => advance({ ...st }, await liveContent()).pending;
 
 const isNeedStep = (stepId: string | undefined) => !!stepId && STEPS.find(s => s.id === stepId)?.t === "need";
 
-/** 上一則 AI 訊息帶的選項（need 步驟的選項是 AI 每輪產生的，跟著訊息加密存） */
+/** 上一則 AI 訊息帶的選項（自由對話的選項是 AI 每輪產生的，跟著訊息加密存） */
 function lastChips(msgs: store.StoredMessage[]): string[] {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const c = msgs[i].content;
@@ -84,9 +84,12 @@ function lastMark(msgs: store.StoredMessage[]): "clarify" | "want_ask" | undefin
   return m?.role === "assistant" && m.content.kind === "ai" ? m.content.mark : undefined;
 }
 
+/** 自由對話現在能點的選項：他還沒開口 → 起頭範例；之後 → 上一則 AI 回覆帶的 */
+const chipsFor = (msgs: store.StoredMessage[]) => msgs.some(m => m.role === "user") ? lastChips(msgs) : STARTERS;
+
 function withChips(p: Pending, msgs: store.StoredMessage[]): Pending {
   if (p.kind !== "ask" || !p.ask || !isNeedStep(p.ask.stepId)) return p;
-  return { ...p, ask: { ...p.ask, options: lastChips(msgs) } };
+  return { ...p, ask: { ...p.ask, options: chipsFor(msgs) } };
 }
 
 /** 給 AI 看的對話紀錄：只取他說的話與 AI 說的話，最近 12 則 */
@@ -219,7 +222,7 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
     const msgId = await store.addMessage(convId, "user", { kind: "user", text: opt.x });
     const a = answerFromOption(ask, opt);
     if (a.fact) await store.upsertFact(convId, userId, { ...a.fact, confidence: "clear", sourceMessageId: msgId });
-    await enterNeed(userId, convId, await runForward(userId, convId, applyAnswer(st, a)), opt.x);
+    await runForward(userId, convId, applyAnswer(st, a));
     return snapshot(userId, convId);
   }
 
@@ -251,26 +254,14 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
     }
   }
 
-  // T05：開場第一句就說要約顧問 → 記「想直接約顧問」、進健康路線，交給需求點引導（只問「最擔心」＋「先不說，直接約」）
-  const bookAtOpening = !answer && ex.kind === "book" && !st.branch && ask.o.some(o => o.r === "health");
-  if (bookAtOpening) answer = { branch: "health", fact: { key: "intent", display: "想直接約顧問", number: null, bucket: "想直接約顧問", health: false } };
-
   if (answer) {
     const recorded = answer.fact?.display ?? text;
-    // 下一步是需求點引導的話，回應交給 speakNeed（不然會連講兩次「辛苦了」）
-    const toNeed = isNeedStep(advance(applyAnswer(st, answer)).pending.ask?.stepId);
-    // T04：舊的整理器只會從開場三個選項挑一個（「看到別人中風」會被硬對到「家裡有人生病」）。
-    // 要進需求點引導的話，它只負責分路線，記什麼交給需求點整理員重判
-    if (toNeed && !bookAtOpening) answer = { branch: answer.branch, sub: answer.sub };
-    if (!toNeed) {
-      const r = await reply({ kind: "bridge", question, userText: text, recorded, estimated });
-      await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
-      await saveReply(convId, r.html, r.usages, r.rewritten);
-    }
+    const r = await reply({ kind: "bridge", question, userText: text, recorded, estimated });
+    await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
+    await saveReply(convId, r.html, r.usages, r.rewritten);
     if (answer.fact) await store.upsertFact(convId, userId, { ...answer.fact, confidence: estimated ? "estimated" : "clear", sourceMessageId: userMsgId });
     if (estimated && answer.fact) await store.addMessage(convId, "assistant", { kind: "ai", html: confirmLine(answer.fact.display) });
-    await enterNeed(userId, convId, await runForward(userId, convId, applyAnswer(st, answer)), text,
-      bookAtOpening ? { intent: "book" } : { extract: true, userMsgId });
+    await runForward(userId, convId, applyAnswer(st, answer));
   } else if (ex.kind === "want_to_ask" && prevMark !== "want_ask") {
     // 說想自己問、還沒講問題（顧問 10/15）：固定句，不用 AI；下一句當成問題
     await store.addMessage(convId, "assistant", { kind: "ai", html: WANT_ASK_LINE, mark: "want_ask" });
@@ -285,44 +276,125 @@ export async function turn(userId: string, convId: string, input: TurnInput): Pr
       : { kind: "clarify" as const, question, userText: text, options, again: prevMark === "clarify" };
     const r = await reply(mode);
     await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
-    await saveReply(convId, r.html, r.usages, r.rewritten, undefined, undefined, mode.kind === "clarify" ? "clarify" : undefined);
+    await saveReply(convId, r.html, r.usages, r.rewritten, mode.kind === "clarify" ? "clarify" : undefined);
     await store.saveState(userId, convId, st, false);   // 停在同一題，但更新最後互動時間
   }
   return snapshot(userId, convId);
 }
 
-async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean, chips?: string[], ask?: string, mark?: "clarify") {
-  // 一句話可能重產過（合規攔截），用量加總記在這則訊息上（I6）
-  const total = usages.reduce<Usage>((a, u) => ({ model: u.model, tokensIn: a.tokensIn + u.tokensIn, tokensOut: a.tokensOut + u.tokensOut, costMicroUsd: a.costMicroUsd + u.costMicroUsd }),
-    { model: usages[0]?.model ?? "", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 });
-  await store.addMessage(convId, "assistant", chips ? { kind: "ai", html, chips, ...(ask ? { ask } : {}) } : { kind: "ai", html, ...(mark ? { mark } : {}) }, { usage: total, rewritten });
+// 一句話可能重產過（合規攔截），用量加總記在這則訊息上（I6）
+const sumUsage = (usages: Usage[]): Usage => usages.reduce<Usage>((a, u) => ({ model: u.model, tokensIn: a.tokensIn + u.tokensIn, tokensOut: a.tokensOut + u.tokensOut, costMicroUsd: a.costMicroUsd + u.costMicroUsd }),
+  { model: usages[0]?.model ?? "", tokensIn: 0, tokensOut: 0, costMicroUsd: 0 });
+
+async function saveReply(convId: string, html: string, usages: Usage[], rewritten: boolean, mark?: "clarify") {
+  await store.addMessage(convId, "assistant", { kind: "ai", html, ...(mark ? { mark } : {}) }, { usage: sumUsage(usages), rewritten });
 }
 
-// ── 需求點引導（4-ai）──────────────────────────────────────────────
+// ── 自由對話（4-au）──────────────────────────────────────────────
 
-/** 一輪：整理員填需求點 → 說話的人回應＋問下一點 */
+/** 開場的起頭範例：點了等於幫他打這句話，不分路線（4-au Q3） */
+export const STARTERS = ["我想看懂自己的保單", "理賠的事想問", "想算算退休要準備多少", "想幫爸媽整理保單"];
+
+/** 出口按鈕：程式固定的字，AI 不能寫。「去約顧問」由畫面直接帶去 /advisors（ConsultChat），不會送到這裡 */
+const BOOK_CHIP = "去約顧問";
+const BOOK_LATER = "先去約顧問";
+const EXIT_CHIP: Record<Exclude<Offer, "none" | "booking">, string> = {
+  upload: "好，我傳保險存摺", calc_ret: "幫我算算看", calc_tax: "幫我算算看", calc_edu: "幫我算算看",
+};
+const actionChips = (offer: Offer): string[] =>
+  offer === "none" ? [] : offer === "booking" ? [BOOK_CHIP] : [EXIT_CHIP[offer], BOOK_LATER];
+
+/** 出口要接到的地方：h_need 的下一步（健康：醫療趨勢卡 → 上傳；財務：年齡、資金態度 → 該子路線） */
+const AFTER_CHAT = STEPS.findIndex(s => s.id === "h_need") + 1;
+const EXIT_ROUTE: Record<Exclude<Offer, "none" | "booking">, Pick<FlowState, "branch" | "sub">> = {
+  upload: { branch: "health", sub: null },
+  calc_ret: { branch: "finance", sub: "ret" }, calc_tax: { branch: "finance", sub: "tax" }, calc_edu: { branch: "finance", sub: "edu" },
+};
+
+/** 自由對話裡 AI 的回覆（有 offer 欄位的那些） */
+type ChatAi = Extract<store.MessageContent, { kind: "ai" }>;
+const chatReplies = (msgs: store.StoredMessage[]): ChatAi[] =>
+  msgs.flatMap(m => m.role === "assistant" && m.content.kind === "ai" && m.content.offer ? [m.content] : []);
+
+/** 上一則 AI 自由對話回覆的邀約（中間隔了他的話就不算） */
+function lastOffer(msgs: store.StoredMessage[]): Offer {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const c = msgs[i].content;
+    if (msgs[i].role === "user") return "none";
+    if (c.kind === "ai") return c.offer ?? "none";
+  }
+  return "none";
+}
+
+/**
+ * 這一輪能不能邀約（4-au 第八節）：
+ *   婉拒後 3 句不推；主動邀滿 3 次就不再主動邀
+ *   急件：還沒邀過就一定要邀（最晚第 2 句——第 1 句 AI 沒邀，程式會補）
+ *   一般人：第 5 句還沒邀過就一定要邀
+ */
+function inviteFor(msgs: store.StoredMessage[], urgentNow: boolean): Invite {
+  const replies = chatReplies(msgs);
+  const proactive = replies.filter(c => c.offer !== "none" && !c.byAsk);
+  const lastAt = replies.map(c => c.offer !== "none").lastIndexOf(true);
+  if (lastAt >= 0 && replies.length - 1 - lastAt < 3) return "not_now";
+  if (proactive.length >= 3) return "not_now";
+  if (proactive.length === 0 && (urgentNow || replies.some(c => c.urgent))) return "now";
+  if (proactive.length === 0 && replies.length + 1 >= 5) return "now";
+  return "ok";
+}
+
+/** 一輪：整理員記筆記 → 他答應出口就往下走；不然說話的人接話 */
 async function needRound(userId: string, convId: string, st: FlowState, input: { option: number } | { text: string }) {
   const msgs = await store.getMessages(convId);
-  const text = "option" in input ? lastChips(msgs)[input.option] : input.text.trim().slice(0, 1000);
+  const text = "option" in input ? chipsFor(msgs)[input.option] : input.text.trim().slice(0, 1000);
   if (!text) throw new Error("option" in input ? "沒有這個選項" : "請輸入內容");
+  const offered = lastOffer(msgs);
+  // 點了出口按鈕（好，我傳保險存摺／幫我算算看）：不用 AI，直接接到後段
+  if ("option" in input && offered !== "none" && offered !== "booking" && text === EXIT_CHIP[offered]) {
+    await store.addMessage(convId, "user", { kind: "user", text });
+    await runForward(userId, convId, { ...st, ...EXIT_ROUTE[offered], cursor: AFTER_CHAT });
+    return;
+  }
   const history = historyOf(msgs);
   const { result: ex, usage } = await extractNeeds(history, st.values, text, await liveSlots());
   const userMsgId = await store.addMessage(convId, "user", { kind: "user", text }, { usage });
-  // 點選項＝回答上一句問的那一點。整理員沒記到的話就照選項記，不然會一直重問同一題
+  // 打字答應（「好啊」「幫我算」）也一樣往下走
+  if (ex.intent === "accept" && offered !== "none" && offered !== "booking") {
+    const values = await applyNeedUpdates(userId, convId, st.values, ex, userMsgId, text);
+    await runForward(userId, convId, { ...st, values, filled: new Set(values.keys()), ...EXIT_ROUTE[offered], cursor: AFTER_CHAT });
+    return;
+  }
+  // 點選項＝回答上一句問的那一項。整理員沒記到的話就照選項記，不然會重問
   // （10/14 卡 A 回報：收入題點「兩個人差不多」連點 25 次都重問）
   const asked = lastAsk(msgs);
   if ("option" in input && asked && slotOf(asked) && !st.values.has(asked) && !ex.updates.some(u => u.slot === asked)) {
     ex.updates.push({ slot: asked, value: OPTION_DECLINE.test(text) ? DECLINED : text.slice(0, 20), confidence: "clear" });
   }
   const values = await applyNeedUpdates(userId, convId, st.values, ex, userMsgId, text, asked);
-  await speakNeed(userId, convId, { ...st, values, filled: new Set(values.keys()) }, [...history, { role: "user", text }], text, ex.intent);
+  const askedKeys = chatReplies(msgs).flatMap(c => c.ask ? [c.ask] : []);
+  const invite = ex.intent === "book" ? "ok" : inviteFor(msgs, ex.urgent);
+  const policy = hasPolicy(values);
+  const r = await needTurn({ history: [...history, { role: "user", text }], known: values, askedBefore: askedBefore(values, askedKeys),
+    hasPolicy: policy, invite, intent: ex.intent, userText: text });
+  // 程式守住的線：他說要約一定給約顧問；沒保單不叫他傳；剛婉拒過不再推
+  let offer = r.offer;
+  if (ex.intent === "book") offer = "booking";
+  else if (invite === "not_now") offer = "none";
+  if (offer === "upload" && policy === "沒有") offer = "booking";
+  await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
+  const chips = [...r.chips, ...actionChips(offer)].filter((c, i, a) => a.indexOf(c) === i);
+  await store.addMessage(convId, "assistant", {
+    kind: "ai", html: r.html, chips, ...(r.asked ? { ask: r.asked } : {}), offer,
+    ...(ex.intent === "book" ? { byAsk: true } : {}), ...(ex.urgent ? { urgent: true } : {}),
+  }, { usage: sumUsage(r.usages), rewritten: r.rewritten });
+  await store.saveState(userId, convId, { ...st, values, filled: new Set(values.keys()) }, false);
 }
 
-/** 整理員填的需求點寫進右欄，回傳更新後的值 */
+/** 整理員填的筆記寫進右欄，回傳更新後的值 */
 const INCOME_WORDS = /賺|收入|薪|養家|一個人養|在養|錢|經濟|雙薪|主要|靠我|差不多/;
 const OPTION_DECLINE = /不太想說|不想說|不想講|不方便|先不說/;
 
-/** 上一句 AI 在問哪個需求點（跟著訊息存） */
+/** 上一句 AI 在問哪個筆記項目（跟著訊息存） */
 function lastAsk(msgs: store.StoredMessage[]): string | undefined {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const c = msgs[i].content;
@@ -335,8 +407,8 @@ function lastAsk(msgs: store.StoredMessage[]): string | undefined {
 async function applyNeedUpdates(userId: string, convId: string, known: Map<string, string>, ex: NeedExtraction, userMsgId: string, userText: string, asked?: string) {
   const values = new Map(known);
   for (const u of ex.updates) {
-    const slot = slotOf(u.slot)!;
-    if (slot.key === "intent" && values.has("intent")) continue;     // 來意決定路線，不從對話裡改
+    const slot = slotOf(u.slot);
+    if (!slot || slot.legacy) continue;
     // 收入只收他自己講到錢的（指令寫了不准推論，整理員還是偶爾從「老婆跟小孩」推出「主要收入」）；拒答照收
     // 正在問收入時他回的話就是答案，不用這道檢查
     if (slot.key === "income_share" && asked !== "income_share" && u.value !== DECLINED && !INCOME_WORDS.test(userText)) continue;
@@ -345,45 +417,6 @@ async function applyNeedUpdates(userId: string, convId: string, known: Map<strin
       bucket: slot.values.includes(u.value) ? u.value : null, health: slot.health, confidence: u.confidence, sourceMessageId: userMsgId });
   }
   return values;
-}
-
-/** 說話的人：依意圖決定這一輪問哪一點（或不問），存回覆與選項；三點齊了就讓引擎往下走 */
-async function speakNeed(userId: string, convId: string, st: FlowState, history: Line[], userText: string, intent: NeedExtraction["intent"], extraUsages: Usage[] = []) {
-  const ready = needsReady(st.values);
-  const lc = await liveContent();
-  const askNow = liveSlot(lc,
-    intent === "emotion" ? null                                                    // 情緒重：這一輪只回應感受
-    : intent === "book" ? (st.values.has("worry") ? null : slotOf("worry")!)        // 想約顧問：最多再問「最擔心」
-    : ready ? null : nextSlot(st.values));
-  const r = await needTurn({ history, known: st.values, askNow, missing: stillMissing(st.values), intent, userText });
-  await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
-  await saveReply(convId, r.html, [...extraUsages, ...r.usages], r.rewritten, r.chips, askNow?.key);
-  if (ready) await runForward(userId, convId, { ...st, cursor: st.cursor + 1 });
-  else await store.saveState(userId, convId, st, false);
-}
-
-/**
- * 剛走到 need 步驟（例如開場選了健康路線）：還沒有任何一句在問需求點，先讓 AI 開口。
- * extract：開場是打字進來的 → 那句話交給整理員判斷（T04：「看到別人中風」是新聞，不是家人）
- * intent：開場就說要約顧問 → book（T05）
- */
-async function enterNeed(userId: string, convId: string, st: FlowState, userText: string,
-  opts: { extract?: boolean; userMsgId?: string; intent?: NeedExtraction["intent"] } = {}) {
-  const r = advance({ ...st });
-  if (r.pending.kind !== "ask" || !isNeedStep(r.pending.ask?.stepId)) return;
-  const history = historyOf(await store.getMessages(convId));
-  let next: FlowState = { ...st, cursor: r.cursor };
-  let intent = opts.intent ?? "answer";
-  const usages: Usage[] = [];
-  if (opts.extract && opts.userMsgId) {
-    const before = history.at(-1)?.role === "user" ? history.slice(0, -1) : history;
-    const { result: ex, usage } = await extractNeeds(before, st.values, userText, await liveSlots());
-    usages.push(usage);
-    const values = await applyNeedUpdates(userId, convId, st.values, ex, opts.userMsgId, userText);
-    next = { ...next, values, filled: new Set(values.keys()) };
-    intent = ex.intent;
-  }
-  await speakNeed(userId, convId, next, history, userText, intent, usages);
 }
 
 /** 題目前面最後一句 AI 台詞＝這一題實際問的話（用後台發布版） */

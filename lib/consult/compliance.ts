@@ -40,11 +40,11 @@ export function checkCompliance(text: string): ComplianceResult {
   return { ok: true };
 }
 
-/** 需求點引導的一整輪輸出：回覆＋選項都要過（4-ai），還有長度上限 */
+/** 自由對話的一整輪輸出：回覆＋選項都要過（4-ai），還有長度上限（4-au 先回答再邀約，放寬到 160 字） */
 export function checkTurn(reply: string, chips: string[]): ComplianceResult {
   const r = checkCompliance(reply);
   if (!r.ok) return r;
-  if (reply.replace(/<[^>]+>/g, "").length > 120) return { ok: false, reason: "回覆太長" };
+  if (reply.replace(/<[^>]+>/g, "").length > 160) return { ok: false, reason: "回覆太長" };
   if (chips.length > 4) return { ok: false, reason: "選項太多" };
   for (const c of chips) {
     if (c.length > 20) return { ok: false, reason: "選項太長" };

@@ -4,11 +4,14 @@
  *    換成單一 need 步驟，問法交給 lib/consult/needs.ts ＋ AI；開場選項與醫療趨勢卡的連接句去掉人設。
  * W1a 是種子資料；W1b 改由管理後台維護（I3／I7），屆時這份變成初始內容。
  *
- * 步驟型別：ai 說一句｜ask 問一題（等使用者）｜need 需求點引導（4-ai，AI 每輪問一點，READY 齊了才往下）｜trd 醫療趨勢卡｜panel 右欄出一塊｜ph 階段｜hl 強調某格｜up 請上傳存摺
+ * 步驟型別：ai 說一句｜ask 問一題（等使用者）｜need 自由對話（4-au，AI 自己判斷怎麼接，等他點出口按鈕才往下）｜trd 醫療趨勢卡｜panel 右欄出一塊｜ph 階段｜hl 強調某格｜up 請上傳存摺
  * br／sub：只在該分支（health｜finance）／財務子路線（ret｜tax｜edu）出現
- * skipIfSub：已經決定子路線就跳過（4-ai 10/13 顧問定案：財務版「最擔心」直接決定子路線，答「說不上來」才回頭問「從哪一塊開始看」）
+ * skipIfSub：已經決定子路線就跳過（4-ai 10/13 顧問定案：財務版「最擔心」直接決定子路線，答「說不上來」才回頭問「從哪一塊開始看」；
+ *            4-au：從自由對話按「幫我算算看」進來時子路線已定，「最擔心」也跳過）
+ * 4-au（2026-10-16）：開場不分路線。s002 三選一換成不分路線的 chat（自由對話），出口（上傳存摺／試算）由 service 設好分支後跳到 h_need 的下一步。
+ *    h_need 只留給 4-ai 時聊到一半的舊對話（游標是步驟索引，不能刪，刪了舊對話會錯位）
  */
-export const SCRIPT_VERSION = "seed-v41-4at-upload";
+export const SCRIPT_VERSION = "seed-v42-4au-free";
 
 export type Option = { x: string; key?: string; label?: string; health?: boolean; v?: string; n?: number; r?: "health" | "finance"; f?: "ret" | "tax" | "edu" };
 export type Step =
@@ -27,41 +30,11 @@ export const STEPS: Step[] = [
  {
   "id": "s001",
   "t": "ai",
-  "h": "你好，我是 RADIA。<b>我是 AI</b>，幫你把狀況整理好；判斷會由顧問跟你確認。<br>先不用急著講保單——你今天會點進來，是因為最近發生了什麼事嗎？"
+  "h": "你好，我是 RADIA。<b>我是 AI</b>，先幫你把狀況整理好；判斷會由顧問跟你確認。<br>保單看不懂、理賠的事、想幫家人整理，或只是想問一個名詞，都可以直接打字問我。"
  },
  {
-  "id": "s002",
-  "t": "ask",
-  "keys": [
-   "trigger",
-   "intent"
-  ],
-  "o": [
-   {
-    "x": "家裡有人生病或要照顧",
-    "key": "trigger",
-    "label": "起因",
-    "health": true,
-    "v": "家人生病或需要照顧",
-    "r": "health"
-   },
-   {
-    "x": "想看看我的保單夠不夠",
-    "key": "intent",
-    "label": "來意",
-    "health": false,
-    "v": "想確認現有保單夠不夠",
-    "r": "health"
-   },
-   {
-    "x": "想算算未來需要準備多少錢",
-    "key": "intent",
-    "label": "來意",
-    "health": false,
-    "v": "想做財務準備試算",
-    "r": "finance"
-   }
-  ]
+  "id": "chat",
+  "t": "need"
  },
  {
   "id": "h_need",
@@ -228,12 +201,14 @@ export const STEPS: Step[] = [
   "id": "f_worry_q",
   "t": "ai",
   "br": "finance",
+  "skipIfSub": true,
   "h": "先問一件事——想到未來的錢，<b>你最擔心的是哪一個？</b>"
  },
  {
   "id": "f_worry",
   "t": "ask",
   "br": "finance",
+  "skipIfSub": true,
   "keys": [
    "fin_worry"
   ],

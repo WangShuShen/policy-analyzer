@@ -1,5 +1,4 @@
 import { STEPS, TRENDS, type Option, type Step } from "./script";
-import { needsReady, nextSlot } from "./needs";
 import { liveStep, liveTrend } from "./live";
 import type { LiveContent } from "@/lib/content/store";
 
@@ -8,7 +7,7 @@ import type { LiveContent } from "@/lib/content/store";
  *   ・跳過不屬於目前分支／子路線的步驟
  *   ・已經有值的題目不再問（4-y：接續舊對話不重講）
  *   ・遇到 ask 停下來等使用者；遇到 up 停下來等上傳
- *   ・遇到 need（4-ai）：需求點還沒齊就停下來，問哪一點由 needs.ts 決定、怎麼問由 AI 決定
+ *   ・遇到 need（4-au 自由對話）：一定停下來；要等他點出口（上傳存摺／試算），service 設好分支、把游標跳過去才往下
  * 所有「下一步是什麼」都在這裡決定，AI 永遠只能在這個框架裡說話。
  */
 
@@ -19,7 +18,7 @@ export interface FlowState {
   branch: "health" | "finance" | null;
   sub: "ret" | "tax" | "edu" | null;
   filled: Set<string>;                  // 已經有值的需求點 key
-  values: Map<string, string>;          // 需求點的值（need 步驟要靠值判斷條件題）
+  values: Map<string, string>;          // 背景筆記的值（給 AI 看已知的事）
 }
 
 export type FlowEvent =
@@ -57,13 +56,9 @@ export function advance(state: FlowState, lc?: LiveContent): { events: FlowEvent
       case "ph": events.push({ type: "phase", index: Number(s.k) }); break;
       case "hl": events.push({ type: "highlight", key: String(s.k) }); break;
       case "up": return { events, pending: { kind: "upload", uploadStepId: s.id }, cursor: i };
-      case "need": {
-        if (needsReady(state.values)) continue;
-        const slot = nextSlot(state.values);
-        if (!slot) continue;
+      case "need":
         // 選項由 AI 每輪產生、存在上一則 AI 訊息上；service.snapshot 會補進來
-        return { events, pending: { kind: "ask", ask: { stepId: s.id, keys: [slot.key], options: [] } }, cursor: i };
-      }
+        return { events, pending: { kind: "ask", ask: { stepId: s.id, keys: [], options: [] } }, cursor: i };
       case "ask":
         if (s.keys.some(k => state.filled.has(k))) continue;   // 已經答過，不重問
         return {

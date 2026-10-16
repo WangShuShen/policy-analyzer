@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /*
- * AI 諮詢情境回歸測試（100_Todo/projects/RADIA-v2-諮詢測試情境.md 的 T01–T16，加 T17–T18 財務子路線）。
+ * AI 諮詢情境回歸測試（100_Todo/projects/RADIA-v2-諮詢測試情境.md：4-au 自由對話 F01–F36、語氣組 G1–G3，加出口接後段的 T16、T20–T29）。
  * 用真的 AI 跑：每條開一個新的測試客戶（/api/dev-login?as=new-customer），照劇本點選項／打字，
  * 自動檢查「不能出現」欄；「應該怎麼接」要人看，所以每輪的完整對話另存成 JSON。
  * T14（選項夾帶金額）沒辦法從畫面逼 AI 產生，改由 compliance 單元測試涵蓋。
+ * 共通檢查（測試情境 C1–C9）：不重問（C2）、衛教（C3）、有邀約且理由對上（C5）、急件快（C6）、不推太兇（C7）、少術語（C8）、三輪不能一樣（C9）。
  *
  * 用法：
  *   node scripts/consult-scenarios.mjs                       # 全部，每條 3 輪（AI 每次講法不同，三次都要過）
- *   node scripts/consult-scenarios.mjs --rounds 1 --only T01,T07
+ *   node scripts/consult-scenarios.mjs --rounds 1 --only F01,F02
  *   node scripts/consult-scenarios.mjs --base http://localhost:3002 --out /tmp/radia-scenarios
  *   node scripts/consult-scenarios.mjs --mock                 # 伺服器開著 AI_MOCK=1：只驗程式流程，要靠 AI 理解力的情境標「需真 AI 補驗」
  *   node scripts/consult-scenarios.mjs --base https://radia-dev-woad.vercel.app --key <DEV_LOGIN_KEY>   # 對開發版跑（或 node --env-file=.env.local … 不帶 --key，從 DEV_LOGIN_KEY 讀）
@@ -28,7 +29,7 @@ const MOCK = process.argv.includes("--mock");
 const KEY = arg("key", /localhost|127\.0\.0\.1/.test(BASE) ? "" : process.env.DEV_LOGIN_KEY ?? "");
 fs.mkdirSync(OUT, { recursive: true });
 
-// 劇本：{opt:"選項文字片段"} 點選項｜{text:"..."} 打字｜{any:true} 點第一個選項
+// 劇本：{opt:"選項文字片段"} 點選項｜{text:"..."} 打字｜{any:true} 點第一個選項（沒有選項就打「嗯」）｜{exit:true} 點出口按鈕（好，我傳保險存摺／幫我算算看）
 // 真 AI 自己寫選項，同樣意思字會不一樣：劇本寫的字在這裡列同義詞，任一個對上就算（10/15 真 AI 回歸 T06 遇過「就是想確認一下」）
 const OPT_SYNONYMS = {
   "沒什麼": ["沒什麼", "就是想確認", "單純想確認", "只是想確認", "沒特別", "單純"],
@@ -36,70 +37,88 @@ const OPT_SYNONYMS = {
 // facts：最後右欄該記成什麼｜expect：[第幾步, 那一步的 AI 回覆要符合]
 // bad 只比對 AI 回覆本文（不含選項）：「老了要人照顧」這種擔心選項是正常的，10/12 的 bug 是追問照顧費
 const TOOL_WORDS = /投資型|變額|利變|利率變動|儲蓄險|儲蓄型|月配息|類全委|萬能/;
+const MONEY = /\d[\d,，.]*\s*(萬|元)/;
+// 自由對話（4-au）：開頭打字，之後點 AI 給的第一個選項，最多再 4 句；一出現邀約（offer）就停
+// edu：要有的一般衛教（C3）｜hook：邀約那句要提到他的事（C5）｜offer：要出現的出口｜urgent：第 2 句以內要邀（C6）｜terms：允許 AI 講專有名詞（C8）
+const chat = (texts, extra = {}) => ({
+  steps: [...texts.map(t => typeof t === "string" ? { text: t } : t), ...Array.from({ length: 4 }, () => ({ any: true }))],
+  untilOffer: true, offer: /./, realAI: true, bad: [], ...extra,
+});
+// 出口後要走的健康路線：醫療趨勢卡後的反應題 → 「好，我傳」
+const TO_UPLOAD = [{ text: "我想看懂自己的保單" }, { exit: true }, { any: true }, { any: true }];
 const S = {
-  T01: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "我只想問我自己的個人保險" }, { text: "我可以預約顧問嗎" }],
-    bad: [/醫生|持續多久|照顧(費|的錢)/] },
-  T02: { steps: [{ text: "我媽上個月中風" }, { opt: "都是我在出" }, { text: "醫生說不知道要多久" }], bad: [] },
-  T03: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "沒什麼" }, { any: true }], bad: [/照顧(費|的錢)|看護/] },
-  T04: { realAI: true, steps: [{ text: "最近看到一個 30 幾歲的人中風，有點怕" }], bad: [/你(上次|之前)?中風/],
-    facts: { trigger: /新聞/ } },
-  T05: { steps: [{ text: "我要直接約顧問" }, { opt: "先不說" }], bad: [] },
-  T06: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "沒什麼" }, { text: "實支實付是什麼？" }], bad: [/下一題|回到剛剛/, /人壽|產險/] },
-  T07: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "你推薦哪一張？哪家比較好？" }], bad: [/人壽|產險|比較好的是|推薦你/] },
-  T08: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "我應該保多少才夠？" }], bad: [/\d[\d,，.]*\s*(萬|元)|倍/] },
-  T09: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "沒什麼" }, { text: "老婆跟一個小孩" }, { text: "這個不想講" }], bad: [/收入/],
-    lastOnly: true },
-  T10: { realAI: true, steps: [{ text: "我爸上週剛走，我現在很亂" }], bad: [/[？?]/], lastOnly: true },
-  T11: { realAI: true, steps: [{ opt: "想看看我的保單夠不夠" }, { text: "我一個人養兩個小孩，最怕我倒下他們沒人管" }], bad: [] },
-  T12: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "沒什麼特別原因" }, { text: "我沒有保單" }, { any: true }, { text: "啊其實公司有團保" }], bad: [],
-    facts: { existing_policy: /團保|有/ } },
-  T13: { steps: [{ opt: "想看看我的保單夠不夠" }, { text: "老婆跟一個小孩靠我" }, { text: "最怕生病沒收入" }, { text: "有幾張，不太清楚內容" }], bad: [/照顧費/] },
-  T15: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "沒什麼" }, { any: true }, { any: true }, { any: true }], bad: [] },
+  // ── 百百種人（RADIA-v2-諮詢測試情境.md F01～F36）──
+  F01: chat(["啊我個人保單怎麼看"], { edu: /第一頁|保到幾歲|保障到|繳到|繳費/, offer: /upload|booking/, bad: [/最近(是)?發生(了)?什麼事/] }),   // 顧問截圖原句
+  F02: chat(["理賠金怎麼那麼少", "住院開刀，自費的幾乎沒賠"], { edu: /上限|天數|範圍|等待期/, hook: /收據|保單上|一項/, bad: [MONEY] }),
+  F03: chat(["我上個月剛買一張醫療險，想確認有沒有買對"], { bad: [/買對了|買錯了|建議(你)?退/] }),
+  F04: chat(["我什麼都不懂，要從哪裡開始"], { edu: /生病|意外|走了|身故/ }),
+  F05: chat(["保險公司說不賠，我該怎麼辦"], { urgent: true, edu: /原因|等待期|健康狀況|範圍/, bad: [/一定(能|會)賠|應該可以爭取/] }),
+  F06: chat(["我想解約，繳不下去了"], { urgent: true, edu: /拿回|比繳的少|保障.{0,4}沒/, bad: [/建議你解約|不要解約/] }),
+  F07: chat(["想幫爸媽整理保單，他們也不知道自己買了什麼"], { offer: /booking/, bad: [/上傳(爸媽|他們|父母)的/] }),
+  F08: chat(["實支實付是什麼？", "那我的有沒有？"], { edu: /收據|實際/, terms: true, bad: [/你(的)?(有|沒有)實支實付/] }),
+  F09: chat(["等待期是什麼意思"], { edu: /一段時間|天|之後才/, terms: true, offer: null }),
+  F10: { steps: [{ text: "理賠的事想問" }, { any: true }, { text: "我可以直接約顧問嗎" }], bad: [/[？?]/], lastOnly: true, lastOffer: "booking" },
+  F11: chat(["嗯", "不知道", "隨便"]),
+  F12: { steps: [{ text: "你好" }], bad: [/聽懂|從上面的選項挑/] },
+  F13: chat(["業務員一直叫我加保，我需要嗎"], { bad: [/你(不|不用|不需要|需要)加保|業務(員)?(在)?騙你/] }),
+  F14: chat(["我先生上個月走了，保險不知道要怎麼申請"], { urgent: true, edu: /證明|除戶|文件/ }),
+  F15: chat(["我爸中風住院，保險可以賠什麼"], { urgent: true, edu: /證明|收據|申請書|文件/, bad: [/一定(會|能|可以)?賠|保證/] }),
+  F16: chat(["我剛生小孩，要幫他保什麼"], { bad: [/建議(你)?(買|保)|可以(買|保)(一張)?(醫療|意外|壽險|重疾|癌症)/, MONEY] }),
+  F17: chat(["公司有團保，還需要自己買嗎"], { edu: /離職|跟著公司|退休/, bad: [/(不用|一定要)(再)?(自己)?買/] }),
+  F18: chat(["我 30 歲，保險要保多少才夠"], { bad: [MONEY, /倍/] }),
+  F19: chat(["投資型保單是什麼"], { bad: [/變額|利變|儲蓄險|月配息|類全委|萬能/] }),
+  F20: chat(["你推薦哪一家？"], { bad: [/人壽|產險|推薦你/] }),
+  F21: chat(["我想開始存退休金"], { realAI: false, offer: /calc_ret/, bad: [TOOL_WORDS, /報酬率?\s*\d/] }),
+  F22: chat(["房子想留給小孩，要繳很多稅嗎"], { realAI: false, offer: /calc_tax/, bad: [/免(遺產|贈與)?稅|一定(省|比較省)/] }),
+  F23: chat(["小孩以後念大學要準備多少"], { realAI: false, offer: /calc_edu/, bad: [MONEY] }),
+  F24: chat(["我保了好幾張，每個月繳好多，是不是保太多"], { offer: /upload|booking/, bad: [/保太多了|保太少了|確實(保)?太多/] }),
+  F25: chat(["保單是我媽以前幫我買的，我完全不知道內容"], { offer: /upload|booking/, edu: /存摺/ }),
+  F26: chat(["我有乳癌病史，還買得到保險嗎"], { edu: /告知|照實/, bad: [/買得到|買不到|一定(會)?過|可以保/] }),
+  F27: chat(["理賠要準備什麼"], { edu: /證明|收據|申請書/, offer: null }),
+  F28: chat(["我朋友 35 歲得癌症，我好怕"], { facts: { trigger: /朋友/ }, bad: [/你(得了|罹患)/] }),
+  F29: chat(["保險存摺是什麼？要去哪裡弄"], { edu: /清單|列出|所有(的)?保單/, offer: /upload|booking/ }),
+  F30: chat(["我只是看看，不想留資料"], { offer: null, bad: [/幾歲|收入|身體狀況|健康狀況/] }),
+  F31: chat(["照收據賠的跟照天數賠的哪個好"], { edu: /收據|天數/, bad: [/你比較適合|建議你(選|買)/] }),
+  F32: chat(["我的保單要繳到幾歲？我看不懂"], { edu: /第一頁|繳費|年期|繳到/, offer: /upload|booking/ }),
+  F33: chat(["我單親，一個人養兩個小孩，最怕我倒下他們沒人管"], { bad: [/家裡(有)?誰(是)?靠你|最擔心(的是)?(哪|什麼)/] }),
+  F34: { steps: [{ text: "asdf" }, { text: "？？" }], bad: [], differ: [0, 1] },
+  F35: chat(["你們這些保險的都在騙人吧"], { offer: null, bad: [/我們不一樣|你誤會了|其實保險(很|是)好/] }),
+  F36: chat(["阮後生叫我來問，阮的保單毋知有路用無"], { offer: /upload|booking/ }),
+  // ── 語氣組（4-au 補充）：同一個問題三種口氣，同一輪的第一句回覆要明顯不同（跑完一起比，見 TONE_GROUP）──
+  G1: { realAI: true, steps: [{ text: "怎麼辦！！保險只賠一點點，醫院帳單還要繳，我現在很慌" }], bad: [] },
+  G2: { realAI: true, steps: [{ text: "欸 理賠怎麼都賠很少啊 哈" }], bad: [/辛苦|遺憾/] },
+  G3: { realAI: true, steps: [{ text: "我的醫療附約實支實付，雜費限額好像算得比我預期低，是不是有除外責任？" }], bad: [], terms: true },
+
+  // ── 出口接到原本的後段（模擬模式驗流程）──
+  // 從對話按「幫我算算看」進財務：不再問「最擔心」「從哪一塊開始看」，直接問年齡
+  T16: { steps: [{ text: "想算算退休要準備多少" }, { exit: true }], bad: [/哪一塊|最擔心的是哪一個/], expect: [[1, /幾歲/]] },
   // 上傳存摺 → 確認清單 → 送出「上傳好了」→ 走到「該補什麼」→ 約顧問 → 顧問端看得到案例區塊（A3b）
   // 模擬模式下存摺讀取回固定的示範保單（lib/passbook/read.ts）；真 AI 模式要真的檔案，所以只在 --mock 跑
-  T20: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
-    { any: true }, { any: true }, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼要補？看數據",
+  T20: { mockOnly: true, steps: [...TO_UPLOAD, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼要補？看數據",
     customerSees: [/對著條款跟你說才準/], customerNot: [/這是規定/] },
   // N7：每人每天 AI 用量上限。暫時把上限調到 0.000001 美元（模擬模式每次呼叫記 1 微美元），測完一定還原。
   // 改的是全站設定，所以 T21 等其他情境都跑完才一輪一輪單獨跑（exclusive）
   T21: { mockOnly: true, exclusive: true, run: runCap },
   // 4-ap：面談前客戶端不出現工具類型（投資型、變額……），只講路線；顧問端照樣看得到完整配置
-  T22: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "說不上來" }, { opt: "30 幾" }, { opt: "願意承受波動" }], bad: [TOOL_WORDS],
+  T22: { steps: [{ text: "想算算退休要準備多少" }, { exit: true }, { opt: "30 幾" }, { opt: "願意承受波動" }], bad: [TOOL_WORDS],
     panels: ["route"], customerSees: [/建議路線/], customerNot: [TOOL_WORDS, /有時間漲回來|賺回來/], snapNot: TOOL_WORDS, advisorFin: TOOL_WORDS },
-  // 顧問 10/15 實測開場卡住：打「你好」「我想自己詢問問題」都只回「沒聽懂，從選項挑一個」。打完還要能接著點選項往下走
-  T23: { steps: [{ text: "你好" }, { opt: "想看看我的保單夠不夠" }], bad: [/聽懂|從上面的選項挑/],
-    expect: [[0, /保單|準備|錢|生病|照顧/]] },
-  T24: { steps: [{ text: "我想自己詢問問題" }, { text: "實支實付是什麼？" }, { text: "那投資型保單呢？" }, { opt: "想看看我的保單夠不夠" }],
-    bad: [/聽懂|從上面的選項挑/, TOOL_WORDS], expect: [[0, /你想問什麼/]] },
-  // 連續兩次聽不懂：第二次不能重複同一句，要提醒可以直接約顧問
-  T25: { steps: [{ text: "嗯" }, { text: "隨便" }, { opt: "想看看我的保單夠不夠" }], bad: [],
-    expect: [[1, /約顧問/]], differ: [0, 1] },
   // 4-at：財務路線走到底——面談前就看得到「下一步」（去挑顧問），我的分析有上傳存摺的區塊
-  T26: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "退休" }, ...Array.from({ length: 11 }, () => ({ any: true }))], bad: [],
+  T26: { steps: [{ text: "想算算退休要準備多少" }, { exit: true }, ...Array.from({ length: 11 }, () => ({ any: true }))], bad: [],
     panels: ["fsum"], customerSees: [/id="upload"/, /上傳你的保險存摺/, /去挑顧問/], expect: [[12, /我的分析」就能傳/]], links: ["/analysis#upload"] },
   // 4-at：健康路線跳過上傳 → 我的頁「去上傳」連到我的分析 → 從我的分析傳（不帶對話）→ 確認清單 → 結果出現在我的分析
-  T27: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
-    { any: true }, { any: true }, { skipUpload: true }], bad: [], customerSees: [/id="upload"/, /上傳你的保險存摺/], meSees: [/href="\/analysis#upload"/],
+  T27: { mockOnly: true, steps: [...TO_UPLOAD, { skipUpload: true }], bad: [], customerSees: [/id="upload"/, /上傳你的保險存摺/], meSees: [/href="\/analysis#upload"/],
     analysisUpload: true },
   // 4-at（主管 10/15）：先在我的分析傳了存摺，對話走到上傳那一步就跳過——說「你已經傳過了（N 張）」＋「要換一份重新上傳」
-  T28: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { preUpload: true }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
-    { any: true }, { any: true }], bad: [], expect: [[8, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
+  T28: { mockOnly: true, steps: [TO_UPLOAD[0], { preUpload: true }, ...TO_UPLOAD.slice(1)], bad: [], expect: [[4, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
   // 對話停在上傳那一步 → 跑去我的分析傳 → 回到對話：直接往下，不再叫他傳
-  T29: { mockOnly: true, steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true },
-    { any: true }, { any: true }, { preUpload: true }, { reopen: true }], bad: [], expect: [[9, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
-  // 一路點選項走到底：收入題點「兩個人差不多」要記得住、不能重問（10/14 卡 A 回報連點 25 次都重問）
-  T19: { steps: [{ opt: "想看看我的保單夠不夠" }, { opt: "朋友" }, { opt: "另一半" }, { opt: "差不多" }, { any: true }, { any: true }], bad: [],
-    facts: { income_share: /差不多|雙薪/, worry: /./, existing_policy: /./ } },
-  // 財務版「最擔心」直接決定子路線，之後不再問「從哪一塊開始看」（4-ai，顧問 10/13 定案）
-  T16: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "退休" }, { any: true }, { any: true }], bad: [/照顧|看護|中風/, /哪一塊/],
-    expect: [[0, /擔心/], [3, /每個月/]] },
-  // 答「說不上來」→ 才退回問「從哪一塊開始看」
-  T17: { steps: [{ opt: "想算算未來需要準備多少錢" }, { opt: "說不上來" }, { any: true }, { any: true }], bad: [],
-    expect: [[3, /哪一塊/]] },
-  // 打字回答「最擔心」也要判斷出子路線
-  T18: { realAI: true, steps: [{ opt: "想算算未來需要準備多少錢" }, { text: "我最怕退休後錢不夠用" }, { any: true }, { any: true }], bad: [/哪一塊/],
-    expect: [[3, /每個月/]] },
+  T29: { mockOnly: true, steps: [...TO_UPLOAD, { preUpload: true }, { reopen: true }], bad: [], expect: [[5, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
 };
+// 語氣組：同一輪三種口氣的第一句回覆要不一樣
+const TONE_GROUP = ["G1", "G2", "G3"];
+// AI 講專有名詞前，他自己要先講過（C8）
+const TERMS = /條款|實支實付|日額型|附約|除外|要保人/;
+// 指令裡的範例回覆（C9：不能照抄）
+const EXAMPLE_REPLIES = new Set([...fs.readFileSync(new URL("../lib/consult/ai.ts", import.meta.url), "utf8").matchAll(/"reply":"([^"]+)"/g)].map(m => m[1].replace(/<[^>]+>/g, "")));
 // realAI：要靠 AI 的語意理解（新聞 vs 家人、情緒、一句話填多點、打字判子路線）。--mock 時一律標「需真 AI 補驗」：
 // 模擬的關鍵字規則剛好抓得到，不代表真 AI 沒問題；沒過也不算失敗
 // 每條都不能出現：AI 自言自語、念出內部指令、markdown（4-ai）
@@ -190,8 +209,12 @@ async function runOne(id, round) {
     }
     const opts = p?.ask?.options ?? [];
     let body;
-    if (step.text) { body = { text: step.text }; log.push(`客戶: ${step.text}`); }
-    else {
+    if (step.text || (step.any && !opts.length)) { const t = step.text ?? "嗯"; body = { text: t }; log.push(`客戶: ${t}`); }
+    else if (step.exit) {
+      const i = opts.findIndex(o => o === "好，我傳保險存摺" || o === "幫我算算看");
+      if (i < 0) { broken = `沒有出口按鈕，選項：${opts.join("／") || "（沒有選項）"}`; break; }
+      body = { option: i }; log.push(`(點) ${opts[i]}`);
+    } else {
       const words = OPT_SYNONYMS[step.opt] ?? [step.opt];
       const i = step.any ? 0 : opts.findIndex(o => words.some(w => o.includes(w)));
       if (i < 0) { broken = `找不到選項「${words.join("｜")}」，AI 實際給的選項：${opts.join("／") || "（沒有選項）"}`; break; }
@@ -207,11 +230,12 @@ async function runOne(id, round) {
     const turn = [];
     for (const m of snap.messages.slice(seen)) if (m.role === "assistant") {
       const text = strip(m.content.html ?? m.content.text);
-      turn.push({ text, chips: m.content.chips ?? [] });
-      log.push(`AI: ${text}${m.content.chips?.length ? `  [選項] ${m.content.chips.join("／")}` : ""}`);
+      turn.push({ text, chips: m.content.chips ?? [], offer: m.content.offer, ask: m.content.ask, urgent: m.content.urgent, byAsk: m.content.byAsk });
+      log.push(`AI: ${text}${m.content.chips?.length ? `  [選項] ${m.content.chips.join("／")}` : ""}${m.content.offer && m.content.offer !== "none" ? `  [邀約] ${m.content.offer}` : ""}${m.content.ask ? `  [問] ${m.content.ask}` : ""}`);
     }
     replies.push(turn);
     seen = snap.messages.length;
+    if (sc.untilOffer && turn.some(x => x.offer && x.offer !== "none")) break;
   }
   const facts = Object.fromEntries(snap.facts.map(f => [f.key, f.display]));
   const shownPanels = snap.messages.flatMap(m => m.content.kind === "panel" ? [m.content.key] : []);
@@ -305,8 +329,35 @@ async function runOne(id, round) {
     ...(advisorFail ? [advisorFail] : []),
     ...Object.entries(sc.facts ?? {}).filter(([k, re]) => !re.test(facts[k] ?? "")).map(([k, re]) => `右欄 ${k}=${facts[k] ?? "（沒記）"}，應符合 ${re}`),
   ];
+  // ── 4-au 共通檢查 ──
+  const chatTurns = replies.flat().filter(x => x.offer);          // 自由對話的回覆（有 offer 欄位）
+  const asks = chatTurns.flatMap(x => x.ask ? [x.ask] : []);
+  const dupAsk = asks.find((k, i) => asks.indexOf(k) !== i);
+  if (dupAsk) fails.push(`C2 同一件事問了兩次：${dupAsk}`);
+  const offers = chatTurns.filter(x => x.offer !== "none");
+  if (!broken && sc.offer && !offers.some(x => sc.offer.test(x.offer))) fails.push(`C5 沒有邀約到 ${sc.offer}（實際：${offers.map(x => x.offer).join("、") || "沒有邀約"}）`);
+  if (!broken && sc.lastOffer && chatTurns.at(-1)?.offer !== sc.lastOffer) fails.push(`最後一句應該邀 ${sc.lastOffer}（實際：${chatTurns.at(-1)?.offer}）`);
+  if (!broken && sc.urgent && !chatTurns.slice(0, 2).some(x => x.offer !== "none")) fails.push("C6 急件第 2 句以內沒有邀約");
+  if (offers.filter(x => !x.byAsk).length > 3) fails.push("C7 主動邀約超過 3 次");
+  if (!MOCK && !broken) {
+    const said = [];      // 他講過的話（他先講的名詞 AI 才能跟著用）
+    for (let i = 0; i < replies.length; i++) {
+      const st = sc.steps[i];
+      if (st?.text) said.push(st.text);
+      for (const x of replies[i]) {
+        const t = x.text.match(TERMS)?.[0];
+        if (t && !sc.terms && !said.some(s => s.includes(t))) { fails.push(`C8 他沒講過就用了專有名詞「${t}」`); break; }
+      }
+    }
+    const all = replies.flat().map(x => x.text).join("\n");
+    if (sc.edu && !sc.edu.test(all)) fails.push(`C3 沒有出現一般衛教 ${sc.edu}`);
+    const inviteLine = offers[0]?.text ?? "";
+    if (sc.hook && offers.length && !sc.hook.test(inviteLine)) fails.push(`C5 邀約理由沒對上他的事 ${sc.hook}`);
+    const copied = replies.flat().find(x => EXAMPLE_REPLIES.has(x.text));
+    if (copied) fails.push(`C9 照抄指令範例：${copied.text.slice(0, 30)}…`);
+  }
   const deferred = MOCK && !!sc.realAI;
-  const out = { id, round, ok: fails.length === 0 || deferred, deferred, fails, ms, log };
+  const out = { id, round, ok: fails.length === 0 || deferred, deferred, fails, ms, log, said: replies.map(t => t.map(x => x.text).join("\n")) };
   fs.writeFileSync(path.join(OUT, `${id}-${round}.json`), JSON.stringify(out, null, 1));
   return out;
 }
@@ -453,6 +504,21 @@ const runJob = async ([id, r]) => {
 await Promise.all(Array.from({ length: CONC }, async () => { while (jobs.length) await runJob(jobs.shift()); }));
 // 會改全站設定的情境，等其他都跑完再一輪一輪單獨跑
 for (const j of jobsOf(id => S[id].exclusive)) await runJob(j);
+
+// C9：同一情境三輪的完整回覆不能有兩輪一模一樣；語氣組同一輪三種口氣的第一句要不一樣（真 AI 才檢查）
+if (!MOCK) {
+  for (const id of ids) {
+    const rs = results.filter(r => r.id === id && r.said);
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++)
+      if (rs[i].said.join("|") === rs[j].said.join("|")) { rs[j].ok = false; rs[j].fails.push(`C9 跟第 ${rs[i].round} 輪一模一樣`); }
+  }
+  for (let r = 1; r <= ROUNDS; r++) {
+    const first = TONE_GROUP.map(id => results.find(x => x.id === id && x.round === r)?.said?.[0]).filter(Boolean);
+    if (first.length === TONE_GROUP.length && new Set(first.map(t => t.split(/[，。！？]/)[0])).size < first.length) {
+      for (const x of results.filter(x => TONE_GROUP.includes(x.id) && x.round === r)) { x.ok = false; x.fails.push("語氣組：三種口氣的第一句有一樣的"); }
+    }
+  }
+}
 
 const allMs = results.flatMap(r => r.ms);
 let failed = 0;
