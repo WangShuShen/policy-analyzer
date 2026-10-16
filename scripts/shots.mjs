@@ -259,13 +259,14 @@ try {
   // ── 測試資料 ──
   const C0 = await login("as=new-customer");                                   // 什麼都還沒做
   const Cmid = await login("as=new-customer");                                 // 保障路線問到一半
-  await consult(Cmid, [/保單夠不夠/, /朋友/, /另一半/]);
+  await consult(Cmid, ["我想看懂自己的保單", /好，我傳保險存摺/, null]);   // 4-au：自由對話 → 出口 → 問到一半
   const Cfin = await login("as=new-customer");                                 // 財務路線「最擔心」
-  await consult(Cfin, [/準備多少錢/]);
+  await consult(Cfin, ["我想知道退休要準備多少錢", /幫我算算看/]);
   const Crec = await login("as=new-customer");                                 // 問推薦商品
-  await consult(Crec, [/保單夠不夠/, "你推薦哪一張？哪家比較好？"]);
+  await consult(Crec, ["你推薦哪一張？哪家比較好？"]);
   const C1 = await login("as=new-customer");                                   // 主要客戶：走到上傳存摺
-  let s1 = await untilUpload(C1, await consult(C1, [/保單夠不夠/, /朋友/, /另一半/, /差不多/]));
+  // 4-au 起諮詢是自由對話：打字說想看懂保單 → 點出口「好，我傳保險存摺」→ 接著答到上傳那一步（同 consult-scenarios.mjs 的 TO_UPLOAD）
+  let s1 = await untilUpload(C1, await consult(C1, ["我想看懂自己的保單", /好，我傳保險存摺/]));
   const conv1 = s1.conversation.id;
   if (s1.pending?.kind !== "upload") console.log(`⚠️ C1 沒走到上傳存摺那一步（pending=${s1.pending?.kind}）`);
 
@@ -282,9 +283,9 @@ try {
   await shoot("w1-09", "品牌：/login", { path: "/login", role: "未登入" });
 
   // ── w1-02、w1-03 諮詢 ──
-  await shoot("w1-02", "/consult 開場三選一（新客戶）", { path: "/consult", role: "客戶", who: C0 });
-  await shoot("w1-02", "保障路線問到一半（右欄有整理）", { path: "/consult", role: "客戶", who: Cmid });
-  await shoot("w1-02", "財務路線「最擔心」那題", { path: "/consult", role: "客戶", who: Cfin, expect: /擔心/ });
+  await shoot("w1-02", "/consult 開場（新客戶；4-au 起是自由對話，直接打字）", { path: "/consult", role: "客戶", who: C0 });
+  await shoot("w1-02", "說想看懂保單 → 點「好，我傳保險存摺」→ 問到一半（右欄有整理）", { path: "/consult", role: "客戶", who: Cmid });
+  await shoot("w1-02", "說想算退休 → 點「幫我算算看」→ 第一題（都是選的）", { path: "/consult", role: "客戶", who: Cfin, expect: /幾歲/ });
   await shoot("w1-03", "問「推薦哪一張、哪家比較好」的回覆（模擬模式：第二層審查一律通過，只有規則層會擋，拍的是不推薦商品的回覆）", { path: "/consult", role: "客戶", who: Crec });
   reuse("w1b-01", "w1-03", 1, "同 w1-03-1（問推薦商品的安全回覆）");
 
@@ -325,7 +326,14 @@ try {
 
   // ── 面談後：C4 預約 → 時間移到過去 → 顧問看到面談結果按鈕 → 標已面談 → 客戶端解鎖 ──
   const C4 = await login("as=new-customer");
-  await untilUpload(C4, await consult(C4, [/保單夠不夠/, /朋友/, /另一半/, /差不多/]));
+  // 4-au 起分析區塊要上傳存摺、送出「上傳好了」之後才出來（consult-scenarios T20）：不做這段，我的分析會是「還沒有分析」
+  const s4 = await untilUpload(C4, await consult(C4, ["我想看懂自己的保單", /好，我傳保險存摺/]));
+  if (s4.pending?.kind !== "upload") console.log(`⚠️ C4 沒走到上傳存摺那一步（pending=${s4.pending?.kind}）`);
+  await api(C4, "POST", "/api/passbook", { conversationId: s4.conversation.id, content: { kind: "text", pages: ["驗收截圖用存摺：模擬模式下內容不會被讀，讀取會回固定的示範保單。上傳端要求至少 30 個字。"] } });
+  const pv4 = await waitPassbook(C4, "confirming");
+  await api(C4, "POST", "/api/passbook/confirm", { uploadId: pv4.upload.id, items: pv4.policies.map(x => ({ id: x.id, keep: true })) });
+  await waitPassbook(C4, "done");
+  await api(C4, "POST", "/api/consult/turn", { conversationId: s4.conversation.id, stepId: s4.pending?.uploadStepId, uploaded: true }).catch(e => console.log(`⚠️ C4 送出「上傳好了」失敗：${e.message}`));
   const b4 = await book(C4);
   if (db) {
     await db.query("update bookings set starts_at=$2, ends_at=$3 where id=$1", [b4.id, new Date(Date.now() - 50 * 60_000).toISOString(), new Date(Date.now() - 5 * 60_000).toISOString()]);
@@ -334,7 +342,7 @@ try {
     await shoot("w1-07", "顧問 /clients/[id] 諮詢紀錄分頁", { path: `/clients/${C1.id}?tab=chat&conv=${conv1}`, role: "顧問", who: A });
     await shoot("w1-07", "顧問 /clients/[id] 面談結果按鈕（面談時間已過、還沒標）", { path: `/clients/${C4.id}`, role: "顧問", who: A, expect: /已面談|沒出現/ });
     await api(A, "POST", `/api/advisor/bookings/${b4.id}/status`, { action: "met" });
-    await shoot("w1-04", "/analysis 面談後（顧問標已面談，解鎖）", { path: "/analysis", role: "客戶", who: C4 });
+    await shoot("w1-04", "/analysis 面談後（顧問標已面談，解鎖）", { path: "/analysis", role: "客戶", who: C4, expect: /最該先看|可以再看看/ });
   } else {
     await shoot("w1-07", "顧問 /todo", { path: "/todo", role: "顧問", who: A });
     await shoot("w1-07", "顧問 /clients", { path: "/clients", role: "顧問", who: A });
