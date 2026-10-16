@@ -101,7 +101,9 @@ for (const name of BROWSERS) {
     ok(r?.status() === 200, `${tag}：打對 → 上傳成功（HTTP ${r?.status() ?? "沒送出"}）`);
     const last = bodies.at(-1) ?? "";
     ok(last.includes("Demo Term Life") && !last.includes(ID), `${tag}：送出的是解開後的保單文字，沒有身分證字號`);
-    ok(!(await pg.locator(PWBOX).count()), `${tag}：上傳後密碼框收起來`);
+    // 回應到了畫面還要一下才更新（開發版比本機慢）→ 等最多 5 秒
+    const closed = await pg.locator(PWBOX).waitFor({ state: "detached", timeout: 5_000 }).then(() => true, () => false);
+    ok(closed, `${tag}：上傳後密碼框收起來`);
 
     // 6. 中文假存摺（沒內嵌的 MSung-Light＋UniCNS-UCS2-H，台灣 PDF 常見）→ 要抽得出中文字（靠 cMapUrl），不能退成空白圖片
     if (!old) {
