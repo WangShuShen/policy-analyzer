@@ -245,7 +245,7 @@ export function ConsultChat({ name }: { name: string }) {
 
         <aside className={`dright ${tab === "panel" ? "" : "dhide"}`}>
           <div className="dpbar"><span className="dpbt">我的保障</span>
-            <span className="dpbn">{snap.facts.length} 項需求</span>
+            <span className="dpbn">{snap.facts.length} 件事</span>
             <button className="dpbx" onClick={() => setPanelOpen(false)}>收合 ⟩</button></div>
           {snap.facts.length > 0 && (
             <div className="dpan"><div className="dph"><span className="dpt">你說的事</span><span className="dpn">{snap.facts.length} 項</span></div>
@@ -263,7 +263,8 @@ export function ConsultChat({ name }: { name: string }) {
   );
 }
 
-const DPH = ["聊出需求", "看現況", "補強建議"];
+// 4-ax（10/16 顧問）：不寫「聊出需求」「補強建議」——聽起來像刻意要銷售
+const DPH = ["說說狀況", "看看保單", "顧問怎麼看"];
 
 function Bubble({ m }: { m: Msg }) {
   const c = m.content;
