@@ -385,7 +385,7 @@
 .rd .gd .gpwhy{margin-top:8px}
 .rd .gd .gpwhy > summary{font-size:14px;min-height:44px}
 .rd .gd .gpwb{font-size:14px}
-.rd .gd .gpwb a{color:var(--brand-ink);font-weight:700}
+.rd .gd .gpwb a{color:var(--brand-ink);font-weight:700;display:inline-block;padding:8px 4px;margin:-8px -4px;line-height:24px}   /* 句中連結：點擊範圍撐到 40 高，版面不變 */
 .rd .gd-src{font-family:var(--ui);font-size:12px;color:var(--muted);line-height:1.7;margin-top:26px;padding-top:14px;border-top:1px solid var(--hair)}
 @container vp (max-width:599.98px){
   .rd .gd-facts{gap:6px}
