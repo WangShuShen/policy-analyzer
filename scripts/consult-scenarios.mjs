@@ -84,6 +84,9 @@ const S = {
   F34: { steps: [{ text: "asdf" }, { text: "？？" }], bad: [], differ: [0, 1] },
   F35: chat(["你們這些保險的都在騙人吧"], { offer: null, bad: [/我們不一樣|你誤會了|其實保險(很|是)好/] }),
   F36: chat(["阮後生叫我來問，阮的保單毋知有路用無"], { offer: /upload|booking/ }),
+  // 主管 10/16（顧問截圖）：問怎麼上傳、存摺去哪弄 → 回覆下面一定有教學連結，AI 不自己講步驟
+  F37: chat(["怎麼上傳"], { realAI: false, offer: null, links: ["/guide/passbook"] }),
+  F38: chat(["存摺去哪弄"], { realAI: false, offer: null, links: ["/guide/passbook"] }),
   // ── 語氣組（4-au 補充）：同一個問題三種口氣，同一輪的第一句回覆要明顯不同（跑完一起比，見 TONE_GROUP）──
   G1: { realAI: true, steps: [{ text: "怎麼辦！！保險只賠一點點，醫院帳單還要繳，我現在很慌" }], bad: [] },
   G2: { realAI: true, steps: [{ text: "欸 理賠怎麼都賠很少啊 哈" }], bad: [/辛苦|遺憾/] },

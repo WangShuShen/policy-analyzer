@@ -164,7 +164,7 @@ export function mockExtractNeeds(known: Values, text: string, history: { role: s
   };
   if (DECLINE.test(text)) {
     if (intent === "book" || /直接約/.test(text)) set("worry", DECLINED);
-    return { intent, urgent, updates };
+    return { intent, urgent, guide: mockGuide(text), updates };
   }
   if (!known.has("topic")) set("topic", first(TOPIC, text));
   set("trigger", first(TRIGGER, text));
@@ -177,8 +177,12 @@ export function mockExtractNeeds(known: Values, text: string, history: { role: s
   set("income_share", first(INCOME, text));
   set("worry", first(WORRY, text));
   if (/保|團保/.test(text) || first(POLICY, text) === "沒有保單") set("existing_policy", first(POLICY, text));
-  return { intent, urgent, updates };
+  return { intent, urgent, guide: mockGuide(text), updates };
 }
+
+/** 問到存摺怎麼取得／上傳 → 存摺教學；問到理賠流程、文件 → 理賠教學 */
+export const mockGuide = (text: string): Guide =>
+  /存摺.*(哪|怎麼|申請|弄|下載)|怎麼上傳|上傳.*(怎麼|哪)/.test(text) ? "passbook" : /理賠.*(準備|文件|怎麼申請|流程)/.test(text) ? "claim" : "none";
 
 // ── 說話 ───────────────────────────────────────────────────────────
 
@@ -201,8 +205,7 @@ function mockExit(text: string, hasPolicy: NeedTurnInput["hasPolicy"]): Offer {
 }
 
 export function mockNeedTurn(m: NeedTurnInput): { reply: string; chips: string[]; asked: string | null; offer: Offer; guide: Guide } {
-  const guide: Guide = /存摺.*(哪|怎麼|申請|弄)/.test(m.userText) ? "passbook" : /理賠.*(準備|文件)/.test(m.userText) ? "claim" : "none";
-  return { ...mockTurnBody(m), guide };
+  return { ...mockTurnBody(m), guide: mockGuide(m.userText) };
 }
 
 function mockTurnBody(m: NeedTurnInput): { reply: string; chips: string[]; asked: string | null; offer: Offer } {

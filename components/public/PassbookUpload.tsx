@@ -246,7 +246,7 @@ export function PassbookUpload({ conversationId, onUploaded, onSkip, busy, api =
              ["回到這裡上傳", "PDF 或截圖都可以，有商品名稱和保額就夠了"]] as [string, React.ReactNode][]).map(([t, d], i) => (
             <div key={t} className="bgs"><span className="bgn">{i + 1}</span><div><div className="bgt">{t}</div><div className="bgd">{d}</div></div></div>
           ))}
-          <a className="upguide-more" href="/guide/passbook">不知道怎麼下載？看教學 ›</a>
+          <a className="upguide-more" href="/guide/passbook" target="_blank" rel="noopener">不知道怎麼下載？看教學 ›</a>
         </div>
       )}
       <div className="privacy">

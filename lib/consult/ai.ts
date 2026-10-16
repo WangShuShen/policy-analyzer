@@ -184,11 +184,17 @@ ${slotTable(slots)}
 - 只回傳這一輪有新資訊或改口的項目；已知的事沒變就不要回傳
 - intent：回答或在講自己的事 → answer；想約顧問、想直接問真人 → book；答應上一句 AI 的提議（「好」「可以」「我傳」「幫我算」）→ accept；問一般保險知識或名詞 → knowledge；問商品、保額、該買什麼、哪家好 → product；情緒很重（家人剛過世、剛確診、很亂、在哭）→ emotion；其他 → other
 - urgent：下列任一就填 true——家人剛過世或剛出事、自己或家人正在住院或剛確診、被拒賠或理賠有爭議、想解約或想停繳。其他都是 false
+- guide：他問到保險存摺怎麼取得、怎麼申請、怎麼下載、怎麼上傳 → passbook；他問到理賠怎麼申請、流程、要準備什麼文件 → claim；其他 → none
 </rules>`;
+
+/** 小教室文章（4-au 主管 10/16：存摺申請步驟、理賠文件細節 AI 不自己講，附連結） */
+export const GUIDES = ["none", "passbook", "claim"] as const;
+export type Guide = (typeof GUIDES)[number];
 
 const NeedExtractSchema = z.object({
   intent: z.enum(["answer", "book", "accept", "knowledge", "product", "emotion", "other"]),
   urgent: z.boolean(),
+  guide: z.enum(GUIDES),
   updates: z.array(z.object({ slot: z.string(), value: z.string(), confidence: z.enum(["clear", "estimated"]) })),
 });
 export type NeedExtraction = z.infer<typeof NeedExtractSchema>;
@@ -207,7 +213,7 @@ export async function extractNeeds(history: Line[], known: Values, text: string,
     messages: [{ role: "user", content: `<history>\n${historyXml(history)}\n</history>\n<known>${knownLine(known)}</known>\n<user>${text}</user>` }],
   });
   const usage = usageOf(EXTRACT_MODEL, res.usage);
-  const parsed = res.parsed_output ?? { intent: "other" as const, urgent: false, updates: [] };
+  const parsed = res.parsed_output ?? { intent: "other" as const, urgent: false, guide: "none" as const, updates: [] };
   const keys = new Set(HEALTH_SLOTS.map(s => s.key));
   parsed.updates = parsed.updates
     .filter(u => keys.has(u.slot) && u.value.trim())
@@ -409,9 +415,6 @@ intent 是 book（他說想約顧問）：直接說可以，下面的「約顧�
 export const OFFERS = ["none", "booking", "upload", "calc_ret", "calc_tax", "calc_edu"] as const;
 export type Offer = (typeof OFFERS)[number];
 export type Invite = "now" | "ok" | "not_now";
-/** 小教室文章（4-au 主管 10/16：存摺申請步驟、理賠文件細節 AI 不自己講，附連結） */
-export const GUIDES = ["none", "passbook", "claim"] as const;
-export type Guide = (typeof GUIDES)[number];
 
 const NeedTurnSchema = z.object({
   reply: z.string(),

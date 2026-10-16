@@ -311,10 +311,10 @@ const EXIT_ROUTE: Record<Exclude<Offer, "none" | "booking">, Pick<FlowState, "br
   calc_ret: { branch: "finance", sub: "ret" }, calc_tax: { branch: "finance", sub: "tax" }, calc_edu: { branch: "finance", sub: "edu" },
 };
 
-/** 小教室連結：存摺申請步驟、理賠文件細節不讓 AI 自己講（主管 10/16：AI 把存摺申請方式講錯） */
+/** 小教室連結：存摺申請步驟、理賠文件細節不讓 AI 自己講（主管 10/16：AI 把存摺申請方式講錯）。整理員判斷他在問、或說話的人講到了，就附上；畫面開新分頁 */
 const GUIDE_LINK: Record<Exclude<Guide, "none">, store.MessageLink> = {
-  passbook: { href: "/guide/passbook", text: "保險存摺怎麼申請" },
-  claim: { href: "/guide/claim", text: "理賠要準備什麼" },
+  passbook: { href: "/guide/passbook", text: "看保險存摺下載教學" },
+  claim: { href: "/guide/claim", text: "看理賠流程教學" },
 };
 
 /** 自由對話裡 AI 的回覆（有 offer 欄位的那些） */
@@ -388,11 +388,12 @@ async function needRound(userId: string, convId: string, st: FlowState, input: {
   else if (invite === "not_now") offer = "none";
   if (offer === "upload" && policy === "沒有") offer = "booking";
   await store.recordBlocks(convId, r.blocked, r.rewritten ? r.html : undefined);
+  const guide: Guide = ex.guide !== "none" ? ex.guide : r.guide;
   // 有邀約時，AI 自己寫的同類選項（「好，先算算看」「約顧問」）拿掉：點了不會走出口，又跟程式的按鈕重複（真 AI 測試 F21）
   const own = offer === "none" ? r.chips : r.chips.filter(c => !/算算|傳.*存摺|我傳|約顧問/.test(c));
   const chips = [...own, ...actionChips(offer)].filter((c, i, a) => a.indexOf(c) === i);
   await store.addMessage(convId, "assistant", {
-    kind: "ai", html: r.html, chips, ...(r.asked ? { ask: r.asked } : {}), offer, ...(r.guide !== "none" ? { link: GUIDE_LINK[r.guide] } : {}),
+    kind: "ai", html: r.html, chips, ...(r.asked ? { ask: r.asked } : {}), offer, ...(guide !== "none" ? { link: GUIDE_LINK[guide] } : {}),
     ...(ex.intent === "book" ? { byAsk: true } : {}), ...(ex.urgent ? { urgent: true } : {}),
   }, { usage: sumUsage(r.usages), rewritten: r.rewritten });
   await store.saveState(userId, convId, { ...st, values, filled: new Set(values.keys()) }, false);

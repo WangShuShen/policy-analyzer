@@ -270,7 +270,8 @@ function Bubble({ m }: { m: Msg }) {
   const c = m.content;
   if (c.kind === "user") return <div className="acm me">{c.text}</div>;
   if (c.kind === "ai") return c.link
-    ? <div className="acm ai"><span dangerouslySetInnerHTML={{ __html: safeHtml(c.html) }} /><br /><a className="askadvb" href={c.link.href} style={{ display: "inline-flex", marginTop: 8 }}>{c.link.text}</a></div>
+    ? <div className="acm ai"><span dangerouslySetInnerHTML={{ __html: safeHtml(c.html) }} /><br /><a className="askadvb" href={c.link.href} style={{ display: "inline-flex", marginTop: 8 }}
+      {...(c.link.href.startsWith("/guide/") ? { target: "_blank", rel: "noopener" } : {})}>{c.link.text}</a></div>
     : <div className="acm ai" dangerouslySetInnerHTML={{ __html: safeHtml(c.html) }} />;
   if (c.kind === "trend") return (
     <div className="trd dfx">
