@@ -1,7 +1,7 @@
 import { advance, askAt, answerFromOption, applyAnswer, nearestOption, passUpload, stepAt,
   type Answer, type FlowEvent, type FlowState, type Pending } from "./engine";
 import { STEPS } from "./script";
-import { extractAnswer, reply, confirmLine, WANT_ASK_LINE, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction, type Offer, type Invite } from "./ai";
+import { extractAnswer, reply, confirmLine, WANT_ASK_LINE, extractNeeds, needTurn, type Usage, type Line, type NeedExtraction, type Offer, type Invite, type Guide } from "./ai";
 import { DECLINED, HEALTH_SLOTS, askedBefore, hasPolicy, slotOf } from "./needs";
 import * as store from "./store";
 import { buildAnalysis, publicView, saveSnapshotIfChanged, type AnalysisView } from "./analysis";
@@ -311,6 +311,12 @@ const EXIT_ROUTE: Record<Exclude<Offer, "none" | "booking">, Pick<FlowState, "br
   calc_ret: { branch: "finance", sub: "ret" }, calc_tax: { branch: "finance", sub: "tax" }, calc_edu: { branch: "finance", sub: "edu" },
 };
 
+/** 小教室連結：存摺申請步驟、理賠文件細節不讓 AI 自己講（主管 10/16：AI 把存摺申請方式講錯） */
+const GUIDE_LINK: Record<Exclude<Guide, "none">, store.MessageLink> = {
+  passbook: { href: "/guide/passbook", text: "保險存摺怎麼申請" },
+  claim: { href: "/guide/claim", text: "理賠要準備什麼" },
+};
+
 /** 自由對話裡 AI 的回覆（有 offer 欄位的那些） */
 type ChatAi = Extract<store.MessageContent, { kind: "ai" }>;
 const chatReplies = (msgs: store.StoredMessage[]): ChatAi[] =>
@@ -386,7 +392,7 @@ async function needRound(userId: string, convId: string, st: FlowState, input: {
   const own = offer === "none" ? r.chips : r.chips.filter(c => !/算算|傳.*存摺|我傳|約顧問/.test(c));
   const chips = [...own, ...actionChips(offer)].filter((c, i, a) => a.indexOf(c) === i);
   await store.addMessage(convId, "assistant", {
-    kind: "ai", html: r.html, chips, ...(r.asked ? { ask: r.asked } : {}), offer,
+    kind: "ai", html: r.html, chips, ...(r.asked ? { ask: r.asked } : {}), offer, ...(r.guide !== "none" ? { link: GUIDE_LINK[r.guide] } : {}),
     ...(ex.intent === "book" ? { byAsk: true } : {}), ...(ex.urgent ? { urgent: true } : {}),
   }, { usage: sumUsage(r.usages), rewritten: r.rewritten });
   await store.saveState(userId, convId, { ...st, values, filled: new Set(values.keys()) }, false);

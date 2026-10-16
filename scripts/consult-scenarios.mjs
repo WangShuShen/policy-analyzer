@@ -74,9 +74,9 @@ const S = {
   F24: chat(["我保了好幾張，每個月繳好多，是不是保太多"], { offer: /upload|booking/, bad: [/保太多了|保太少了|確實(保)?太多/] }),
   F25: chat(["保單是我媽以前幫我買的，我完全不知道內容"], { offer: /upload|booking/, edu: /存摺|第一頁|保障到|繳費/ }),
   F26: chat(["我有乳癌病史，還買得到保險嗎"], { edu: /告知|照實/, bad: [/一定(會)?過|(應該|還是|都)(買得到|可以保)|(就)?買不到了/] }),
-  F27: chat(["理賠要準備什麼"], { edu: /證明|收據|申請書/, offer: null }),
+  F27: chat(["理賠要準備什麼"], { edu: /證明|收據|申請書/, offer: null, links: ["/guide/claim"] }),
   F28: chat(["我朋友 35 歲得癌症，我好怕"], { facts: { trigger: /朋友/ }, bad: [/你(得了|罹患)/] }),
-  F29: chat(["保險存摺是什麼？要去哪裡弄"], { edu: /清單|列出|所有(的)?保單/, offer: /upload|booking/ }),
+  F29: chat(["保險存摺是什麼？要去哪裡弄"], { edu: /清單|列出|所有(的)?保單/, offer: /upload|booking/, links: ["/guide/passbook"] }),
   F30: chat(["我只是看看，不想留資料"], { offer: null, bad: [/你(今年|現在)?幾歲|你的收入|你的(身體|健康)狀況|不會(記|留)|不用留(任何)?資料/] }),
   F31: chat(["照收據賠的跟照天數賠的哪個好"], { edu: /收據|天數/, bad: [/你比較適合|建議你(選|買)/] }),
   F32: chat(["我的保單要繳到幾歲？我看不懂"], { edu: /第一頁|繳費|年期|繳到/, offer: /upload|booking/ }),
@@ -119,6 +119,7 @@ const TONE_GROUP = ["G1", "G2", "G3"];
 const TERMS = /條款|實支實付|日額型|附約|除外|要保人/;
 // 4-ax：推銷感的詞
 const PUSHY = /需求|補強|缺口|加保/;
+const PASSBOOK_STEPS = /自然人憑證|健保卡|晶片金融卡|行動身分|白金|公會|臨櫃|100 ?元/;
 // 指令裡的範例回覆（C9：不能照抄）
 const EXAMPLE_REPLIES = new Set([...fs.readFileSync(new URL("../lib/consult/ai.ts", import.meta.url), "utf8").matchAll(/"reply":"([^"]+)"/g)].map(m => m[1].replace(/<[^>]+>/g, "")));
 // realAI：要靠 AI 的語意理解（新聞 vs 家人、情緒、一句話填多點、打字判子路線）。--mock 時一律標「需真 AI 補驗」：
@@ -357,6 +358,9 @@ async function runOne(id, round) {
     // 4-ax：AI 自由對話的話和選項不用推銷感的詞（他自己先講了才可以）
     const pushy = replies.flat().filter(x => x.offer).flatMap(x => [x.text, ...x.chips]).join("\n").match(PUSHY)?.[0];
     if (pushy && !said.some(s => s.includes(pushy))) fails.push(`4-ax 用了推銷感的詞「${pushy}」`);
+    // 保險存摺的申請方式 AI 不自己講（講錯過：證件、公會、付費），一律附小教室連結
+    const steps = replies.flat().filter(x => x.offer).map(x => x.text).join("\n").match(PASSBOOK_STEPS)?.[0];
+    if (steps) fails.push(`AI 自己講了保險存摺的申請方式「${steps}」`);
     const copied = replies.flat().find(x => EXAMPLE_REPLIES.has(x.text));
     if (copied) fails.push(`C9 照抄指令範例：${copied.text.slice(0, 30)}…`);
   }

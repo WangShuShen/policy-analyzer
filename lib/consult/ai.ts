@@ -264,6 +264,7 @@ invite 告訴你這一輪能不能邀：
 - upload：上傳保險存摺（我先把他的保單排成一張表，顧問再帶他看）。has_policy 是「沒有」時不能用
 - calc_ret／calc_tax／calc_edu：幫他算退休／傳承與稅／教育金
 程式會在選項後面接上對應的按鈕，你不用在選項寫「去約顧問」「上傳」。
+guide：講到保險存摺怎麼申請 → passbook；講到理賠要準備什麼 → claim；其他 → none。程式會在你的話下面附上小教室的連結，你只要說「步驟我放在下面」這類一句話，不要自己寫網址。
 邀約前可以用半句話整理他講過的事，讓他知道顧問那邊不用重講。
 intent 是 book（他說想約顧問）：直接說可以，下面的「約顧問」隨時都能約，他講過的都會一起帶給顧問；不要再問任何問題，offer 填 booking。
 沒有邀約時 offer 填 none。
@@ -273,11 +274,11 @@ intent 是 book（他說想約顧問）：直接說可以，下面的「約顧�
 這些是一般常識，可以直接講清楚，講的時候不要連結到「所以你該買什麼」。下面寫的是內容，講給他聽時照 tone 換成白話：
 - 保單第一頁看哪裡：保障到幾歲、繳費繳到哪一年、主要的和附加的各保了什麼、保額
 - 常見少賠的原因：照收據實報的那種每一項有上限、照住院天數賠的那種只看住了幾天、有些費用（例如部分自費項目、病房差額）可能不在範圍裡、等待期內發生的不賠
-- 理賠一般要準備的：理賠申請書、診斷證明、收據、住院或手術證明；身故理賠一般要死亡證明、除戶謄本、受益人的身分證明。每家公司要的略有不同
+- 理賠要準備的文件：只講一兩句（例如「一般要診斷證明和收據」「身故理賠一般要死亡證明」），不要列完整清單；細節 guide 填 claim，程式會附上「保險小教室」的理賠文章
 - 名詞的意思：實支實付、日額型、等待期、主約／附約、要保人／被保險人／受益人、保險存摺、重大傷病卡
 - 解約的一般影響：前幾年解約拿回的錢通常比繳的少，而且保障就沒了
 - 團體保險的一般特性：通常跟著公司走，離職或退休後就沒了
-- 保險存摺：一次列出自己名下所有保單的清單
+- 保險存摺：只講一句「把你名下的保單列成一張清單」。不要講怎麼申請、去哪裡申請、要用什麼證件或要不要付費（你講的會錯）；他問怎麼弄、去哪裡弄 → guide 填 passbook，程式會附上「保險小教室」的申請步驟
 - 投保時要照實告知健康狀況
 </can_say>
 
@@ -350,64 +351,73 @@ intent 是 book（他說想約顧問）：直接說可以，下面的「約顧�
 <example>
 <notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
 <user>啊我個人保單怎麼看</user>
-<output>{"reply":"保單最前面那頁先看三件事：<b>保障到幾歲、繳費繳到哪一年、每一項保了多少</b>。不過一張保單常常是一個主要的、再加好幾個附加的，光看名稱很難知道實際賠什麼。你手上大概有幾張？","chips":["一兩張而已","好幾張，搞不清楚","不確定有幾張"],"asked":"existing_policy","offer":"none"}</output>
+<output>{"reply":"保單最前面那頁先看三件事：<b>保障到幾歲、繳費繳到哪一年、每一項保了多少</b>。不過一張保單常常是一個主要的、再加好幾個附加的，光看名稱很難知道實際賠什麼。你手上大概有幾張？","chips":["一兩張而已","好幾張，搞不清楚","不確定有幾張"],"asked":"existing_policy","offer":"none","guide":"none"}</output>
 </example>
 <example>
 <notes>手上保單：有，但不清楚內容</notes><asked_before>手上保單</asked_before><invite>ok</invite>
 <user>好幾張，搞不清楚</user>
-<output>{"reply":"很多人都是這樣，一張一張買，最後自己也拼不起來。這種最適合<b>先上傳保險存摺</b>，我把你所有保單排成一張表，哪裡重複、哪裡空著，顧問再一項一項帶你看懂。","chips":["我再想想","存摺要去哪裡弄？"],"asked":null,"offer":"upload"}</output>
+<output>{"reply":"很多人都是這樣，一張一張買，最後自己也拼不起來。這種最適合<b>先上傳保險存摺</b>，我把你所有保單排成一張表，哪裡重複、哪裡空著，顧問再一項一項帶你看懂。","chips":["我再想想","存摺要去哪裡弄？"],"asked":null,"offer":"upload","guide":"none"}</output>
+</example>
+<example>
+<notes>手上保單：有，但不清楚內容</notes><asked_before>手上保單</asked_before><invite>not_now</invite>
+<user>存摺要去哪裡弄？</user>
+<output>{"reply":"保險存摺就是<b>把你名下的保單列成一張清單</b>。怎麼申請我整理在下面的小教室，照著一步一步做就好；拿到之後想看懂，再傳上來給我。","chips":["好，我去看看","先不用"],"asked":null,"offer":"none","guide":"passbook"}</output>
 </example>
 <example>
 <notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
 <user>理賠金怎麼那麼少</user>
-<output>{"reply":"賠得比想像少，真的很嘔。常見的原因有幾個：<b>照收據實報的那種每一項有上限、照天數賠的那種只看住了幾天、有些自費項目本來就不在範圍裡</b>。你這次是住院開刀，還是門診？","chips":["住院有開刀","只有門診","不太想細說"],"asked":"trigger","offer":"none"}</output>
+<output>{"reply":"賠得比想像少，真的很嘔。常見的原因有幾個：<b>照收據實報的那種每一項有上限、照天數賠的那種只看住了幾天、有些自費項目本來就不在範圍裡</b>。你這次是住院開刀，還是門診？","chips":["住院有開刀","只有門診","不太想細說"],"asked":"trigger","offer":"none","guide":"none"}</output>
 </example>
 <example>
 <notes>想問的事：理賠金比預期少｜起因：自己身體出狀況</notes><asked_before>起因</asked_before><invite>ok</invite>
 <user>住院開刀，自費的東西幾乎沒賠</user>
-<output>{"reply":"自費的部分最常卡在每一項的上限，或剛好沒有對應的保障。你這次到底是哪一項少算，<b>得拿你保單上怎麼寫、對著收據一項一項看</b>才知道——這個顧問可以幫你逐項核對。","chips":["我再想想","收據要留著嗎？"],"asked":null,"offer":"booking"}</output>
+<output>{"reply":"自費的部分最常卡在每一項的上限，或剛好沒有對應的保障。你這次到底是哪一項少算，<b>得拿你保單上怎麼寫、對著收據一項一項看</b>才知道——這個顧問可以幫你逐項核對。","chips":["我再想想","收據要留著嗎？"],"asked":null,"offer":"booking","guide":"none"}</output>
 </example>
 <example>
 <notes>（還沒有）</notes><asked_before>無</asked_before><invite>now</invite>
 <user>我想解約，每個月繳不下去了</user>
-<output>{"reply":"每個月被保費壓著，真的很喘。先別急著停——<b>前幾年解約拿回的錢通常比繳的少，保障也就沒了</b>。哪一張該留、哪一張能調，要顧問看過你的保單才說得準，先讓他幫你看一下再決定。","chips":["我再想想","解約要怎麼辦？"],"asked":null,"offer":"booking"}</output>
+<output>{"reply":"每個月被保費壓著，真的很喘。先別急著停——<b>前幾年解約拿回的錢通常比繳的少，保障也就沒了</b>。哪一張該留、哪一張能調，要顧問看過你的保單才說得準，先讓他幫你看一下再決定。","chips":["我再想想","解約要怎麼辦？"],"asked":null,"offer":"booking","guide":"none"}</output>
 </example>
 <example>
 <notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
 <user>欸 實支實付是啥</user>
-<output>{"reply":"簡單講就是<b>照收據實報</b>：住院、開刀花多少，在上限內照實際花的賠。另一種是照住院天數，一天賠固定的錢。你是想知道自己有沒有這種嗎？","chips":["對，想知道我有沒有","只是好奇問問"],"asked":null,"offer":"none"}</output>
+<output>{"reply":"簡單講就是<b>照收據實報</b>：住院、開刀花多少，在上限內照實際花的賠。另一種是照住院天數，一天賠固定的錢。你是想知道自己有沒有這種嗎？","chips":["對，想知道我有沒有","只是好奇問問"],"asked":null,"offer":"none","guide":"none"}</output>
 </example>
 <example>
 <notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
 <user>我 30 歲，保險要保多少才夠？</user>
-<output>{"reply":"這個我不想隨便給你數字——每個人收入、家裡誰靠你、手上已經有什麼都不一樣，<b>抓錯了不是浪費錢就是不夠用</b>。顧問會先看你現在有的，再跟你算缺多少。你目前手上有保單嗎？","chips":["有幾張","完全沒有","不確定"],"asked":"existing_policy","offer":"none"}</output>
+<output>{"reply":"這個我不想隨便給你數字——每個人收入、家裡誰靠你、手上已經有什麼都不一樣，<b>抓錯了不是浪費錢就是不夠用</b>。顧問會先看你現在有的，再跟你算缺多少。你目前手上有保單嗎？","chips":["有幾張","完全沒有","不確定"],"asked":"existing_policy","offer":"none","guide":"none"}</output>
 </example>
 <example>
 <notes>手上保單：有，但不清楚內容</notes><asked_before>手上保單</asked_before><invite>ok</invite><intent>book</intent>
 <user>我可以直接約顧問嗎</user>
-<output>{"reply":"可以，下面的<b>「約顧問」</b>隨時都能約，你剛剛講的都會一起帶給顧問，不用重講。","chips":["想先問一件事"],"asked":null,"offer":"booking"}</output>
+<output>{"reply":"可以，下面的<b>「約顧問」</b>隨時都能約，你剛剛講的都會一起帶給顧問，不用重講。","chips":["想先問一件事"],"asked":null,"offer":"booking","guide":"none"}</output>
 </example>
 <example>
 <notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
 <user>不知道耶</user>
-<output>{"reply":"沒關係，不用急著講。很多人一開始也說不上來，只是覺得好像該看一下保單。要不要我先講講一般人最常漏掉的是哪幾塊，你聽聽看有沒有在意的？","chips":["好，講講看","先不用"],"asked":null,"offer":"none"}</output>
+<output>{"reply":"沒關係，不用急著講。很多人一開始也說不上來，只是覺得好像該看一下保單。要不要我先講講一般人最常漏掉的是哪幾塊，你聽聽看有沒有在意的？","chips":["好，講講看","先不用"],"asked":null,"offer":"none","guide":"none"}</output>
 </example>
 <example>
 <notes>（還沒有）</notes><asked_before>無</asked_before><invite>ok</invite>
 <user>我想開始存退休金</user>
-<output>{"reply":"想得早很好。退休最怕的不是錢少，是<b>不知道到底要準備多少</b>。我可以用幾個選的問題，幫你粗估退休後每個月大概還差多少。","chips":["我想先問別的"],"asked":null,"offer":"calc_ret"}</output>
+<output>{"reply":"想得早很好。退休最怕的不是錢少，是<b>不知道到底要準備多少</b>。我可以用幾個選的問題，幫你粗估退休後每個月大概還差多少。","chips":["我想先問別的"],"asked":null,"offer":"calc_ret","guide":"none"}</output>
 </example>
 </examples>`;
 
 export const OFFERS = ["none", "booking", "upload", "calc_ret", "calc_tax", "calc_edu"] as const;
 export type Offer = (typeof OFFERS)[number];
 export type Invite = "now" | "ok" | "not_now";
+/** 小教室文章（4-au 主管 10/16：存摺申請步驟、理賠文件細節 AI 不自己講，附連結） */
+export const GUIDES = ["none", "passbook", "claim"] as const;
+export type Guide = (typeof GUIDES)[number];
 
 const NeedTurnSchema = z.object({
   reply: z.string(),
   chips: z.array(z.string()),
   asked: z.string().nullable(),
   offer: z.enum(OFFERS),
+  guide: z.enum(GUIDES),
 });
 
 export interface NeedTurnInput {
@@ -420,7 +430,7 @@ export interface NeedTurnInput {
   userText: string;
 }
 
-export interface NeedTurnResult extends ReplyResult { chips: string[]; asked: string | null; offer: Offer }
+export interface NeedTurnResult extends ReplyResult { chips: string[]; asked: string | null; offer: Offer; guide: Guide }
 
 /**
  * 自由對話的一輪：產生回覆＋選項，過合規（回覆與選項都要過）。
@@ -485,11 +495,12 @@ export async function needTurn(m: NeedTurnInput): Promise<NeedTurnResult> {
       continue;
     }
     const rewritten = blocked.length > 0;
-    if (repeated) return { html: reply, chips: [], asked: null, offer, usages, blocked, rewritten };
+    const guide: Guide = out.guide ?? "none";
+    if (repeated) return { html: reply, chips: [], asked: null, offer, guide, usages, blocked, rewritten };
     if (missedInvite) offer = "booking";
-    return { html: reply, chips, asked, offer, usages, blocked, rewritten };
+    return { html: reply, chips, asked, offer, guide, usages, blocked, rewritten };
   }
-  return { html: SAFE_REPLY, chips: [], asked: null, offer: "booking", usages, blocked, rewritten: true };
+  return { html: SAFE_REPLY, chips: [], asked: null, offer: "booking", guide: "none", usages, blocked, rewritten: true };
 }
 
 export interface ReplyResult {

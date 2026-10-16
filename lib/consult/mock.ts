@@ -1,5 +1,5 @@
 import type { AskStep } from "./engine";
-import type { Extraction, NeedExtraction, NeedTurnInput, Offer, ReplyMode, Usage } from "./ai";
+import type { Extraction, Guide, NeedExtraction, NeedTurnInput, Offer, ReplyMode, Usage } from "./ai";
 import { DECLINED, slotOf, type Values } from "./needs";
 
 /*
@@ -200,7 +200,12 @@ function mockExit(text: string, hasPolicy: NeedTurnInput["hasPolicy"]): Offer {
   return "none";
 }
 
-export function mockNeedTurn(m: NeedTurnInput): { reply: string; chips: string[]; asked: string | null; offer: Offer } {
+export function mockNeedTurn(m: NeedTurnInput): { reply: string; chips: string[]; asked: string | null; offer: Offer; guide: Guide } {
+  const guide: Guide = /存摺.*(哪|怎麼|申請|弄)/.test(m.userText) ? "passbook" : /理賠.*(準備|文件)/.test(m.userText) ? "claim" : "none";
+  return { ...mockTurnBody(m), guide };
+}
+
+function mockTurnBody(m: NeedTurnInput): { reply: string; chips: string[]; asked: string | null; offer: Offer } {
   if (m.intent === "book") return { reply: BOOK_LINE, chips: ["想先問一件事"], asked: null, offer: "booking" };
   if (m.intent === "emotion") return { reply: "辛苦了，慢慢來就好，不用急。", chips: ["想繼續聊", "先休息一下"], asked: null, offer: m.invite === "now" ? "booking" : "none" };
   const lead = m.intent === "product" || m.intent === "knowledge" ? ADVISOR_LINE : "了解，我記下來了。";
