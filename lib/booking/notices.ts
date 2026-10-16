@@ -21,6 +21,8 @@ function ics(b: BookingDetail, who: "client" | "advisor", cancelled = false): Ic
       location: where.plain, url: b.mode === "online" ? b.advisor.meetingLink : null, sequence: cancelled ? 1 : 0, cancelled }),
   };
 }
+/** 顧問日曆的取消附件（4-aw：客戶刪帳號時一併寄給顧問） */
+export const advisorCancelIcs = (b: BookingDetail): IcsFile => ics(b, "advisor", true);
 const link = (path: string, text: string) => `<a href="${appUrl()}${path}" style="${linkStyle}">${text}</a>`;
 const struck = (when: string) => `<s style="color:${MUTED}">${when}</s>`;
 const cancelFoot = "附件會把這場面談從你的日曆移除。";

@@ -8,6 +8,7 @@ import { view as passbookView } from "@/lib/passbook/service";
 import { fmtTaipei } from "@/lib/booking/slots";
 import { MeBookingActions } from "@/components/public/MeBookingActions";
 import { MyData } from "@/components/public/MyData";
+import { AccountDelete } from "@/components/public/EraseControls";
 import { supportEmail } from "@/lib/support";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -35,7 +36,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         <div className="eyebrow">我的頁面</div>
         <h2 className="t" style={{ marginBottom: 4 }}>我的資料</h2>
         <p className="sub">你目前沒有同意最新版的個資告知書，其他功能先暫停；查詢、更正或刪除你的資料照樣可以在這裡申請。</p>
-        <MyData supportEmail={supportEmail()} />
+        <><MyData supportEmail={supportEmail()} /><div className="ccg" style={{ marginTop: 12 }}><AccountDelete /></div></>
       </div></div>
     );
   }
@@ -165,7 +166,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         </div>
       )}
 
-      {tab === "data" && <MyData supportEmail={supportEmail()} />}
+      {tab === "data" && <><MyData supportEmail={supportEmail()} /><div className="ccg" style={{ marginTop: 12 }}><AccountDelete /></div></>}
 
       <div className="ccsoon">
         <div className="cct">之後會有（還沒做）</div>

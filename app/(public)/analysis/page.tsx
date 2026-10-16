@@ -11,6 +11,7 @@ import { AnalysisPanels, NowPanel } from "@/components/public/AnalysisPanels";
 import { AnalysisUpload } from "@/components/public/AnalysisUpload";
 import type { PassbookView } from "@/lib/passbook/service";
 import { ViewTracker } from "@/components/public/ViewTracker";
+import { PassbookDelete } from "@/components/public/EraseControls";
 
 /*
  * 我的分析（4-ag）：對話是「過程」，這頁是「結果」——同一份資料、兩個入口。
@@ -50,6 +51,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
           <p>先去跟 AI 聊聊你的狀況——<b>聊到哪、這裡就整理到哪</b>，不用一次聊完。</p>
           <div className="ccacts"><Link className="ccbtn pri" href="/consult">去諮詢</Link></div></div>
         <UploadSection pb={pb0} conversationId={null} hasNow={false} />
+        {pb0.upload && <PassbookDelete count={pb0.counts.total} />}
       </div></div>
     );
   }
@@ -87,6 +89,7 @@ export default async function AnalysisPage({ searchParams }: { searchParams: Pro
         )}
         <AnalysisPanels a={a} />
       </div>
+      {pb.upload && <PassbookDelete count={pb.counts.total} />}{/* 4-aw：客戶自己刪存摺 */}
       <ViewTracker page="analysis" refId={cur.id} selector=".anzbody .dpan" labelSelector=".dpt" />{/* W2 w2-04：顧問看得到「看過幾次、在哪段停最久」 */}
       <p className="dinn" style={{ textAlign: "left" }}>數字依財政部、勞動部公告參數（版本 {a.assumptionsVersion}）計算，<b>沒有假設任何投資報酬率</b>。</p>
     </div></div>

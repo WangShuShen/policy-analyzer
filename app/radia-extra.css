@@ -431,3 +431,18 @@
 /* 訪客的「免費聊聊」：分頁的 .on 留給「目前這頁」，這顆改成實心按鈕（4-av 加了公開分頁後，兩個亮著會分不清在哪一頁） */
 .rd .cnb.rd-cta{flex:none;color:#fff;background:var(--brand)}
 .rd .cnb.rd-cta:hover{background:var(--brand-ink)}
+
+/* ── 客戶自己刪存摺／刪帳號（4-aw）：頁面內確認，不跳視窗 ── */
+.rd .er-row{display:flex;justify-content:flex-end}
+.rd .er-link{font:inherit;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--muted);background:none;border:0;padding:8px 4px;min-height:40px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.rd .er-link:hover{color:var(--must)}
+.rd .er-box{background:var(--must-soft);border-radius:12px;padding:14px 16px;margin:8px 0 4px}
+.rd .er-t{font-size:15px;font-weight:750;color:var(--ink);margin:0 0 6px}
+.rd .er-list{list-style:disc;margin:0 0 12px;padding-left:1.2em;font-size:14px;line-height:1.75;color:var(--ink-2)}
+.rd .er-list b{color:var(--must)}
+.rd .er-lab{display:block;font-size:13.5px;font-weight:600;color:var(--ink-2);margin:0 0 6px}
+.rd .er-in{max-width:220px;margin:0 0 12px;display:block}
+.rd .er-acts{display:flex;flex-wrap:wrap;gap:8px}
+.rd .ccbtn.er-danger{background:var(--must);border-color:var(--must);color:#fff}
+.rd .ccbtn.er-danger:disabled{opacity:.45}
+.rd .er-done{background:var(--brand-soft);border-color:transparent}

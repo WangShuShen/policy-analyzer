@@ -58,7 +58,7 @@ export function MyData({ supportEmail }: { supportEmail: string | null }) {
           {kind && <>
             <textarea className="md-ta" rows={3} maxLength={500} value={msg} onChange={e => setMsg(e.target.value)}
               placeholder={kind === "correct" ? "例：我的生日填錯了，應該是 1985 年" : kind === "delete" ? "例：請刪除我全部的資料" : "例：想知道你們存了我哪些資料"} />
-            {kind === "delete" && <div className="ccd" style={{ marginTop: 0 }}>刪除或撤回同意後，平台就停止使用你的資料，你之前的分析也看不到了。撤回前已經做過的處理不受影響。</div>}
+            {kind === "delete" && <div className="ccd" style={{ marginTop: 0 }}>刪除或撤回同意後，平台就停止使用你的資料，你之前的分析也看不到了。撤回前已經做過的處理不受影響。想馬上刪除整個帳號，不用等我們處理：用頁面最下面的「刪除我的帳號」。</div>}
             {err && <div className="rd-err" style={{ margin: 0 }}>{err}</div>}
             <button className="btn" disabled={busy || msg.trim().length < 2} onClick={submit}>{busy ? "送出中…" : "送出申請"}</button>
           </>}

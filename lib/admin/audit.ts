@@ -19,6 +19,10 @@ export const ACTION_LABEL: Record<string, string> = {
   undo_no_show: "撤銷沒出現",
   cancel_booking: "取消預約",
   view_audit_log: "查看查閱紀錄",
+  // 客戶自己刪除（4-aw）：帳號刪除後 target_user_id 對不到任何人；consent_record 的 target_id＝同意書版本|範圍|同意時間|撤回時間
+  delete_passbook: "客戶刪除保險存摺",
+  delete_account: "客戶刪除帳號",
+  consent_record: "刪帳號前的同意紀錄摘要",
   // 顧問管理（10/15 #14）：target_id 記顧問 id 或申請 id
   create_advisor: "新增顧問",
   delete_advisor: "刪除顧問",
