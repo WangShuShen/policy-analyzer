@@ -17,7 +17,7 @@ export function ClientChrome({ name }: { name: string | null }) {
   const [menu, setMenu] = useState(false);
   const funnel = path.startsWith("/welcome");
   const news = path === "/news" || path.startsWith("/news/");
-  const cur = news ? "news" : path.startsWith("/analysis") ? "analysis" : path.startsWith("/me") || path.startsWith("/booked") ? "me" : "chat";
+  const cur = news ? "news" : path.startsWith("/analysis") || path.startsWith("/guide/") ? "analysis" : path.startsWith("/me") || path.startsWith("/booked") ? "me" : "chat";
   const progress = path === "/welcome" ? 25 : path.startsWith("/welcome/consent") ? 60 : 0;
   const logout = async () => { await fetch("/api/auth", { method: "DELETE" }); router.push("/welcome"); };
   return (

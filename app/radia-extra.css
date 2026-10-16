@@ -353,3 +353,45 @@
 
 /* 原型的手機規則 `.cacc span{display:none}` 連姓氏圓圈（.cav）也藏掉，帳號鈕在手機上變成空的（10/15 截圖發現）：圓圈留著、只藏名字 */
 @container vp (max-width:599.98px){ .rd .cacc span.cav{display:grid} .rd .cacc{justify-content:center} }
+
+/* ── 保險存摺下載教學 /guide/passbook（10/16）：原型元件（eyebrow／h2.t／sub、bookguide、gpwhy）＋少量排版 ── */
+.rd .gd{max-width:680px;width:100%;margin:0 auto;padding-bottom:12px}
+.rd .gd-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:18px}
+.rd .gd-facts > div{background:var(--surface);border:1px solid var(--hair);border-radius:13px;padding:12px 10px;text-align:center;display:flex;flex-direction:column;gap:3px}
+.rd .gd-facts b{font-size:15px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+.rd .gd-facts span{font-family:var(--ui);font-size:11.5px;color:var(--muted);line-height:1.4}
+.rd .gd-h{font-size:18px;font-weight:800;margin:30px 0 12px}
+.rd .gd .bookguide{margin-top:0}
+.rd .gd-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.rd .gd-step{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px 16px 14px}
+.rd .gd-sh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rd .gd-sh h4{font-size:15.5px;font-weight:750;margin:0;line-height:1.45;flex:1 1 auto;min-width:0}
+.rd .gd-sb{padding-left:34px;margin-top:6px;font-size:14.5px;line-height:1.8;color:var(--ink-2)}
+.rd .gd-sb p{margin:0 0 6px}
+.rd .gd-sb b,.rd .gd-p b{color:var(--ink)}
+.rd .gd-sb ul{list-style:disc;padding-left:1.2em;margin:2px 0 6px}
+.rd .gd-sb li{margin:2px 0}
+.rd .gd-k{display:inline-block;font-family:var(--ui);font-size:12.5px;font-weight:700;color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:0 7px;line-height:1.7;white-space:nowrap}
+.rd .gd-tip,.rd .gd-warn{border-radius:11px;padding:10px 13px;font-size:13.5px;line-height:1.7;margin:8px 0 4px}
+.rd .gd-tip{background:var(--brand-soft);color:var(--brand-ink)}
+.rd .gd-warn{background:var(--amber-soft);color:var(--ink-2)}
+.rd .gd-warn b{color:var(--amber)}
+.rd .gd-mute{color:var(--muted);font-size:13px;margin-top:8px!important}
+.rd .gd-p{font-size:14px;line-height:1.75;color:var(--ink-2);margin:0 0 12px}
+.rd .gd-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.rd .gd-links a{font-family:var(--ui);font-size:13px;font-weight:700;color:var(--brand-ink);text-decoration:none;background:var(--surface);border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);border-radius:999px;padding:9px 15px;min-height:40px;display:inline-flex;align-items:center}
+.rd .gd-links a:hover{background:var(--brand-soft)}
+.rd .gd-cta{margin-top:10px}
+.rd .gd .gpwhy{margin-top:8px}
+.rd .gd .gpwhy > summary{font-size:14px;min-height:44px}
+.rd .gd .gpwb{font-size:14px}
+.rd .gd .gpwb a{color:var(--brand-ink);font-weight:700}
+.rd .gd-src{font-family:var(--ui);font-size:12px;color:var(--muted);line-height:1.7;margin-top:26px;padding-top:14px;border-top:1px solid var(--hair)}
+@container vp (max-width:599.98px){
+  .rd .gd-facts{gap:6px}
+  .rd .gd-facts b{font-size:14px}
+  .rd .gd-sb{padding-left:0}
+  .rd .gd-step{padding:14px}
+}
+/* 上傳區塊三步說明 → 完整教學 */
+.rd .upguide-more{display:inline-flex;align-items:center;min-height:40px;margin-top:4px;padding-left:35px;font-size:13.5px;font-weight:700;color:var(--brand-ink);text-decoration:underline;text-underline-offset:3px}

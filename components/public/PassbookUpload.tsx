@@ -189,11 +189,13 @@ export function PassbookUpload({ conversationId, onUploaded, onSkip, busy, api =
       {howOpen && (
         <div className="upguide">
           <div className="bgh">三步驟，手機就能做</div>
-          {([["到壽險公會「保險存摺」網站", <>用<strong>本人門號＋身分證</strong>做行動身分識別最快——不用讀卡機</>],
-             ["登入後把保單資料下載成 PDF", "檔案密碼是你的身分證字號"],
+          {/* 文字對齊 /guide/passbook 教學（10/16）：白金會員 100 元、約 5 分鐘寄到 Email、密碼是身分證字號 */}
+          {([["註冊壽險公會的「保險存摺」App 或網站", <>用<strong>本人門號＋身分證</strong>做行動身分識別最快，不用讀卡機（驗證時先關 Wi-Fi）</>],
+             ["升級白金會員（100 元／年），申請投保紀錄", <>約 5 分鐘寄到你的 Email，PDF 密碼是<strong>你的身分證字號</strong></>],
              ["回到這裡上傳", "PDF 或截圖都可以，有商品名稱和保額就夠了"]] as [string, React.ReactNode][]).map(([t, d], i) => (
             <div key={t} className="bgs"><span className="bgn">{i + 1}</span><div><div className="bgt">{t}</div><div className="bgd">{d}</div></div></div>
           ))}
+          <a className="upguide-more" href="/guide/passbook">不知道怎麼下載？看教學 ›</a>
         </div>
       )}
       <div className="privacy">
