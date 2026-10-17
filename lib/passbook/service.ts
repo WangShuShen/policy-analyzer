@@ -163,7 +163,7 @@ export async function processMatch(uploadId: string): Promise<void> {
 
 // ── 狀態與全險圖 ──────────────────────────────────────────────────
 
-/** 被保險人看不出是誰時，畫面上「被保險人：」後面接的字 */
+/** 被保險人看不出是誰時的 forOther 值；畫面上一律顯示「被保險人待確認」（4-ay：不顯示姓名或關係） */
 export const INSURED_PENDING = "待確認";
 
 export interface PolicyView {
