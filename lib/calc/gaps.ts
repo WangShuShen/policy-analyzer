@@ -14,7 +14,8 @@ import type { Assumptions } from "./assumptions";
 
 export type GapKey = "life" | "survival" | "reimb" | "daily" | "accident" | "cancer" | "card" | "critical" | "ltc" | "disability";
 export type GapLevel = "must" | "boost" | "ok" | "later";
-export const LEVEL_LABEL: Record<GapLevel, string> = { must: "一定要補", boost: "建議補強", ok: "夠了", later: "這輪先不做" };
+// 4-ax：客戶看得到的分級名稱（AnalysisPanels 有同一套字）
+export const LEVEL_LABEL: Record<GapLevel, string> = { must: "最該先看", boost: "可以再看看", ok: "夠了", later: "這次先放著" };
 
 export interface CurrentCover { key: GapKey; label: string; amount: number; display: string | null; preliminary: boolean; missing: number }
 
@@ -83,7 +84,7 @@ const PAIRS: [GapKey, GapKey, string][] = [
   ["disability", "ltc", "和失能扶助性質重疊——兩個都做等於重複付錢"],
   ["card", "critical", "重大傷病卡的涵蓋範圍更寬，先做那張"],
 ];
-const SAVINGS_REASON = "儲蓄性質，先把保障補起來再談";
+const SAVINGS_REASON = "儲蓄性質，先把保障顧好再談";
 
 export function gradeGaps(cover: CurrentCover[], f: GapFacts, A: Assumptions): GapRow[] {
   const S = A.gapStandards;
@@ -113,7 +114,7 @@ export function gradeGaps(cover: CurrentCover[], f: GapFacts, A: Assumptions): G
       set(Sc, "ok", `已經有${Sc.label} ${Sc.display}，和${P.label}性質重疊——不用兩個都做`);
       capped.add(p);
     } else if (has(sec) && has(p)) set(Sc, "ok", `現有 ${Sc.display}`);
-    else if (has(sec)) set(Sc, "later", `現有 ${Sc.display}，還不到 ${wan(min)}，取代不了${P.label}——先補${P.label}`);
+    else if (has(sec)) set(Sc, "later", `現有 ${Sc.display}，還不到 ${wan(min)}，取代不了${P.label}——先看${P.label}`);
     else set(Sc, "later", why);
   }
   const surv = by.get("survival");
@@ -130,7 +131,7 @@ export function gradeGaps(cover: CurrentCover[], f: GapFacts, A: Assumptions): G
     if (!has(c.key) && trig && !capped.has(c.key) && c.missing === 0) { mustCandidates.push(c.key); continue; }
     // 「現在 X → 標準 Y」畫面上已經有，理由講「差多少」，不重複
     set(c, "boost", has(c.key)
-      ? (s !== undefined ? `還差 ${showStd(c.key, s - c.amount)}` : `現有 ${c.display}，可以再加強`)
+      ? (s !== undefined ? `還差 ${showStd(c.key, s - c.amount)}` : `現有 ${c.display}，還可以再看看`)
       : "目前沒有這一塊");
   }
   // 一定要補最多 maxMust 項，依需求點順序取（G6）

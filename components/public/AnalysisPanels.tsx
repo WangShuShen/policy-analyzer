@@ -300,7 +300,7 @@ export function NowPanel({ d }: { d: Extract<PanelData, { key: "now" }> }) {
         <div className="ndl" style={{ marginTop: 8 }}>
           {own.concat(pb.policies.filter(p => p.forOther && p.matchStatus !== "removed")).map(p => (
             <div key={p.id} className="ndi" style={{ flexDirection: "column", alignItems: "flex-start" }}>
-              <span className="ndv"><b>{p.productName}</b>　{p.forOther ? `被保險人：${p.forOther}` : p.matchStatus === "matched" ? "已核對" : p.matchStatus === "ai_read" ? "AI 初步讀取" : "還在確認"}</span>
+              <span className="ndv"><b>{p.productName}</b>　{p.forOther ? "被保險人待確認" : p.matchStatus === "matched" ? "已核對" : p.matchStatus === "ai_read" ? "AI 初步讀取" : "還在確認"}</span>
               <span className="ndv" style={{ fontSize: 12, color: "var(--muted)" }}>{p.amountText}{p.effectiveDate && ` · ${p.effectiveDate} 生效`}{p.matchNote && p.matchStatus !== "matched" && p.matchStatus !== "ai_read" && ` · ${p.matchNote}`}</span>
               {p.items.length > 0 && <span className="ndv" style={{ fontSize: 12 }}>{p.items.slice(0, 8).map(i => `${i.name} ${i.value}`).join("　")}</span>}
             </div>

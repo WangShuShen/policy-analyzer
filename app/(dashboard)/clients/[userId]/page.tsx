@@ -7,6 +7,7 @@ import { fmtTaipei } from "@/lib/booking/slots";
 import { safeHtml } from "@/lib/consult/safeHtml";
 import { BookingActions } from "@/components/advisor/BookingActions";
 import { GapEditor } from "@/components/advisor/GapEditor";
+import { InsuredFix } from "@/components/advisor/InsuredFix";
 import { AnalysisPanels } from "@/components/public/AnalysisPanels";
 import { CrmPanel } from "@/components/advisor/CrmPanel";
 import { NoCopy } from "@/components/advisor/NoCopy";
@@ -134,8 +135,10 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                 {pb.policies.map(p => (
                   <div key={p.id} className="acpr">
                     <div className="acpn"><b>{p.productName}</b><span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>{p.company} · {p.amountText}{p.effectiveDate && ` · ${p.effectiveDate} 生效`}{p.status && ` · ${p.status}`}{p.matchNote && ` · ${p.matchNote}`}</span>
-                      {p.items.length > 0 && <span style={{ display: "block", fontSize: 12, color: "var(--ink-2)", marginTop: 3 }}>{p.items.map(i => `${i.name} ${i.value}`).join("　")}</span>}</div>
-                    <span className={`tagx ${p.matchStatus === "matched" ? "ok" : "gap"}`}>{p.forOther ? `被保險人：${p.forOther}` : (MATCH[p.matchStatus] ?? MATCH.unconfirmed)[0]}</span>
+                      {p.items.length > 0 && <span style={{ display: "block", fontSize: 12, color: "var(--ink-2)", marginTop: 3 }}>{p.items.map(i => `${i.name} ${i.value}`).join("　")}</span>}
+                      {/* 被保險人看不出是誰 → 顧問確認：本人算進來、家人刪掉（4-ay） */}
+                      {p.insured === "pending" && <InsuredFix userId={userId} policyId={p.id} insured={p.insured} />}</div>
+                    <span className={`tagx ${p.matchStatus === "matched" ? "ok" : "gap"}`}>{p.forOther ? "被保險人待確認" : (MATCH[p.matchStatus] ?? MATCH.unconfirmed)[0]}</span>
                   </div>
                 ))}
               </div>

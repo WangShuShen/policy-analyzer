@@ -23,6 +23,7 @@ export interface StoredPolicy {
   read: PassbookPolicy;                               // AI 讀到的（不改）
   idx?: number;                                       // 在存摺裡的順序（同一批寫入 created_at 相同，排不出先後）
   edits?: { amount?: number | null; amount_unit?: string | null; plan?: string | null };   // 客戶確認時改的
+  insured?: { owner: true; by: string; at: string };          // 顧問確認被保險人是本人（改成家人的那筆直接刪掉，4-ay）
   match?: { planCode: string; productName: string; productType: string | null; how: string; dateCheck: string } | { reason: string; detail?: string };
 }
 
@@ -71,8 +72,11 @@ export async function processRead(uploadId: string): Promise<ReadUsage | null> {
       tokens_in: usage.tokensIn, tokens_out: usage.tokensOut, cost_micro_usd: usage.costMicroUsd }).catch(e => console.error("[passbook] usage", e));
     if (!result.is_passbook) { await setStatus(uploadId, "failed", "這份檔案看起來不是保險存摺，要不要再確認一下？"); return usage; }
     if (!result.policies.length) { await setStatus(uploadId, "failed", "存摺裡沒有讀到任何保單，可能是頁面不完整"); return usage; }
+    // 4-ay（顧問 10/16）：被保險人是別人（子女、配偶）的保單直接丟掉，不存——那是第三人的個資，客戶沒有替他同意
+    const own = result.policies.filter(p => p.insured_is_owner !== false);
+    if (!own.length) { await setStatus(uploadId, "failed", "存摺裡沒有被保險人是你本人的保單（別人當被保險人的保單不會存）"); return usage; }
     await db.delete(clientPolicies).where(eq(clientPolicies.upload_id, uploadId));    // 重跑時不重複
-    await db.insert(clientPolicies).values(result.policies.map((p, idx) => ({
+    await db.insert(clientPolicies).values(own.map((p, idx) => ({
       id: crypto.randomUUID(), user_id: u.user_id, upload_id: uploadId,
       raw_enc: encryptJson({ read: p, idx } satisfies StoredPolicy),
       match_status: "unconfirmed", expires_at: oneYearLater(),
@@ -159,9 +163,13 @@ export async function processMatch(uploadId: string): Promise<void> {
 
 // ── 狀態與全險圖 ──────────────────────────────────────────────────
 
+/** 被保險人看不出是誰時，畫面上「被保險人：」後面接的字 */
+export const INSURED_PENDING = "待確認";
+
 export interface PolicyView {
   id: string; company: string; productName: string; amountText: string; effectiveDate: string | null; status: string | null;
-  isRider: boolean | null; forOther: string | null;          // 被保險人不是本人時的關係
+  isRider: boolean | null; forOther: string | null;          // 被保險人看不出是誰時是「待確認」（不算進保障）；本人是 null
+  insured: "self" | "pending"; insuredFixed: boolean;         // insuredFixed＝顧問確認過是本人
   matchStatus: string; matchNote: string | null; edited: boolean;
   items: { name: string; value: string }[];                  // 算出來的給付（客戶端看得到的事實）
 }
@@ -192,7 +200,9 @@ export async function view(userId: string): Promise<PassbookView & { stuck: { id
 
   const rows = await db.select().from(clientPolicies).where(and(eq(clientPolicies.upload_id, u.id), eq(clientPolicies.user_id, userId))).orderBy(asc(clientPolicies.created_at));
   const planCodes = new Set<string>();
-  const parsed = rows.map(r => ({ r, sp: decryptJson<StoredPolicy>(r.raw_enc) })).sort((a, b) => (a.sp.idx ?? 0) - (b.sp.idx ?? 0));
+  // 4-ay 之前存下的「被保險人是別人」舊資料：清除腳本（scripts/purge-other-insured.mjs）跑之前也不顯示、不計數
+  const parsed = rows.map(r => ({ r, sp: decryptJson<StoredPolicy>(r.raw_enc) })).filter(x => x.sp.read.insured_is_owner !== false)
+    .sort((a, b) => (a.sp.idx ?? 0) - (b.sp.idx ?? 0));
   for (const { sp } of parsed) if (sp.match && "planCode" in sp.match) planCodes.add(sp.match.planCode);
 
   // 每個 planCode 取一份公式：審過的優先，其次最新的 AI 讀取
@@ -215,10 +225,12 @@ export async function view(userId: string): Promise<PassbookView & { stuck: { id
 
   const sums = new Map<BucketKey, { lo: number; hi: number; preliminary: boolean }>();
   const missing = new Map<BucketKey, number>();
-  const counts = { ...empty, total: rows.length };
+  const counts = { ...empty, total: parsed.length };
   const views: PolicyView[] = parsed.map(({ r, sp }) => {
     const p = sp.read, e = sp.edits;
-    const forOther = p.insured_is_owner === false ? (p.insured_label || "家人") : null;
+    // 顧問定案（4-ay）：只算被保險人是本人的保單。AI 看不出來（null）的不算，標「待確認」等顧問改；別人的保單讀的時候就丟掉了
+    const insured = sp.insured || p.insured_is_owner === true ? "self" as const : "pending" as const;
+    const forOther = insured === "pending" ? INSURED_PENDING : null;
     const m = sp.match;
     const productType = m && "planCode" in m ? m.productType : null;
     let matchNote: string | null = null;
@@ -261,7 +273,7 @@ export async function view(userId: string): Promise<PassbookView & { stuck: { id
     }
     return {
       id: r.id, company: p.company, productName: p.product_name, amountText: amountText(p, e), effectiveDate: p.effective_date, status: p.status,
-      isRider: p.is_rider, forOther, matchStatus: r.match_status, matchNote, edited: !!e, items,
+      isRider: p.is_rider, forOther, insured, insuredFixed: !!sp.insured, matchStatus: r.match_status, matchNote, edited: !!e, items,
     };
   });
 
@@ -293,3 +305,17 @@ function guessTypeByName(name: string): string | null {
   return null;
 }
 
+// ── 顧問改被保險人 ────────────────────────────────────────────────
+
+/**
+ * 顧問確認被保險人待確認的保單：本人（owner=true）→ 算進保障；家人（false）→ 直接刪掉那一筆（4-ay：第三人的個資不存）。
+ * 改完 view() 會重新算全險圖與缺口
+ */
+export async function setInsured(userId: string, policyId: string, owner: boolean, advisorId: string): Promise<void> {
+  const [r] = await db.select().from(clientPolicies).where(and(eq(clientPolicies.id, policyId), eq(clientPolicies.user_id, userId))).limit(1);
+  if (!r) throw new PassbookError("找不到這張保單");
+  if (!owner) { await db.delete(clientPolicies).where(eq(clientPolicies.id, r.id)); return; }
+  const sp = decryptJson<StoredPolicy>(r.raw_enc);
+  sp.insured = { owner: true, by: advisorId, at: new Date().toISOString() };
+  await db.update(clientPolicies).set({ raw_enc: encryptJson(sp), updated_at: nowText }).where(eq(clientPolicies.id, r.id));
+}

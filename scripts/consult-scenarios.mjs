@@ -113,6 +113,9 @@ const S = {
     analysisUpload: true },
   // 4-at（主管 10/15）：先在我的分析傳了存摺，對話走到上傳那一步就跳過——說「你已經傳過了（N 張）」＋「要換一份重新上傳」
   T28: { mockOnly: true, steps: [TO_UPLOAD[0], { preUpload: true }, ...TO_UPLOAD.slice(1)], bad: [], expect: [[4, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
+  // 4-ay（顧問 10/16）：被保險人是別人的保單不存（模擬存摺第 4 張子女）；看不出來的（第 5 張）標「待確認」、不算；
+  // 顧問改成本人 → 算進來；改成家人 → 整筆刪掉
+  T30: { mockOnly: true, steps: [...TO_UPLOAD, { upload: true }], bad: [], insuredFix: true },
   // 對話停在上傳那一步 → 跑去我的分析傳 → 回到對話：直接往下，不再叫他傳
   T29: { mockOnly: true, steps: [...TO_UPLOAD, { preUpload: true }, { reopen: true }], bad: [], expect: [[5, /你已經傳過保險存摺了（\d+ 張）/]], links: ["/analysis#upload"], notPending: "upload" },
 };
@@ -297,6 +300,40 @@ async function runOne(id, round) {
       log.push(`從我的分析上傳：確認 ${v.policies.length} 張 → 結果出現`);
     } catch (e) { anzUpFail = String(e.message ?? e); }
   }
+  // 被保險人待確認 → 顧問改成本人 → 重新算進保障
+  let insuredFail = null;
+  if (sc.insuredFix && !broken) {
+    try {
+      const v0 = await (await fetch(`${BASE}/api/passbook`, { headers: H })).json();
+      const pend = v0.policies.find(p => p.insured === "pending");
+      if (!pend) throw new Error("沒有被保險人待確認的保單");
+      if (pend.forOther !== "待確認") throw new Error(`待確認的保單 forOther=${pend.forOther}`);
+      if (v0.policies.some(p => /示範用小額/.test(p.productName))) throw new Error("被保險人是子女的保單還在（應該讀完就丟掉）");
+      if (JSON.stringify(v0).includes("子女")) throw new Error("存摺資料裡還出現「子女」");
+      log.push(`存摺：本人 ${v0.policies.filter(p => p.insured === "self").length} 張、待確認 1 張、子女的沒有存（共 ${v0.counts.total} 張）`);
+      const userId = JSON.parse(Buffer.from(cookie.split("=")[1].split(".")[1], "base64url").toString()).advisorId;
+      const advisorId = arg("advisor", "dev-adv-b");
+      const bookingId = await bookSlot(H, advisorId);
+      try {
+        const ac = await devLogin("advisor", advisorId);
+        const html = await (await fetch(`${BASE}/clients/${userId}?tab=pol`, { headers: { cookie: ac } })).text();
+        if (!/被保險人是：/.test(html) || !/被保險人待確認/.test(html)) throw new Error("顧問客戶頁沒有「被保險人待確認」和「被保險人是：本人／家人」");
+        const put = (owner) => fetch(`${BASE}/api/advisor/clients/${userId}/passbook/insured`, { method: "PUT", headers: { cookie: ac, "content-type": "application/json" }, body: JSON.stringify({ policyId: pend.id, owner }) });
+        const r = await put(true);
+        if (!r.ok) throw new Error(`顧問改成本人 HTTP ${r.status}`);
+        const v1 = await (await fetch(`${BASE}/api/passbook`, { headers: H })).json();
+        const after = v1.policies.find(p => p.id === pend.id);
+        if (after.insured !== "self" || after.forOther !== null || !after.insuredFixed) throw new Error(`改完這張還是 ${after.insured}／${after.forOther}`);
+        if (v1.counts.others !== v0.counts.others - 1) throw new Error(`改完 others 從 ${v0.counts.others} 變 ${v1.counts.others}（應少 1）`);
+        log.push("顧問改成本人 → 這張算進保障");
+        const d = await put(false);
+        if (!d.ok) throw new Error(`顧問改成家人 HTTP ${d.status}`);
+        const v2 = await (await fetch(`${BASE}/api/passbook`, { headers: H })).json();
+        if (v2.policies.some(p => p.id === pend.id) || v2.counts.total !== v1.counts.total - 1) throw new Error("改成家人後那筆還在");
+        log.push("顧問改成家人 → 這筆刪掉");
+      } finally { await cancelBooking(H, bookingId, log); }
+    } catch (e) { insuredFail = String(e.message ?? e); }
+  }
   // 顧問端：客戶約了顧問之後，顧問的客戶頁「保障分析」要看得到案例區塊
   let advisorFail = null;
   if (sc.advisorSees && !broken) {
@@ -333,6 +370,7 @@ async function runOne(id, round) {
     ...(snapFail ? [snapFail] : []),
     ...(finFail ? [finFail] : []),
     ...(advisorFail ? [advisorFail] : []),
+    ...(insuredFail ? [insuredFail] : []),
     ...Object.entries(sc.facts ?? {}).filter(([k, re]) => !re.test(facts[k] ?? "")).map(([k, re]) => `右欄 ${k}=${facts[k] ?? "（沒記）"}，應符合 ${re}`),
   ];
   // ── 4-au 共通檢查 ──

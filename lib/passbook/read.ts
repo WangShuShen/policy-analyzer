@@ -22,7 +22,7 @@ export const PassbookPolicy = z.object({
   plan: z.string().nullable().describe("計劃別（例：計劃 3、B 型）；沒有填 null"),
   effective_date: z.string().nullable().describe("契約生效日，換成西元 YYYY-MM-DD（民國年 +1911）"),
   status: z.string().nullable().describe("契約狀態，照存摺寫（有效、停效、繳清、展期、終止…）"),
-  insured_is_owner: z.boolean().nullable().describe("被保險人是不是這本存摺的主人（本人）；被保險人是別人（子女、配偶）為 false"),
+  insured_is_owner: z.boolean().nullable().describe("被保險人是不是這本存摺的主人（本人）。被保險人欄跟存摺主人不同名（子女、配偶、父母）為 false；同名為 true；存摺上看不出被保險人是誰才填 null"),
   insured_label: z.string().nullable().describe("被保險人是別人時，寫關係或稱呼（例：子女、配偶）；不要寫姓名與身分證字號"),
   annual_premium: z.number().nullable().describe("年繳保費（元），存摺有列才填"),
 });
@@ -42,7 +42,8 @@ const SYSTEM = `你負責把台灣「保險存摺」（壽險公會保單存摺�
 - 只抄事實，不推論、不補資料。看不到的欄位填 null
 - 金額與日期照實轉換：「100萬元」→ amount 100、amount_unit「萬」；「民國 105 年 3 月 2 日」→ 2016-03-02
 - 已終止、已解約、已滿期的也要列出來，status 照寫——要不要算進來，客戶自己確認
-- 絕對不要輸出任何人的姓名、身分證字號、電話、地址；被保險人不是本人時，insured_label 只寫關係
+- 被保險人：存摺上的被保險人欄跟存摺主人（要保人／存摺抬頭）不同名，就判 insured_is_owner=false；同名判 true；欄位沒寫、看不出被保險人是誰才填 null（顧問定案 4-ay：別人當被保險人的保單不存，看不出來的會請顧問確認）
+- 絕對不要輸出任何人的姓名、身分證字號、電話、地址；被保險人不是本人時，insured_label 只寫關係（看不出關係就寫「家人」）
 - 不是保險存摺或保單清單（例如傳錯檔案）→ is_passbook=false、policies 空陣列`;
 
 export type PassbookContent =
@@ -56,9 +57,10 @@ const client = () => (_client ??= new Anthropic());
 
 /*
  * 模擬模式（AI_MOCK，防護條件跟諮詢一樣：RADIA_ENV=dev＋開發版網址白名單，上線版永遠走真 AI）：
- * 不管上傳什麼，都回這本示範存摺。四張剛好走過每條路：
+ * 不管上傳什麼，都回這本示範存摺。五張剛好走過每條路：
  *   ① 國泰享醫靠（資料庫有、已分析，日額）② 國泰實全心意附約（已分析，計劃別 M20）
- *   ③ 富邦好享福終身壽險（資料庫有、還沒分析 → 排隊分析）④ 對不到的商品，被保險人是子女
+ *   ③ 富邦好享福終身壽險（資料庫有、還沒分析 → 排隊分析）④ 對不到的商品，被保險人是子女（4-ay：讀完就丟掉，不存）
+ *   ⑤ 看不出被保險人是誰（insured_is_owner=null）→ 不算進保障、標「被保險人待確認」，顧問端可以改
  */
 const MOCK_PASSBOOK: ReadResult = {
   is_passbook: true,
@@ -72,6 +74,8 @@ const MOCK_PASSBOOK: ReadResult = {
       effective_date: "2015-05-20", status: "有效", insured_is_owner: true, insured_label: null, annual_premium: 41200 },
     { company: "台灣人壽", product_name: "台灣人壽示範用小額終身壽險", plan_code: null, is_rider: false, amount: 30, amount_unit: "萬", plan: null,
       effective_date: "2019-03-02", status: "有效", insured_is_owner: false, insured_label: "子女", annual_premium: 9800 },
+    { company: "國泰人壽", product_name: "國泰人壽示範用傷害保險", plan_code: null, is_rider: false, amount: 100, amount_unit: "萬", plan: null,
+      effective_date: "2020-08-01", status: "有效", insured_is_owner: null, insured_label: null, annual_premium: 1200 },
   ],
 };
 

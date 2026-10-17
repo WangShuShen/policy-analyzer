@@ -136,7 +136,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
             {!pb.upload ? <div className="ccd">還沒上傳。<Link href={UPLOAD_PATH} style={{ color: "var(--brand-ink)" }}>去上傳保險存摺</Link></div> : (
               <>
                 <div className="ccpl">{pb.policies.filter(p => p.matchStatus !== "removed").map(p => (
-                  <div key={p.id} className="ccpr"><div><b>{p.productName}</b><span className="ccpn">{[p.amountText, p.effectiveDate && `${p.effectiveDate} 生效`, p.forOther && `被保險人：${p.forOther}`, p.matchStatus === "ai_read" ? "AI 初步讀取" : p.matchStatus === "pending" ? "還在確認" : null].filter(Boolean).join(" · ")}</span></div></div>
+                  <div key={p.id} className="ccpr"><div><b>{p.productName}</b><span className="ccpn">{[p.amountText, p.effectiveDate && `${p.effectiveDate} 生效`, p.forOther && "被保險人待確認（還沒算進保障）", p.matchStatus === "ai_read" ? "AI 初步讀取" : p.matchStatus === "pending" ? "還在確認" : null].filter(Boolean).join(" · ")}</span></div></div>
                 ))}</div>
                 <div className="ccd">{pb.upload.createdAt.slice(0, 10)} 上傳保險存摺{pbDone && `，${n} 張整理完成`}。{adv ? `${adv.name} 顧問面談前會先看過，你不用再傳一次。` : "約顧問之後，他面談前會先看過。"}</div>
                 <div className="ccacts"><Link className="ccbtn" href="/analysis">看全險圖</Link></div>

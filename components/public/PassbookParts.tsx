@@ -61,7 +61,7 @@ export function PassbookConfirm({ uploadId, policies, api = "/api/passbook" }: {
               <span className="ndv" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                 <b style={{ textDecoration: keep[p.id] ? "none" : "line-through" }}>{p.productName}</b>
                 <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{[p.company.replace(/保險股份有限公司|保險事業股份有限公司/, ""), p.isRider ? "附約" : null, p.effectiveDate ? `${p.effectiveDate} 生效` : null, p.status].filter(Boolean).join("・")}</span>
-                {p.forOther && <span style={{ fontSize: 11.5, color: "var(--amber)" }}>被保險人：{p.forOther}（不算進你的保障）</span>}
+                {p.forOther && <span style={{ fontSize: 11.5, color: "var(--amber)" }}>被保險人待確認（確認前不算進你的保障）</span>}
               </span>
             </label>
             <input className="dinf" style={{ flex: "0 0 112px", padding: "6px 10px", fontSize: 13, textAlign: "right" }} aria-label={`${p.productName} 的保額`}
