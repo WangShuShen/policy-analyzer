@@ -95,9 +95,9 @@ const S = {
   // ── 出口接到原本的後段（模擬模式驗流程）──
   // 從對話按「幫我算算看」進財務：不再問「最擔心」「從哪一塊開始看」，直接問年齡
   T16: { steps: [{ text: "想算算退休要準備多少" }, { exit: true }], bad: [/哪一塊|最擔心的是哪一個/], expect: [[1, /幾歲/]] },
-  // 上傳存摺 → 確認清單 → 送出「上傳好了」→ 走到「該補什麼」→ 約顧問 → 顧問端看得到案例區塊（A3b）
+  // 上傳存摺 → 確認清單 → 送出「上傳好了」→ 走到「哪些地方還不夠」→ 約顧問 → 顧問端看得到案例區塊（A3b）
   // 模擬模式下存摺讀取回固定的示範保單（lib/passbook/read.ts）；真 AI 模式要真的檔案，所以只在 --mock 跑
-  T20: { mockOnly: true, steps: [...TO_UPLOAD, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼要補？看數據",
+  T20: { mockOnly: true, steps: [...TO_UPLOAD, { upload: true }], bad: [], panels: ["gaps"], advisorSees: "為什麼是這個數字？看數據",
     customerSees: [/對著條款跟你說才準/], customerNot: [/這是規定/] },
   // N7：每人每天 AI 用量上限。暫時把上限調到 0.000001 美元（模擬模式每次呼叫記 1 微美元），測完一定還原。
   // 改的是全站設定，所以 T21 等其他情境都跑完才一輪一輪單獨跑（exclusive）
